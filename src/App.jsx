@@ -704,24 +704,62 @@ function TravelTrends() {
         }).sort((a,b)=>a.time.localeCompare(b.time));
       };
 
-      // today is the reference order; past days align to today's matchups
-      const todayList = buildList(start);
-      const todayPairs = todayList.map(g=>g.pair);
-      const out = [];
-      for (let i=-2;i<=4;i++){                  // 2 back, today, 4 forward
-        const date = addDays(start,i);
-        if (i === 0) { out.push({ date, games:todayList }); continue; }
-        // every other day aligns to today's matchup order; blanks where absent
-        const raw = buildList(date);
-        const used = new Set();
-        const aligned = todayPairs.map(pk=>{
-          const idx = raw.findIndex((g,gi)=>g.pair===pk && !used.has(gi));
-          if (idx === -1) return null;                 // blank: not that matchup that day
-          used.add(idx); return raw[idx];
+      // ── lay games out so a series (same matchup on consecutive days) keeps the
+      //    same row across those days; everything else fills from the top by time ──
+      const DATES = [];
+      for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));
+      const perDay = DATES.map(d=>buildList(d));          // games per column, by time
+
+      // gather each matchup's appearances (which day index), then split into
+      // contiguous runs (a "series segment")
+      const byPair = {};
+      perDay.forEach((games, di)=>games.forEach(g=>{
+        (byPair[g.pair] = byPair[g.pair]||[]).push({ di, g });
+      }));
+      const segments = [];
+      Object.values(byPair).forEach(apps=>{
+        apps.sort((a,b)=>a.di-b.di);
+        let run = [apps[0]];
+        for (let k=1;k<apps.length;k++){
+          if (apps[k].di === run[run.length-1].di + 1) run.push(apps[k]);
+          else { segments.push(run); run = [apps[k]]; }
+        }
+        segments.push(run);
+      });
+      const multi = segments.filter(r=>r.length>=2)
+        .map(run=>({ cells:run, startIdx:run[0].di, endIdx:run[run.length-1].di,
+          firstTime:run[0].g.time }))
+        .sort((a,b)=> a.startIdx-b.startIdx || a.firstTime.localeCompare(b.firstTime));
+
+      // assign each multi-day series a row (lane) via interval scheduling
+      const laneEnd = [];
+      multi.forEach(seg=>{
+        let lane = laneEnd.findIndex(e=> e < seg.startIdx);
+        if (lane === -1) { lane = laneEnd.length; laneEnd.push(seg.endIdx); }
+        else laneEnd[lane] = seg.endIdx;
+        seg.lane = lane;
+      });
+
+      const grid = laneEnd.map(()=>DATES.map(()=>null));   // [row][dayIdx]
+      const placed = new Set();                            // "di:pair" already placed
+      multi.forEach(seg=>seg.cells.forEach(c=>{
+        grid[seg.lane][c.di] = c.g; placed.add(c.di+":"+c.g.pair);
+      }));
+
+      // fill remaining (non-series, or series gaps) per day into lowest empty rows by time
+      DATES.forEach((d, di)=>{
+        const rest = perDay[di].filter(g=>!placed.has(di+":"+g.pair));
+        let r = 0;
+        rest.forEach(g=>{
+          while (true) {
+            if (r >= grid.length) grid.push(DATES.map(()=>null));
+            if (grid[r][di] === null) { grid[r][di] = g; r++; break; }
+            r++;
+          }
         });
-        const leftovers = raw.filter((g,gi)=>!used.has(gi));   // other games that day
-        out.push({ date, games:[...aligned, ...leftovers] });
-      }
+      });
+
+      const out = DATES.map((d, di)=>({ date:d, games: grid.map(row=>row[di]) }));
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
@@ -815,9 +853,11 @@ function TravelTrends() {
           const pj = await pr.json();
           const list = [];
           (pj.stats?.[0]?.splits || []).forEach(s=>{
-            if (s.opponent?.id) list.push({ oppId:s.opponent.id, date:s.date });
+            const ip = parseFloat(s.stat?.inningsPitched);
+            if (s.opponent?.id && ip >= 4)        // only meaningful starts count
+              list.push({ oppId:s.opponent.id, date:s.date });
           });
-          facedMap[pid] = list;     // [{oppId, date}] — keep dates to exclude same-day
+          facedMap[pid] = list;     // [{oppId, date}] — 4.0+ IP, dates to exclude same-day
         } catch { /* leave unset */ }
       });
       setFaced(facedMap);
@@ -897,15 +937,19 @@ function TravelTrends() {
                     textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.7)":C.inkSoft }}>{label}</span>
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
-                  {d.games.length===0 && <div style={{ fontFamily:SANS, fontSize:12,
-                    color:C.ruleDark, padding:"4px" }}>—</div>}
-                  {d.games.map((g,i)=>{
-                    if (!g) return <div key={i} style={{ minHeight:50, borderRadius:2,
-                      border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />;
-                    const t = gameTrends(d.date, g);
-                    return <CalCard key={i} g={g} t={t}
-                      onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
-                  })}
+                  {(() => {
+                    let last = -1;
+                    d.games.forEach((g,i)=>{ if (g) last = i; });   // trim trailing blanks
+                    if (last === -1) return <div style={{ fontFamily:SANS, fontSize:12,
+                      color:C.ruleDark, padding:"4px" }}>—</div>;
+                    return d.games.slice(0, last+1).map((g,i)=>{
+                      if (!g) return <div key={i} style={{ minHeight:50, borderRadius:2,
+                        border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />;
+                      const t = gameTrends(d.date, g);
+                      return <CalCard key={i} g={g} t={t}
+                        onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
+                    });
+                  })()}
                 </div>
               </div>);
             })}
