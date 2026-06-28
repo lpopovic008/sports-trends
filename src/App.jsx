@@ -667,6 +667,8 @@ function TravelTrends() {
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
+  const [now, setNow] = useState(()=>new Date());
+  useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
@@ -944,13 +946,23 @@ function TravelTrends() {
                     d.games.forEach((g,i)=>{ if (g) last = i; });   // trim trailing blanks
                     if (last === -1) return <div style={{ fontFamily:SANS, fontSize:12,
                       color:C.ruleDark, padding:"4px" }}>—</div>;
-                    return d.games.slice(0, last+1).map((g,i)=>{
-                      if (!g) return <div key={i} style={{ minHeight:50, borderRadius:2,
-                        border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />;
-                      const t = gameTrends(d.date, g);
-                      return <CalCard key={i} g={g} t={t} rowIndex={i}
-                        onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
+                    const list = d.games.slice(0, last+1);
+                    // in today's column, the now-line rests after games already started
+                    const lineIdx = isToday
+                      ? list.filter(g=>g && new Date(g.time) <= now).length : -1;
+                    const cells = [];
+                    list.forEach((g,i)=>{
+                      if (i === lineIdx) cells.push(<NowLine key="nowline" />);
+                      if (!g) cells.push(<div key={i} style={{ minHeight:50, borderRadius:2,
+                        border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />);
+                      else {
+                        const t = gameTrends(d.date, g);
+                        cells.push(<CalCard key={i} g={g} t={t} rowIndex={i}
+                          onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />);
+                      }
                     });
+                    if (lineIdx >= list.length) cells.push(<NowLine key="nowline-end" />);
+                    return cells;
                   })()}
                 </div>
               </div>);
@@ -1031,6 +1043,17 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
 
 /* alternating shades so series read as grouped, checkerboard down the lanes */
 const SERIES_SHADE = ["#E2E5EA", "#ECE7DF"];
+
+/* the "current time" marker that rests in the gap between today's games */
+function NowLine() {
+  return (
+    <div aria-label="now" style={{ display:"flex", alignItems:"center", margin:"-1px 0", height:2 }}>
+      <span style={{ width:7, height:7, borderRadius:"50%", background:"#E5142B",
+        flex:"0 0 auto", marginLeft:-2 }} />
+      <span style={{ flex:1, height:2, background:"#E5142B" }} />
+    </div>
+  );
+}
 
 function CalCard({ g, t, onOpen, rowIndex }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
