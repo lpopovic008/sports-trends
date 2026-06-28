@@ -662,8 +662,8 @@ function TravelTrends() {
     setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
-         fetch from 2 days back so yesterday's travel has a "prev day". */
-      const from = addDays(start,-2), to = addDays(start,5);
+         fetch from 3 days back so the -2 day's travel has a "prev day". */
+      const from = addDays(start,-3), to = addDays(start,4);
       const r = await fetch(`${API}/schedule?sportId=1&startDate=${from}&endDate=${to}` +
         `&gameType=R&hydrate=probablePitcher`);
       if (!r.ok) throw new Error(`schedule ${r.status}`);
@@ -680,15 +680,16 @@ function TravelTrends() {
           dayGames[d.date].push({ homeId:home.id, homeName:home.name,
             awayId:away.id, awayName:away.name, venueTz, time:g.gameDate,
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
-            isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score });
+            isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score,
+            pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
         });
       });
-      const out = [];
-      for (let i=-1;i<=5;i++){                  // yesterday, today, +5
-        const date = addDays(start,i), prev = addDays(date,-1);
-        const list = (dayGames[date]||[]).map(g=>{
+
+      const buildList = (date) => {
+        const prev = addDays(date,-1);
+        return (dayGames[date]||[]).map(g=>{
           const todayTz = TZ_RANK[g.venueTz], travelers=[];
           [["away",g.awayId,g.awayName],["home",g.homeId,g.homeName]].forEach(([role,tid,tname])=>{
             const prevTz = TZ_RANK[byTeamDate[tid]?.[prev]];
@@ -696,8 +697,29 @@ function TravelTrends() {
               travelers.push({ teamId:tid, tname, from:byTeamDate[tid][prev], to:g.venueTz });
           });
           return { ...g, travelers, flagged:travelers.length>0 };
-        }).sort((a,b)=>Number(b.flagged)-Number(a.flagged)||a.time.localeCompare(b.time));
-        out.push({ date, games:list, flaggedCount:list.filter(x=>x.flagged).length });
+        }).sort((a,b)=>a.time.localeCompare(b.time));
+      };
+
+      // today is the reference order; past days align to today's matchups
+      const todayList = buildList(start);
+      const todayPairs = todayList.map(g=>g.pair);
+      const out = [];
+      for (let i=-2;i<=4;i++){                  // 2 back, today, 4 forward
+        const date = addDays(start,i);
+        if (i === 0) { out.push({ date, games:todayList }); continue; }
+        if (i < 0) {
+          const raw = buildList(date);
+          const used = new Set();
+          const aligned = todayPairs.map(pk=>{
+            const idx = raw.findIndex((g,gi)=>g.pair===pk && !used.has(gi));
+            if (idx === -1) return null;                 // blank: didn't meet that day
+            used.add(idx); return raw[idx];
+          });
+          const leftovers = raw.filter((g,gi)=>!used.has(gi));   // other games that day
+          out.push({ date, games:[...aligned, ...leftovers] });
+        } else {
+          out.push({ date, games:buildList(date) });
+        }
       }
       setDays(out);
 
@@ -841,7 +863,7 @@ function TravelTrends() {
 
   return (
     <div>
-      <Eyebrow n="03">My trends · yesterday → next 5 days</Eyebrow>
+      <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
 
       <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
         <button onClick={load} disabled={busy} style={btn(false)}>
@@ -852,22 +874,24 @@ function TravelTrends() {
 
       {err && <ErrBox>{err}</ErrBox>}
 
-      {/* ── 7-day calendar: all games, trend matches highlighted & clickable ── */}
+      {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
-          <Eyebrow>7-day calendar · click a highlighted game</Eyebrow>
+          <Eyebrow>Calendar · past games line up with today’s matchup</Eyebrow>
           <Legend />
           <div className="ts-cal" style={{ gap:8, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
+              const label = isToday ? "Today"
+                : d.date===addDays(start,-1) ? "Yesterday"
+                : d.date===addDays(start,-2) ? "2 days ago" : calDay(d.date).wd;
               return (
               <div key={d.date} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
                 overflow:"hidden" }}>
                 <div style={{ padding:"8px 10px", borderBottom:`1px solid ${C.rule}`,
                   background:isToday?C.ink:C.card }}>
                   <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
-                    textTransform:"uppercase", color:isToday?"#fff":C.inkSoft }}>
-                    {isToday ? "Today" : d.date===addDays(start,-1) ? "Yesterday" : calDay(d.date).wd}</div>
+                    textTransform:"uppercase", color:isToday?"#fff":C.inkSoft }}>{label}</div>
                   <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700,
                     color:isToday?"#fff":C.ink }}>{calDay(d.date).md}</div>
                 </div>
@@ -875,6 +899,8 @@ function TravelTrends() {
                   {d.games.length===0 && <div style={{ fontFamily:SANS, fontSize:12,
                     color:C.ruleDark, padding:"6px 4px" }}>—</div>}
                   {d.games.map((g,i)=>{
+                    if (!g) return <div key={i} style={{ height:54, borderRadius:2,
+                      border:`1px dashed ${C.rule}`, opacity:0.4 }} />;   // blank: no matchup
                     const t = gameTrends(d.date, g);
                     return <CalCard key={i} g={g} t={t}
                       onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
@@ -930,13 +956,14 @@ const TREND_SLOTS = [
 function TeamRow({ abbr, score, won, final, teamId, t }) {
   const keys = t.keysFor(teamId);
   return (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"30px 14px 1fr", alignItems:"center", gap:4 }}>
       <span style={{ fontFamily:MONO, fontSize:12.5,
         fontWeight: final ? (won?800:400) : 600,
-        color: final ? (won?C.ink:C.inkSoft) : C.ink }}>
-        {abbr}{final && <span style={{ marginLeft:7 }}>{score}</span>}
-      </span>
-      <span style={{ display:"flex", gap:2 }}>
+        color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
+      <span style={{ fontFamily:MONO, fontSize:12.5, textAlign:"right",
+        fontWeight: final && won ? 800 : 400,
+        color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
+      <span style={{ display:"flex", gap:1, justifyContent:"flex-end" }}>
         {TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
           return <span key={slot.key} title={present ? slot.label : undefined}
@@ -960,8 +987,8 @@ function CalCard({ g, t, onOpen }) {
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
-      style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2,
-      padding:"6px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
+      style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2, boxSizing:"border-box",
+      minHeight:54, padding:"6px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
       cursor: onOpen ? "pointer" : "default" }}>
       <div style={{ fontFamily:MONO, fontSize:8.5, color:C.ruleDark, textAlign:"right", marginBottom:2 }}>
         {final ? "FINAL" : time}</div>
