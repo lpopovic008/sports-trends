@@ -722,15 +722,16 @@ function TravelTrends() {
       for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));   // index 0..6, offset i = idx-2
       const perDay = DATES.map(d=>buildList(d));
 
-      // mark games that belong to a 2+ day series (for the checkerboard shade)
+      // mark games that belong to a 2+ day series, each series getting an id
       const byPair = {};
       perDay.forEach((games, di)=>games.forEach(g=>{
         (byPair[g.pair] = byPair[g.pair]||[]).push({ di, g });
       }));
+      let sid = 0;
       Object.values(byPair).forEach(apps=>{
         apps.sort((a,b)=>a.di-b.di);
         let run = [apps[0]];
-        const flush = (r)=>{ if (r.length>=2) r.forEach(x=>{ x.g.series = true; }); };
+        const flush = (r)=>{ if (r.length>=2) { const id=sid++; r.forEach(x=>{ x.g.series=true; x.g.sid=id; }); } };
         for (let k=1;k<apps.length;k++){
           if (apps[k].di === run[run.length-1].di + 1) run.push(apps[k]);
           else { flush(run); run = [apps[k]]; }
@@ -759,6 +760,26 @@ function TravelTrends() {
         const ref = offset < 0 ? todayPairs : tomorrowPairs;
         return { date:d, games: alignTo(perDay[di], ref) };
       });
+
+      // ── series-aware checkerboard: 2-color series so no two touching share a shade ──
+      const cell = (c, r) => out[c]?.games[r] || null;
+      const R = Math.max(0, ...out.map(o=>o.games.length));
+      const adj = {};                                   // sid -> Set of neighbor sids
+      const link = (a,b)=>{ if(a==null||b==null||a===b) return;
+        (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); };
+      for (let r=0;r<R;r++) for (let c=0;c<out.length;c++){
+        const g = cell(c,r); if (!g || g.sid==null) continue;
+        const right = cell(c+1, r), down = cell(c, r+1);
+        if (right && right.sid!=null) link(g.sid, right.sid);
+        if (down && down.sid!=null) link(g.sid, down.sid);
+      }
+      const shadeOf = {};
+      for (let id=0; id<sid; id++){
+        const used = new Set();
+        (adj[id]||[]).forEach(n=>{ if (shadeOf[n]!=null) used.add(shadeOf[n]); });
+        shadeOf[id] = used.has(0) ? (used.has(1) ? 0 : 1) : 0;   // prefer 0, else 1
+      }
+      out.forEach(o=>o.games.forEach(g=>{ if (g && g.sid!=null) g.seriesShade = shadeOf[g.sid]; }));
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
@@ -957,7 +978,7 @@ function TravelTrends() {
                         border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />);
                       else {
                         const t = gameTrends(d.date, g);
-                        cells.push(<CalCard key={i} g={g} t={t} rowIndex={i}
+                        cells.push(<CalCard key={i} g={g} t={t}
                           onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />);
                       }
                     });
@@ -1055,13 +1076,13 @@ function NowLine() {
   );
 }
 
-function CalCard({ g, t, onOpen, rowIndex }) {
+function CalCard({ g, t, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const bg = g.series ? SERIES_SHADE[rowIndex % 2] : "#fff";
+  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   return (
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
