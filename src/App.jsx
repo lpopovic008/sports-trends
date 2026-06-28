@@ -774,10 +774,12 @@ function TravelTrends() {
         if (down && down.sid!=null) link(g.sid, down.sid);
       }
       const shadeOf = {};
+      const N = SERIES_SHADE.length;
       for (let id=0; id<sid; id++){
         const used = new Set();
         (adj[id]||[]).forEach(n=>{ if (shadeOf[n]!=null) used.add(shadeOf[n]); });
-        shadeOf[id] = used.has(0) ? (used.has(1) ? 0 : 1) : 0;   // prefer 0, else 1
+        let k=0; while (k<N-1 && used.has(k)) k++;        // lowest free shade
+        shadeOf[id] = k;
       }
       out.forEach(o=>o.games.forEach(g=>{ if (g && g.sid!=null) g.seriesShade = shadeOf[g.sid]; }));
       setDays(out);
@@ -1062,8 +1064,9 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   );
 }
 
-/* alternating shades so series read as grouped, checkerboard down the lanes */
-const SERIES_SHADE = ["#E2E5EA", "#ECE7DF"];
+/* a small cohesive palette of muted tints; 4 colors so the series graph can
+   always be colored without two adjacent series sharing a shade */
+const SERIES_SHADE = ["#E3E7EC", "#E9E5DD", "#E1EAE4", "#E9E2E8"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -1262,8 +1265,7 @@ function H2HTab() {
         <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>No games scheduled today.</div>)}
 
       {games && games.length>0 && (
-        <div style={{ display:"grid", gap:8,
-          gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))" }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           {games.map(g=>{
             const away=g.teams.away.team, home=g.teams.home.team;
             const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
@@ -1271,14 +1273,13 @@ function H2HTab() {
             return (
               <button key={g.gamePk}
                 onClick={()=>setSel({ aId:away.id, bId:home.id, aName:away.name, bName:home.name })}
-                style={{ textAlign:"left", border:`1px solid ${C.ruleDark}`, borderRadius:3,
-                  background:C.card, padding:"11px 13px", cursor:"pointer", font:"inherit" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8 }}>
-                  <span style={{ fontFamily:SANS, fontWeight:600, fontSize:14 }}>
-                    {away.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {home.name}</span>
-                </div>
-                <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
-                  {final ? `Final ${g.teams.away.score}–${g.teams.home.score}` : time} · tap for series</div>
+                style={{ width:"100%", textAlign:"left", border:`1px solid ${C.ruleDark}`, borderRadius:3,
+                  background:C.card, padding:"13px 16px", cursor:"pointer", font:"inherit",
+                  display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
+                <span style={{ fontFamily:SANS, fontWeight:600, fontSize:15 }}>
+                  {away.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {home.name}</span>
+                <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, whiteSpace:"nowrap" }}>
+                  {final ? `Final ${g.teams.away.score}–${g.teams.home.score}` : time} · tap for series →</span>
               </button>
             );
           })}
