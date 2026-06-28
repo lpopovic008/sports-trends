@@ -318,7 +318,9 @@ function GameCard({ g, data, onLoad, onPick }) {
 }
 
 /* shared column template so header + every row line up exactly */
-const ROW_COLS = "14px minmax(40px,1fr) 32px repeat(3, 66px)";
+const ROW_COLS = "14px minmax(36px,1fr) 30px 60px 9px 60px 9px 60px";
+const SEP = <span style={{ textAlign:"center", fontFamily:MONO, fontSize:12,
+  color:C.ruleDark, fontWeight:700 }}>|</span>;
 
 function LineupCol({ side, borderRight, onPick }) {
   return (
@@ -335,8 +337,8 @@ function LineupCol({ side, borderRight, onPick }) {
           fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
           color:C.ruleDark, alignItems:"center" }}>
           <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
-          <span style={{ textAlign:"center" }}>H</span>
-          <span style={{ textAlign:"center" }}>TB</span>
+          <span style={{ textAlign:"center" }}>H</span>{SEP}
+          <span style={{ textAlign:"center" }}>TB</span>{SEP}
           <span style={{ textAlign:"center" }}>HRR</span>
         </div>
         {side.players.length===0 && (
@@ -353,7 +355,9 @@ function LineupCol({ side, borderRight, onPick }) {
               title={p.name}>{p.name}</span>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
             <SeqBlock arr={p.h} statKey="hits" label="hits" onPick={onPick && (()=>onPick(p.name,"hits"))} />
+            {SEP}
             <SeqBlock arr={p.tb} statKey="totalBases" label="total bases" onPick={onPick && (()=>onPick(p.name,"totalBases"))} />
+            {SEP}
             <SeqBlock arr={p.hrr} statKey="hits+runs+rbi" label="H+R+RBI" onPick={onPick && (()=>onPick(p.name,"hits+runs+rbi"))} />
           </div>
         );})}
@@ -707,19 +711,16 @@ function TravelTrends() {
       for (let i=-2;i<=4;i++){                  // 2 back, today, 4 forward
         const date = addDays(start,i);
         if (i === 0) { out.push({ date, games:todayList }); continue; }
-        if (i < 0) {
-          const raw = buildList(date);
-          const used = new Set();
-          const aligned = todayPairs.map(pk=>{
-            const idx = raw.findIndex((g,gi)=>g.pair===pk && !used.has(gi));
-            if (idx === -1) return null;                 // blank: didn't meet that day
-            used.add(idx); return raw[idx];
-          });
-          const leftovers = raw.filter((g,gi)=>!used.has(gi));   // other games that day
-          out.push({ date, games:[...aligned, ...leftovers] });
-        } else {
-          out.push({ date, games:buildList(date) });
-        }
+        // every other day aligns to today's matchup order; blanks where absent
+        const raw = buildList(date);
+        const used = new Set();
+        const aligned = todayPairs.map(pk=>{
+          const idx = raw.findIndex((g,gi)=>g.pair===pk && !used.has(gi));
+          if (idx === -1) return null;                 // blank: not that matchup that day
+          used.add(idx); return raw[idx];
+        });
+        const leftovers = raw.filter((g,gi)=>!used.has(gi));   // other games that day
+        out.push({ date, games:[...aligned, ...leftovers] });
       }
       setDays(out);
 
@@ -879,7 +880,7 @@ function TravelTrends() {
         <div>
           <Eyebrow>Calendar · past games line up with today’s matchup</Eyebrow>
           <Legend />
-          <div className="ts-cal" style={{ gap:8, paddingBottom:4 }}>
+          <div className="ts-cal" style={{ gap:5, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
               const label = isToday ? "Today"
@@ -888,19 +889,19 @@ function TravelTrends() {
               return (
               <div key={d.date} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
                 overflow:"hidden" }}>
-                <div style={{ padding:"8px 10px", borderBottom:`1px solid ${C.rule}`,
-                  background:isToday?C.ink:C.card }}>
-                  <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
-                    textTransform:"uppercase", color:isToday?"#fff":C.inkSoft }}>{label}</div>
-                  <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700,
-                    color:isToday?"#fff":C.ink }}>{calDay(d.date).md}</div>
+                <div style={{ padding:"5px 7px", borderBottom:`1px solid ${C.rule}`,
+                  background:isToday?C.ink:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
+                  <span style={{ fontFamily:SANS, fontSize:14, fontWeight:700,
+                    color:isToday?"#fff":C.ink }}>{calDay(d.date).md}</span>
+                  <span style={{ fontFamily:MONO, fontSize:8.5, letterSpacing:"0.08em",
+                    textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.7)":C.inkSoft }}>{label}</span>
                 </div>
-                <div style={{ padding:6, display:"flex", flexDirection:"column", gap:6 }}>
+                <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
                   {d.games.length===0 && <div style={{ fontFamily:SANS, fontSize:12,
-                    color:C.ruleDark, padding:"6px 4px" }}>—</div>}
+                    color:C.ruleDark, padding:"4px" }}>—</div>}
                   {d.games.map((g,i)=>{
-                    if (!g) return <div key={i} style={{ height:54, borderRadius:2,
-                      border:`1px dashed ${C.rule}`, opacity:0.4 }} />;   // blank: no matchup
+                    if (!g) return <div key={i} style={{ minHeight:50, borderRadius:2,
+                      border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />;
                     const t = gameTrends(d.date, g);
                     return <CalCard key={i} g={g} t={t}
                       onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
@@ -919,11 +920,11 @@ function TravelTrends() {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:12 }}>
+    <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
       {TREND_SLOTS.map(s=>(
-        <span key={s.key} style={{ display:"flex", alignItems:"center", gap:5 }}>
-          <span style={{ width:14, height:7, borderRadius:2, background:s.color }} />
-          <span style={{ fontFamily:MONO, fontSize:10, color:C.inkSoft }}>{s.label}</span>
+        <span key={s.key} style={{ display:"flex", alignItems:"center", gap:4 }}>
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color }} />
+          <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{s.label}</span>
         </span>
       ))}
     </div>
@@ -956,21 +957,21 @@ const TREND_SLOTS = [
 function TeamRow({ abbr, score, won, final, teamId, t }) {
   const keys = t.keysFor(teamId);
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"30px 14px 1fr", alignItems:"center", gap:4 }}>
-      <span style={{ fontFamily:MONO, fontSize:12.5,
+    <div style={{ display:"grid", gridTemplateColumns:"28px 13px 1fr", alignItems:"center", gap:3 }}>
+      <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
-      <span style={{ fontFamily:MONO, fontSize:12.5, textAlign:"right",
+      <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
         color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
-      <span style={{ display:"flex", gap:1, justifyContent:"flex-end" }}>
+      <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
           return <span key={slot.key} title={present ? slot.label : undefined}
-            style={{ width:9, height:7, borderRadius:1.5,
+            style={{ width:13, height:11, borderRadius:2,
               background: present ? slot.color : "transparent",
               boxShadow: present ? "none" : `inset 0 0 0 1px ${C.rule}`,
-              opacity: present ? 1 : 0.35 }} />;
+              opacity: present ? 1 : 0.3 }} />;
         })}
       </span>
     </div>
@@ -988,12 +989,11 @@ function CalCard({ g, t, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2, boxSizing:"border-box",
-      minHeight:54, padding:"6px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
+      minHeight:50, padding:"4px 6px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
       cursor: onOpen ? "pointer" : "default" }}>
-      <div style={{ fontFamily:MONO, fontSize:8.5, color:C.ruleDark, textAlign:"right", marginBottom:2 }}>
+      <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} won={awWon} final={final} teamId={g.awayId} t={t} />
-      <div style={{ height:3 }} />
       <TeamRow abbr={hm} score={g.homeScore} won={hmWon} final={final} teamId={g.homeId} t={t} />
     </div>
   );
@@ -1129,8 +1129,8 @@ function GameModal({ m, onClose }) {
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(150px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:150px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(132px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:132px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
 @media (max-width:760px){
