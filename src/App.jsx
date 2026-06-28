@@ -211,6 +211,8 @@ function DaySheet() {
     setLoadingAll(false);
   }, [games, loadGame]);
 
+  useEffect(() => { loadSchedule(); /* eslint-disable-next-line */ }, []);
+
   return (
     <div>
       <Eyebrow n="01">Day sheet · starting nine, last 5 games</Eyebrow>
@@ -392,7 +394,7 @@ function SeqBlock({ arr, label, onPick }) {
   );
   const base = { display:"block", width:"100%", borderRadius:1, boxSizing:"border-box",
     ...(on ? { background:"rgba(255,233,77,0.65)", boxShadow:`inset 0 0 0 1px ${C.markerDeep}` } : {}) };
-  if (on && onPick) {
+  if (onPick) {
     return <button onClick={onPick} title={`Analyze ${label} prop`}
       style={{ ...base, border:"none", padding:0, cursor:"pointer", font:"inherit" }}>{cells}</button>;
   }
@@ -691,7 +693,7 @@ function TravelTrends() {
           [["away",g.awayId,g.awayName],["home",g.homeId,g.homeName]].forEach(([role,tid,tname])=>{
             const prevTz = TZ_RANK[byTeamDate[tid]?.[prev]];
             if (prevTz!=null && todayTz===TZ_RANK.ET && prevTz<=westThreshold)
-              travelers.push({ tname, from:byTeamDate[tid][prev], to:g.venueTz });
+              travelers.push({ teamId:tid, tname, from:byTeamDate[tid][prev], to:g.venueTz });
           });
           return { ...g, travelers, flagged:travelers.length>0 };
         }).sort((a,b)=>Number(b.flagged)-Number(a.flagged)||a.time.localeCompare(b.time));
@@ -803,7 +805,7 @@ function TravelTrends() {
 
   useEffect(() => { load(); }, [load]);   // auto-load on open and when min streak changes
 
-  /* which trends touch a given game (for calendar highlighting) */
+  /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
     const echo = (echoes||[]).filter(e=>e.date===date &&
       (e.teamId===g.homeId || e.teamId===g.awayId));
@@ -812,6 +814,7 @@ function TravelTrends() {
     const rematch = [];
     const facedBefore = (pid, oppId) =>
       (faced[pid]||[]).some(x => x.oppId===oppId && x.date < date);
+    // oppId = the team that is FACING this pitcher again → that team gets the marker
     if (g.awayPid && facedBefore(g.awayPid, g.homeId))
       rematch.push({ pitcher:g.awayPname, pid:g.awayPid, opp:g.homeName, oppId:g.homeId });
     if (g.homePid && facedBefore(g.homePid, g.awayId))
@@ -819,10 +822,21 @@ function TravelTrends() {
     const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
-    if (aRuns>=10) bigday.push({ team:g.awayName, runs:aRuns });
-    if (hRuns>=10) bigday.push({ team:g.homeName, runs:hRuns });
-    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday,
-      any: !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 };
+    if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
+    if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
+
+    // per-team trend keys for the duplicated markers
+    const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
+    const add = (tid, key) => { if (sideKeys[tid]) sideKeys[tid].add(key); };
+    (g.travelers||[]).forEach(x=>add(x.teamId, "travel"));
+    echo.forEach(e=>add(e.teamId, "echo"));
+    cb.forEach(c=>add(c.teamId, "late"));
+    bigday.forEach(b=>add(b.teamId, "bigday"));
+    rematch.forEach(m=>add(m.oppId, "rematch"));   // team facing the pitcher again
+
+    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
+    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
+      keysFor:(tid)=>sideKeys[tid] || new Set() };
   };
 
   return (
@@ -913,6 +927,29 @@ const TREND_SLOTS = [
     title:(t)=>t.travelers.map(x=>`${x.tname} ${x.from}→${x.to} · back-to-back`).join("; ") },
 ];
 
+function TeamRow({ abbr, score, won, final, teamId, t }) {
+  const keys = t.keysFor(teamId);
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+      <span style={{ fontFamily:MONO, fontSize:12.5,
+        fontWeight: final ? (won?800:400) : 600,
+        color: final ? (won?C.ink:C.inkSoft) : C.ink }}>
+        {abbr}{final && <span style={{ marginLeft:7 }}>{score}</span>}
+      </span>
+      <span style={{ display:"flex", gap:2 }}>
+        {TREND_SLOTS.map(slot=>{
+          const present = keys.has(slot.key);
+          return <span key={slot.key} title={present ? slot.label : undefined}
+            style={{ width:9, height:7, borderRadius:1.5,
+              background: present ? slot.color : "transparent",
+              boxShadow: present ? "none" : `inset 0 0 0 1px ${C.rule}`,
+              opacity: present ? 1 : 0.35 }} />;
+        })}
+      </span>
+    </div>
+  );
+}
+
 function CalCard({ g, t, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
@@ -924,43 +961,13 @@ function CalCard({ g, t, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2,
-      padding:"7px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
+      padding:"6px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
       cursor: onOpen ? "pointer" : "default" }}>
-      {final ? (
-        <div style={{ fontFamily:MONO, fontSize:12.5 }}>
-          <div style={{ display:"flex", justifyContent:"space-between",
-            fontWeight: awWon?800:400, color: awWon?C.ink:C.inkSoft }}>
-            <span>{aw}</span><span>{g.awayScore}</span>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between",
-            fontWeight: hmWon?800:400, color: hmWon?C.ink:C.inkSoft }}>
-            <span>{hm}</span><span>{g.homeScore}</span>
-          </div>
-          <div style={{ fontFamily:MONO, fontSize:8.5, color:C.ruleDark, textAlign:"right",
-            marginTop:1 }}>FINAL</div>
-        </div>
-      ) : (
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:4 }}>
-          <span style={{ fontFamily:MONO, fontSize:12.5, fontWeight:600 }}>
-            {aw}<span style={{ color:C.inkSoft }}>@</span>{hm}</span>
-          <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{time}</span>
-        </div>
-      )}
-      {/* fixed quadrant markers — every card shows the same slots, filled or empty */}
-      <div style={{ display:"flex", gap:3, marginTop:5 }}>
-        {TREND_SLOTS.map(slot=>{
-          const present = slot.on(t);
-          return (
-            <span key={slot.key} style={{ flex:1, display:"flex", justifyContent:"center" }}>
-              <span title={present ? slot.title(t) : undefined}
-                style={{ width:"100%", maxWidth:20, height:7, borderRadius:2,
-                  background: present ? slot.color : "transparent",
-                  boxShadow: present ? "none" : `inset 0 0 0 1px ${C.rule}`,
-                  opacity: present ? 1 : 0.4 }} />
-            </span>
-          );
-        })}
-      </div>
+      <div style={{ fontFamily:MONO, fontSize:8.5, color:C.ruleDark, textAlign:"right", marginBottom:2 }}>
+        {final ? "FINAL" : time}</div>
+      <TeamRow abbr={aw} score={g.awayScore} won={awWon} final={final} teamId={g.awayId} t={t} />
+      <div style={{ height:3 }} />
+      <TeamRow abbr={hm} score={g.homeScore} won={hmWon} final={final} teamId={g.homeId} t={t} />
     </div>
   );
 }
@@ -1075,8 +1082,18 @@ function GameModal({ m, onClose }) {
           )}
           <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
             textTransform:"uppercase", color:C.inkSoft, paddingTop:10 }}>Probable starters</div>
-          <PitcherBlock name={g.awayPname} vsName={g.homeName} info={away} />
-          <PitcherBlock name={g.homePname} vsName={g.awayName} info={home} />
+          <div className="ts-lineups" style={{ gap:0, marginTop:4 }}>
+            <div className="ts-lineup-col" style={{ paddingRight:14, borderRight:`1px solid ${C.rule}` }}>
+              <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
+                textTransform:"uppercase", color:C.inkSoft, paddingTop:8 }}>{g.awayName}</div>
+              <PitcherBlock name={g.awayPname} vsName={g.homeName} info={away} />
+            </div>
+            <div className="ts-lineup-col" style={{ paddingLeft:14 }}>
+              <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
+                textTransform:"uppercase", color:C.inkSoft, paddingTop:8 }}>{g.homeName}</div>
+              <PitcherBlock name={g.homePname} vsName={g.awayName} info={home} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
