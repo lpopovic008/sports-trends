@@ -800,7 +800,7 @@ function TravelTrends() {
           }
         });
       });
-      setRunsMap(runsByDate);
+      // (state set together at the end so all markers appear at once, in order)
       const echoList = [];
       Object.entries(byTeamRes).forEach(([tid, res])=>{
         const sig = detectStreakBreak(res, Number(minStreak)||10);
@@ -820,7 +820,6 @@ function TravelTrends() {
           venueTz:found.venueTz });
       });
       echoList.sort((a,b)=>a.date.localeCompare(b.date));
-      setEchoes(echoList);
 
       /* ── late go-ahead win: scan yesterday's finals via linescore ── */
       const yISO = addDays(start,-1);
@@ -848,7 +847,7 @@ function TravelTrends() {
             score:`${win.score}\u2013${lose.score}`, inning:sig.firstLeadInning, next };
         } catch { return null; }
       });
-      setComebacks(cbResults.filter(Boolean).sort((a,b)=>b.inning-a.inning));
+      const cbList = cbResults.filter(Boolean).sort((a,b)=>b.inning-a.inning);
 
       /* ── pitcher rematch: has each probable already faced today's opponent? ── */
       const season = new Date().getFullYear();
@@ -873,7 +872,11 @@ function TravelTrends() {
           facedMap[pid] = list;     // [{oppId, date, ip}] — all prior facings
         } catch { /* leave unset */ }
       });
+      // all trend markers appear together (rematch · 10-run · late · echo · travel)
       setFaced(facedMap);
+      setRunsMap(runsByDate);
+      setComebacks(cbList);
+      setEchoes(echoList);
     } catch (e) {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
     } finally { setBusy(false); }
