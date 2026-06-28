@@ -11,7 +11,7 @@ import {
 const C = {
   paper:"#ECEEF1", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
-  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E", rematch:"#6D4AA8", bigday:"#E07B00",
+  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E", rematch:"#6D4AA8", rematchLight:"#C3B0E3", bigday:"#E07B00",
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -854,10 +854,10 @@ function TravelTrends() {
           const list = [];
           (pj.stats?.[0]?.splits || []).forEach(s=>{
             const ip = parseFloat(s.stat?.inningsPitched);
-            if (s.opponent?.id && ip >= 4)        // only meaningful starts count
-              list.push({ oppId:s.opponent.id, date:s.date });
+            if (s.opponent?.id)
+              list.push({ oppId:s.opponent.id, date:s.date, ip: isNaN(ip)?0:ip });
           });
-          facedMap[pid] = list;     // [{oppId, date}] — 4.0+ IP, dates to exclude same-day
+          facedMap[pid] = list;     // [{oppId, date, ip}] — all prior facings
         } catch { /* leave unset */ }
       });
       setFaced(facedMap);
@@ -875,13 +875,17 @@ function TravelTrends() {
     const cb = (comebacks||[]).filter(c=>c.next && c.next.date===date &&
       (c.teamId===g.homeId || c.teamId===g.awayId));
     const rematch = [];
-    const facedBefore = (pid, oppId) =>
-      (faced[pid]||[]).some(x => x.oppId===oppId && x.date < date);
-    // oppId = the team that is FACING this pitcher again → that team gets the marker
-    if (g.awayPid && facedBefore(g.awayPid, g.homeId))
-      rematch.push({ pitcher:g.awayPname, pid:g.awayPid, opp:g.homeName, oppId:g.homeId });
-    if (g.homePid && facedBefore(g.homePid, g.awayId))
-      rematch.push({ pitcher:g.homePname, pid:g.homePid, opp:g.awayName, oppId:g.awayId });
+    const rematchTier = {};                       // teamId -> 'strong' | 'weak'
+    const checkRematch = (pid, oppId, pitcher, oppName) => {
+      if (!pid) return;
+      const facings = (faced[pid]||[]).filter(x => x.oppId===oppId && x.date < date);
+      if (!facings.length) return;
+      const strong = facings.some(x => x.ip >= 4);
+      rematch.push({ pitcher, pid, opp:oppName, oppId, strong });
+      rematchTier[oppId] = strong ? "strong" : "weak";   // oppId = team facing again
+    };
+    checkRematch(g.awayPid, g.homeId, g.awayPname, g.homeName);
+    checkRematch(g.homePid, g.awayId, g.homePname, g.awayName);
     const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
@@ -899,7 +903,8 @@ function TravelTrends() {
 
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
-      keysFor:(tid)=>sideKeys[tid] || new Set() };
+      keysFor:(tid)=>sideKeys[tid] || new Set(),
+      rematchTier:(tid)=>rematchTier[tid] || null };
   };
 
   return (
@@ -1011,9 +1016,12 @@ function TeamRow({ abbr, score, won, final, teamId, t }) {
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
+          let color = slot.color;
+          if (slot.key==="rematch" && present)
+            color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ width:13, height:11, borderRadius:2,
-              background: present ? slot.color : "transparent",
+              background: present ? color : "transparent",
               boxShadow: present ? "none" : `inset 0 0 0 1px ${C.rule}`,
               opacity: present ? 1 : 0.3 }} />;
         })}
@@ -1173,8 +1181,8 @@ function GameModal({ m, onClose }) {
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(132px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:132px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(150px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:150px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
 @media (max-width:760px){
@@ -1194,7 +1202,7 @@ export default function App() {
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
       <style>{RESPONSIVE_CSS}</style>
-      <div style={{ maxWidth:1040, margin:"0 auto" }}>
+      <div style={{ maxWidth:1180, margin:"0 auto" }}>
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
             textTransform:"uppercase", color:C.inkSoft }}>Research Terminal · MLB live</div>
