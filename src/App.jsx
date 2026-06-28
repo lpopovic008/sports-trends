@@ -741,19 +741,24 @@ function TravelTrends() {
           firstTime:run[0].g.time }))
         .sort((a,b)=> a.startIdx-b.startIdx || a.firstTime.localeCompare(b.firstTime));
 
-      // assign each multi-day series a row (lane) via interval scheduling
+      // assign each multi-day series a row (lane) via interval scheduling,
+      // plus a checkerboard shade (alternates down lanes and across lane reuse)
       const laneEnd = [];
+      const laneCount = [];
       multi.forEach(seg=>{
         let lane = laneEnd.findIndex(e=> e < seg.startIdx);
-        if (lane === -1) { lane = laneEnd.length; laneEnd.push(seg.endIdx); }
+        if (lane === -1) { lane = laneEnd.length; laneEnd.push(seg.endIdx); laneCount.push(0); }
         else laneEnd[lane] = seg.endIdx;
         seg.lane = lane;
+        seg.shade = (lane + laneCount[lane]) % 2;
+        laneCount[lane]++;
       });
 
       const grid = laneEnd.map(()=>DATES.map(()=>null));   // [row][dayIdx]
       const placed = new Set();                            // "di:pair" already placed
       multi.forEach(seg=>seg.cells.forEach(c=>{
         c.g.seriesLane = seg.lane;                         // subtle grouping accent
+        c.g.seriesShade = seg.shade;
         grid[seg.lane][c.di] = c.g; placed.add(c.di+":"+c.g.pair);
       }));
 
@@ -1017,15 +1022,15 @@ const TREND_SLOTS = [
 function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   const keys = t.keysFor(teamId);
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"24px 13px 18px 1fr", alignItems:"center", gap:2 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
         color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:9.5, textAlign:"right", color:C.ruleDark }}>
-        {final && hits!=null ? `${hits}h` : ""}</span>
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
+        {final && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
@@ -1043,8 +1048,8 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   );
 }
 
-/* muted accents so stacked series are subtly distinguishable */
-const SERIES_TINTS = ["#9FB3C2","#C2A99F","#9FC2A8","#B89FC2","#C2BC9F"];
+/* alternating shades so series read as grouped, checkerboard down the lanes */
+const SERIES_SHADE = ["#E2E5EA", "#ECE7DF"];
 
 function CalCard({ g, t, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
@@ -1052,15 +1057,13 @@ function CalCard({ g, t, onOpen }) {
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const tint = g.seriesLane!=null ? SERIES_TINTS[g.seriesLane % SERIES_TINTS.length] : null;
+  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   return (
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
-      style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`,
-      borderLeft: tint ? `3px solid ${tint}` : `1px solid ${t.any?C.markerDeep:C.rule}`,
-      borderRadius:2, boxSizing:"border-box",
-      minHeight:50, padding:"4px 6px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
+      style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
+      minHeight:50, padding:"4px 7px", background:bg,
       cursor: onOpen ? "pointer" : "default" }}>
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
@@ -1199,137 +1202,179 @@ function GameModal({ m, onClose }) {
 }
 
 /* ════════════════════════ HEAD TO HEAD ════════════════════════ */
+/* today's slate; click a game to see this season's series between the teams */
 function H2HTab() {
   const season = new Date().getFullYear();
-  const [aId, setAId] = useState("");
-  const [bId, setBId] = useState("");
-  const [data, setData] = useState(null);
+  const [games, setGames] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [sel, setSel] = useState(null);   // {aId,bId,aName,bName}
 
-  const run = useCallback(async (A, B) => {
-    if (!A || !B || A===B) { setData(null); return; }
-    setErr(""); setBusy(true); setData(null);
+  const load = useCallback(async () => {
+    setErr(""); setBusy(true); setGames(null);
     try {
-      const r = await fetch(`${API}/schedule?sportId=1&season=${season}&gameType=R&teamId=${A}&hydrate=linescore`);
+      const r = await fetch(`${API}/schedule?sportId=1&date=${todayISO()}&hydrate=linescore`);
       if (!r.ok) throw new Error(`schedule ${r.status}`);
       const j = await r.json();
-      const games = (j.dates||[]).flatMap(d=>d.games||[])
-        .filter(g=>g.teams.home.team.id===Number(B) || g.teams.away.team.id===Number(B))
-        .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
-      const finals=[]; let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
-      games.forEach(g=>{
-        const aHome = g.teams.home.team.id===Number(A);
-        const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
-        const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
-        const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
-        if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
-          finals.push({ date:g.officialDate||g.gameDate.slice(0,10), aS, bS, aHits, bHits, aHome });
-          ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
-          if (aS>bS) aw++; else if (bS>aS) bw++;
-        } else upcoming++;
-      });
-      setData({ aw,bw,ar,br,ah,bh,finals,upcoming });
+      setGames((j.dates?.[0]?.games) || []);
     } catch (e) {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
     } finally { setBusy(false); }
-  }, [season]);
-
-  useEffect(()=>{ run(aId, bId); /* eslint-disable-next-line */ }, [aId, bId]);
-
-  const aT = TEAMS.find(t=>t.id===Number(aId)), bT = TEAMS.find(t=>t.id===Number(bId));
-  const sel = (val, setVal, other, label) => (
-    <Field label={label}>
-      <select style={{ ...inputStyle, minWidth:150 }} value={val} onChange={e=>setVal(e.target.value)}>
-        <option value="">Select…</option>
-        {TEAMS.map(t=><option key={t.id} value={t.id} disabled={String(t.id)===other}>{t.name}</option>)}
-      </select>
-    </Field>
-  );
+  }, []);
+  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, []);
 
   return (
     <div>
-      <Eyebrow n="01">Head to head · {season} season series</Eyebrow>
-      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-end", marginBottom:18 }}>
-        {sel(aId, setAId, bId, "Team A")}
-        <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, paddingBottom:10 }}>vs</span>
-        {sel(bId, setBId, aId, "Team B")}
-        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, paddingBottom:10 }}>loading…</span>}
-      </div>
+      <Eyebrow n="01">Head to head · today’s games</Eyebrow>
+      <p style={{ fontFamily:SANS, fontSize:13.5, color:C.inkSoft, lineHeight:1.6,
+        marginTop:0, marginBottom:16, maxWidth:640 }}>
+        Click any game to see this season’s series between the two teams.
+      </p>
 
+      {busy && <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading slate…</div>}
       {err && <ErrBox>{err}</ErrBox>}
+      {games && games.length===0 && (
+        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>No games scheduled today.</div>)}
 
-      {data && aT && bT && (
-        <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card, overflow:"hidden" }}>
-          <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.rule}`,
-            display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
-            <span style={{ fontFamily:SANS, fontWeight:700, fontSize:17 }}>
-              {aT.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>vs</span> {bT.name}</span>
-            <span style={{ fontFamily:MONO, fontSize:15, fontWeight:700 }}>
-              <span style={{ color: data.aw>data.bw?C.over:C.ink }}>{data.aw}</span>
-              <span style={{ color:C.ruleDark }}> – </span>
-              <span style={{ color: data.bw>data.aw?C.over:C.ink }}>{data.bw}</span>
-            </span>
-          </div>
+      {games && games.length>0 && (
+        <div style={{ display:"grid", gap:8,
+          gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))" }}>
+          {games.map(g=>{
+            const away=g.teams.away.team, home=g.teams.home.team;
+            const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+            const final = g.status?.abstractGameState==="Final";
+            return (
+              <button key={g.gamePk}
+                onClick={()=>setSel({ aId:away.id, bId:home.id, aName:away.name, bName:home.name })}
+                style={{ textAlign:"left", border:`1px solid ${C.ruleDark}`, borderRadius:3,
+                  background:C.card, padding:"11px 13px", cursor:"pointer", font:"inherit" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8 }}>
+                  <span style={{ fontFamily:SANS, fontWeight:600, fontSize:14 }}>
+                    {away.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {home.name}</span>
+                </div>
+                <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
+                  {final ? `Final ${g.teams.away.score}–${g.teams.home.score}` : time} · tap for series</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-          {data.finals.length===0 ? (
-            <div style={{ padding:"16px", fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
-              No completed matchups yet this season.{data.upcoming>0 && ` ${data.upcoming} scheduled.`}
-            </div>
-          ) : (
-            <>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr",
-                borderBottom:`1px solid ${C.rule}` }}>
-                <StatCell label={`${aT.abbr} runs · hits`} value={`${data.ar} · ${data.ah}`}
-                  sub={`${(data.ar/data.finals.length).toFixed(1)} R/g`} />
-                <StatCell label={`${bT.abbr} runs · hits`} value={`${data.br} · ${data.bh}`}
-                  sub={`${(data.br/data.finals.length).toFixed(1)} R/g`} />
+      {sel && <H2HModal {...sel} season={season} onClose={()=>setSel(null)} />}
+    </div>
+  );
+}
+
+function H2HModal({ aId, bId, aName, bName, season, onClose }) {
+  const [data, setData] = useState(undefined);   // undefined = loading
+  const [err, setErr] = useState("");
+  const aAbbr = TEAM_ABBR[aId]||"?", bAbbr = TEAM_ABBR[bId]||"?";
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/schedule?sportId=1&season=${season}&gameType=R&teamId=${aId}&hydrate=linescore`);
+        if (!r.ok) throw new Error(`schedule ${r.status}`);
+        const j = await r.json();
+        const games = (j.dates||[]).flatMap(d=>d.games||[])
+          .filter(g=>g.teams.home.team.id===bId || g.teams.away.team.id===bId)
+          .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
+        const finals=[]; let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
+        games.forEach(g=>{
+          const aHome = g.teams.home.team.id===aId;
+          const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
+          const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
+          const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
+          if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
+            finals.push({ date:g.officialDate||g.gameDate.slice(0,10), aS, bS, aHits, bHits, aHome });
+            ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
+            if (aS>bS) aw++; else if (bS>aS) bw++;
+          } else upcoming++;
+        });
+        if (alive) setData({ aw,bw,ar,br,ah,bh,finals,upcoming });
+      } catch (e) {
+        if (alive) setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
+      }
+    })();
+    return () => { alive = false; };
+  }, [aId, bId, season]);
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
+      justifyContent:"center", padding:18, overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
+        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:600, width:"100%",
+        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+          display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+          <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>
+            {aName} <span style={{ color:C.inkSoft, fontWeight:400 }}>vs</span> {bName}</span>
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
+        </div>
+
+        <div style={{ padding:"14px 18px 18px" }}>
+          {err && <ErrBox>{err}</ErrBox>}
+          {data===undefined && !err && (
+            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading season series…</div>)}
+          {data && (
+            data.finals.length===0 ? (
+              <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
+                No completed matchups yet this season.{data.upcoming>0 && ` ${data.upcoming} scheduled.`}
               </div>
-              <div style={{ padding:"6px 0" }}>
-                <div style={{ display:"grid", gridTemplateColumns:"90px 1fr auto", gap:8,
-                  padding:"4px 16px", fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em",
-                  textTransform:"uppercase", color:C.ruleDark }}>
-                  <span>Date</span><span>Result</span><span>at</span>
+            ) : (
+              <>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                  marginBottom:12, flexWrap:"wrap", gap:8 }}>
+                  <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.1em",
+                    textTransform:"uppercase", color:C.inkSoft }}>Season series</span>
+                  <span style={{ fontFamily:MONO, fontSize:16, fontWeight:700 }}>
+                    <span style={{ color: data.aw>data.bw?C.over:C.ink }}>{aAbbr} {data.aw}</span>
+                    <span style={{ color:C.ruleDark }}> – </span>
+                    <span style={{ color: data.bw>data.aw?C.over:C.ink }}>{data.bw} {bAbbr}</span>
+                  </span>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", border:`1px solid ${C.rule}`,
+                  borderRadius:3, overflow:"hidden", marginBottom:14 }}>
+                  <StatCell label={`${aAbbr} runs · hits`} value={`${data.ar} · ${data.ah}`}
+                    sub={`${(data.ar/data.finals.length).toFixed(1)} R/g`} />
+                  <StatCell label={`${bAbbr} runs · hits`} value={`${data.br} · ${data.bh}`}
+                    sub={`${(data.br/data.finals.length).toFixed(1)} R/g`} />
                 </div>
                 {data.finals.map((f,i)=>{
                   const aWon=f.aS>f.bS;
                   return (
-                  <div key={i} style={{ display:"grid", gridTemplateColumns:"90px 1fr auto", gap:8,
-                    padding:"6px 16px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
+                  <div key={i} style={{ display:"grid", gridTemplateColumns:"86px 1fr auto", gap:8,
+                    padding:"6px 2px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
                     <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>{f.date}</span>
                     <span style={{ fontFamily:MONO, fontSize:13 }}>
-                      <span style={{ fontWeight:aWon?800:400, color:aWon?C.ink:C.inkSoft }}>{aT.abbr} {f.aS}</span>
+                      <span style={{ fontWeight:aWon?800:400, color:aWon?C.ink:C.inkSoft }}>{aAbbr} {f.aS}</span>
                       <span style={{ color:C.ruleDark }}> – </span>
-                      <span style={{ fontWeight:!aWon?800:400, color:!aWon?C.ink:C.inkSoft }}>{f.bS} {bT.abbr}</span>
+                      <span style={{ fontWeight:!aWon?800:400, color:!aWon?C.ink:C.inkSoft }}>{f.bS} {bAbbr}</span>
                     </span>
-                    <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-                      {f.aHome ? aT.abbr : bT.abbr}</span>
+                    <span style={{ fontFamily:MONO, fontSize:10.5, color:C.inkSoft }}>
+                      @{f.aHome ? aAbbr : bAbbr}</span>
                   </div>
                 );})}
-              </div>
-              {data.upcoming>0 && (
-                <div style={{ padding:"10px 16px", borderTop:`1px solid ${C.rule}`,
-                  fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-                  {data.upcoming} more scheduled this season.</div>
-              )}
-            </>
+                {data.upcoming>0 && (
+                  <div style={{ marginTop:10, fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+                    {data.upcoming} more scheduled this season.</div>
+                )}
+              </>
+            )
           )}
         </div>
-      )}
-
-      {!data && !busy && !err && (
-        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft, padding:"8px 0" }}>
-          Pick two teams to see their {season} season series.
-        </div>
-      )}
+      </div>
     </div>
   );
 }
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(150px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:150px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:166px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
 @media (max-width:760px){
@@ -1349,7 +1394,7 @@ export default function App() {
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
       <style>{RESPONSIVE_CSS}</style>
-      <div style={{ maxWidth:1180, margin:"0 auto" }}>
+      <div style={{ maxWidth:1260, margin:"0 auto" }}>
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
             textTransform:"uppercase", color:C.inkSoft }}>Research Terminal · MLB live</div>
