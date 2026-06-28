@@ -714,68 +714,49 @@ function TravelTrends() {
         }).sort((a,b)=>a.time.localeCompare(b.time));
       };
 
-      // ── lay games out so a series (same matchup on consecutive days) keeps the
-      //    same row across those days; everything else fills from the top by time ──
+      // ── ordering: past columns follow TODAY's matchup order, future columns
+      //    follow TOMORROW's; today & tomorrow are the reference columns ──
       const DATES = [];
-      for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));
-      const perDay = DATES.map(d=>buildList(d));          // games per column, by time
+      for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));   // index 0..6, offset i = idx-2
+      const perDay = DATES.map(d=>buildList(d));
 
-      // gather each matchup's appearances (which day index), then split into
-      // contiguous runs (a "series segment")
+      // mark games that belong to a 2+ day series (for the checkerboard shade)
       const byPair = {};
       perDay.forEach((games, di)=>games.forEach(g=>{
         (byPair[g.pair] = byPair[g.pair]||[]).push({ di, g });
       }));
-      const segments = [];
       Object.values(byPair).forEach(apps=>{
         apps.sort((a,b)=>a.di-b.di);
         let run = [apps[0]];
+        const flush = (r)=>{ if (r.length>=2) r.forEach(x=>{ x.g.series = true; }); };
         for (let k=1;k<apps.length;k++){
           if (apps[k].di === run[run.length-1].di + 1) run.push(apps[k]);
-          else { segments.push(run); run = [apps[k]]; }
+          else { flush(run); run = [apps[k]]; }
         }
-        segments.push(run);
-      });
-      const multi = segments.filter(r=>r.length>=2)
-        .map(run=>({ cells:run, startIdx:run[0].di, endIdx:run[run.length-1].di,
-          firstTime:run[0].g.time }))
-        .sort((a,b)=> a.startIdx-b.startIdx || a.firstTime.localeCompare(b.firstTime));
-
-      // assign each multi-day series a row (lane) via interval scheduling,
-      // plus a checkerboard shade (alternates down lanes and across lane reuse)
-      const laneEnd = [];
-      const laneCount = [];
-      multi.forEach(seg=>{
-        let lane = laneEnd.findIndex(e=> e < seg.startIdx);
-        if (lane === -1) { lane = laneEnd.length; laneEnd.push(seg.endIdx); laneCount.push(0); }
-        else laneEnd[lane] = seg.endIdx;
-        seg.lane = lane;
-        seg.shade = (lane + laneCount[lane]) % 2;
-        laneCount[lane]++;
+        flush(run);
       });
 
-      const grid = laneEnd.map(()=>DATES.map(()=>null));   // [row][dayIdx]
-      const placed = new Set();                            // "di:pair" already placed
-      multi.forEach(seg=>seg.cells.forEach(c=>{
-        c.g.seriesLane = seg.lane;                         // subtle grouping accent
-        c.g.seriesShade = seg.shade;
-        grid[seg.lane][c.di] = c.g; placed.add(c.di+":"+c.g.pair);
-      }));
-
-      // fill remaining (non-series, or series gaps) per day into lowest empty rows by time
-      DATES.forEach((d, di)=>{
-        const rest = perDay[di].filter(g=>!placed.has(di+":"+g.pair));
-        let r = 0;
-        rest.forEach(g=>{
-          while (true) {
-            if (r >= grid.length) grid.push(DATES.map(()=>null));
-            if (grid[r][di] === null) { grid[r][di] = g; r++; break; }
-            r++;
-          }
+      const todayList = perDay[2], tomorrowList = perDay[3];
+      const todayPairs = todayList.map(g=>g.pair);
+      const tomorrowPairs = tomorrowList.map(g=>g.pair);
+      const alignTo = (list, refPairs) => {
+        const used = new Set();
+        const aligned = refPairs.map(pk=>{
+          const idx = list.findIndex((g,i)=>g.pair===pk && !used.has(i));
+          if (idx === -1) return null;
+          used.add(idx); return list[idx];
         });
-      });
+        const leftovers = list.filter((g,i)=>!used.has(i));
+        return [...aligned, ...leftovers];
+      };
 
-      const out = DATES.map((d, di)=>({ date:d, games: grid.map(row=>row[di]) }));
+      const out = DATES.map((d, di)=>{
+        const offset = di - 2;
+        if (offset === 0) return { date:d, games: todayList };       // today (reference)
+        if (offset === 1) return { date:d, games: tomorrowList };    // tomorrow (reference)
+        const ref = offset < 0 ? todayPairs : tomorrowPairs;
+        return { date:d, games: alignTo(perDay[di], ref) };
+      });
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
@@ -967,7 +948,7 @@ function TravelTrends() {
                       if (!g) return <div key={i} style={{ minHeight:50, borderRadius:2,
                         border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />;
                       const t = gameTrends(d.date, g);
-                      return <CalCard key={i} g={g} t={t}
+                      return <CalCard key={i} g={g} t={t} rowIndex={i}
                         onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />;
                     });
                   })()}
@@ -1051,13 +1032,13 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
 /* alternating shades so series read as grouped, checkerboard down the lanes */
 const SERIES_SHADE = ["#E2E5EA", "#ECE7DF"];
 
-function CalCard({ g, t, onOpen }) {
+function CalCard({ g, t, onOpen, rowIndex }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
+  const bg = g.series ? SERIES_SHADE[rowIndex % 2] : "#fff";
   return (
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
