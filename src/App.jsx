@@ -761,27 +761,18 @@ function TravelTrends() {
         return { date:d, games: alignTo(perDay[di], ref) };
       });
 
-      // ── series-aware checkerboard: 2-color series so no two touching share a shade ──
+      // ── series shading: two tints alternate down each column of series,
+      //    the other two down the next column to the right ──
       const cell = (c, r) => out[c]?.games[r] || null;
       const R = Math.max(0, ...out.map(o=>o.games.length));
-      const adj = {};                                   // sid -> Set of neighbor sids
-      const link = (a,b)=>{ if(a==null||b==null||a===b) return;
-        (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); };
+      const pos = {};                                   // sid -> {col, row} of leftmost cell
       for (let r=0;r<R;r++) for (let c=0;c<out.length;c++){
         const g = cell(c,r); if (!g || g.sid==null) continue;
-        const right = cell(c+1, r), down = cell(c, r+1);
-        if (right && right.sid!=null) link(g.sid, right.sid);
-        if (down && down.sid!=null) link(g.sid, down.sid);
+        if (!pos[g.sid] || c < pos[g.sid].col) pos[g.sid] = { col:c, row:r };
       }
-      const shadeOf = {};
-      const N = SERIES_SHADE.length;
-      for (let id=0; id<sid; id++){
-        const used = new Set();
-        (adj[id]||[]).forEach(n=>{ if (shadeOf[n]!=null) used.add(shadeOf[n]); });
-        let k=0; while (k<N-1 && used.has(k)) k++;        // lowest free shade
-        shadeOf[id] = k;
-      }
-      out.forEach(o=>o.games.forEach(g=>{ if (g && g.sid!=null) g.seriesShade = shadeOf[g.sid]; }));
+      out.forEach(o=>o.games.forEach(g=>{
+        if (g && g.sid!=null){ const p=pos[g.sid]; g.seriesShade = (p.col%2)*2 + (p.row%2); }
+      }));
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
@@ -1064,9 +1055,10 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   );
 }
 
-/* a small cohesive palette of muted tints; 4 colors so the series graph can
-   always be colored without two adjacent series sharing a shade */
-const SERIES_SHADE = ["#E3E7EC", "#E9E5DD", "#E1EAE4", "#E9E2E8"];
+/* series tints, indexed (col%2)*2 + (row%2):
+   even columns alternate light-gray / white going down,
+   odd columns alternate soft-navy / darker-gray going down */
+const SERIES_SHADE = ["#E7E9EC", "#FFFFFF", "#BCC7D8", "#D3D7DC"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
