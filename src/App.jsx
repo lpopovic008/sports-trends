@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine,
+  ComposedChart, Bar, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
@@ -156,7 +156,7 @@ function DaySheet() {
     return {
       h: last5.map(s=>valOf(s.stat,"hits")),
       tb: last5.map(s=>valOf(s.stat,"totalBases")),
-      k: last5.map(s=>valOf(s.stat,"strikeOuts")),
+      hrr: last5.map(s=>valOf(s.stat,"hits+runs+rbi")),
       avg,
     };
   }, [season, date]);
@@ -241,7 +241,7 @@ function DaySheet() {
       {games && games.map((g)=>(
         <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
           onLoad={()=>loadGame(g)}
-          onPickPlayer={(name)=>setPick({ name, ts:Date.now() })} />
+          onPick={(name, stat)=>setPick({ name, stat, ts:Date.now() })} />
       ))}
 
       {pick && <PropModal injected={pick.name ? pick : null} onClose={()=>setPick(null)} />}
@@ -283,7 +283,7 @@ function ProbLine({ g }) {
   );
 }
 
-function GameCard({ g, data, onLoad, onPickPlayer }) {
+function GameCard({ g, data, onLoad, onPick }) {
   const tz = TEAM_TZ[g.teams.home.team.id] ?? "?";
   const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   return (
@@ -308,14 +308,17 @@ function GameCard({ g, data, onLoad, onPickPlayer }) {
         <div style={{ padding:14, fontFamily:SANS, fontSize:13, color:C.under }}>Couldn’t load: {data.msg}</div>)}
       {data?.status==="done" && (
         <div className="ts-lineups">
-          <LineupCol side={data.away} borderRight onPickPlayer={onPickPlayer} />
-          <LineupCol side={data.home} onPickPlayer={onPickPlayer} />
+          <LineupCol side={data.away} borderRight onPick={onPick} />
+          <LineupCol side={data.home} onPick={onPick} />
         </div>)}
     </div>
   );
 }
 
-function LineupCol({ side, borderRight, onPickPlayer }) {
+/* shared column template so header + every row line up exactly */
+const ROW_COLS = "14px minmax(40px,1fr) 32px repeat(3, 66px)";
+
+function LineupCol({ side, borderRight, onPick }) {
   return (
     <div className="ts-lineup-col" style={{ borderRight: borderRight?`1px solid ${C.rule}`:"none" }}>
       <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
@@ -326,31 +329,30 @@ function LineupCol({ side, borderRight, onPickPlayer }) {
           : <Tag>No lineup</Tag>}
       </div>
       <div style={{ padding:"4px 0" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"18px 1fr auto",
-          gap:8, padding:"2px 12px", fontFamily:MONO, fontSize:9.5, letterSpacing:"0.08em",
-          textTransform:"uppercase", color:C.ruleDark }}>
-          <span>#</span><span>Hitter · mo. AVG</span><span>H · TB · K (L5)</span>
+        <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
+          fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
+          color:C.ruleDark, alignItems:"center" }}>
+          <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
+          <span style={{ textAlign:"center" }}>H</span>
+          <span style={{ textAlign:"center" }}>TB</span>
+          <span style={{ textAlign:"center" }}>HRR</span>
         </div>
         {side.players.length===0 && (
           <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>)}
         {side.players.map((p)=>{
           const hot = nameStreak(p);
           return (
-          <div key={p.id} style={{ display:"grid", gridTemplateColumns:"18px 1fr auto",
-            gap:8, padding:"4px 12px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
+          <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
+            padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
-            <span style={{ fontFamily:SANS, fontSize:13, display:"flex", alignItems:"baseline", gap:6 }}>
-              {hot ? (
-                <button onClick={()=>onPickPlayer && onPickPlayer(p.name)}
-                  title="Analyze this player in Prop Lookup"
-                  style={{ font:"inherit", cursor:"pointer", border:"none",
-                    background:"rgba(255,233,77,0.65)", padding:"1px 4px", borderRadius:1,
-                    boxShadow:`inset 0 0 0 1px ${C.markerDeep}`, color:C.ink }}>
-                  {p.name}</button>
-              ) : <span>{p.name}</span>}
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{p.avg || "—"}</span>
-            </span>
-            <Seqs h={p.h} tb={p.tb} k={p.k} />
+            <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
+              overflow:"hidden", textOverflow:"ellipsis",
+              background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}
+              title={p.name}>{p.name}</span>
+            <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
+            <SeqBlock arr={p.h} statKey="hits" label="hits" onPick={onPick && (()=>onPick(p.name,"hits"))} />
+            <SeqBlock arr={p.tb} statKey="totalBases" label="total bases" onPick={onPick && (()=>onPick(p.name,"totalBases"))} />
+            <SeqBlock arr={p.hrr} statKey="hits+runs+rbi" label="H+R+RBI" onPick={onPick && (()=>onPick(p.name,"hits+runs+rbi"))} />
           </div>
         );})}
       </div>
@@ -360,8 +362,7 @@ function LineupCol({ side, borderRight, onPickPlayer }) {
 
 /* color category per stat value, then test if the last 3 share one color */
 const CAT = {
-  ht: (v)=> v===0 ? "r" : v>=2 ? "g" : "b",   // hits / total bases
-  k:  (v)=> v>=1 ? "r" : "b",                  // strikeouts (no green)
+  ht: (v)=> v===0 ? "r" : v>=2 ? "g" : "b",   // hits / total bases / HRR
 };
 function last3Same(arr, fn) {
   if (!arr || arr.length < 3) return null;
@@ -370,50 +371,43 @@ function last3Same(arr, fn) {
   if (c.every(x=>x==="g")) return "g";
   return null;
 }
-/* hot if ANY of H / TB / K has its last 3 all red or all green */
+/* hot if ANY of H / TB / HRR has its last 3 all red or all green */
 function nameStreak(p) {
-  return [last3Same(p.h, CAT.ht), last3Same(p.tb, CAT.ht), last3Same(p.k, CAT.k)]
+  return [last3Same(p.h, CAT.ht), last3Same(p.tb, CAT.ht), last3Same(p.hrr, CAT.ht)]
     .some(x => x === "r" || x === "g");
 }
 
-/* three compact last-5 sequences, each colored by its own rule;
-   the sequence that hit a 3-in-a-row (all red or all green) gets the marker */
-function Seqs({ h, tb, k }) {
-  const cell = (v, color) => (
-    <span style={{ display:"inline-block", width:13, textAlign:"center",
-      fontFamily:MONO, fontSize:12, color }}>{v}</span>
-  );
-  const hueH  = (v)=> v===0 ? C.under : v>=2 ? C.over : C.ink;  // 0 red · 1 black · 2+ green
-  const hueTB = (v)=> v===0 ? C.under : v>=2 ? C.over : C.ink;  // 0 red · <1.5 black · 2+ green
-  const hueK  = (v)=> v>=1 ? C.under : C.ink;                   // 1+ red · 0 black
-  const mark = (on) => on ? { background:"rgba(255,233,77,0.65)", borderRadius:1,
-    boxShadow:`inset 0 0 0 1px ${C.markerDeep}`, padding:"0 1px" } : undefined;
-  const row = (arr, hue, on) => (
-    <span style={{ display:"inline-block", ...mark(on) }}>
-      {arr.length ? arr.map((v,i)=>cell(v, hue(v))) :
-        <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>· · · · ·</span>}
+/* one stat's last-5 as a fixed 5-cell grid; marked + clickable when 3-in-a-row */
+function SeqBlock({ arr, label, onPick }) {
+  const on = !!last3Same(arr, CAT.ht);
+  const hue = (v)=> v===0 ? C.under : v>=2 ? C.over : C.ink;
+  const vals = arr && arr.length ? arr : [null,null,null,null,null];
+  const cells = (
+    <span style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", width:"100%" }}>
+      {vals.map((v,i)=>(
+        <span key={i} style={{ textAlign:"center", fontFamily:MONO, fontSize:11,
+          color: v==null ? C.ruleDark : hue(v) }}>{v==null ? "·" : v}</span>
+      ))}
     </span>
   );
-  return (
-    <span style={{ display:"flex", gap:10, alignItems:"center" }}>
-      <span title="hits">{row(h, hueH, !!last3Same(h, CAT.ht))}</span>
-      <span style={{ color:C.rule }}>|</span>
-      <span title="total bases">{row(tb, hueTB, !!last3Same(tb, CAT.ht))}</span>
-      <span style={{ color:C.rule }}>|</span>
-      <span title="strikeouts">{row(k, hueK, !!last3Same(k, CAT.k))}</span>
-    </span>
-  );
+  const base = { display:"block", width:"100%", borderRadius:1, boxSizing:"border-box",
+    ...(on ? { background:"rgba(255,233,77,0.65)", boxShadow:`inset 0 0 0 1px ${C.markerDeep}` } : {}) };
+  if (on && onPick) {
+    return <button onClick={onPick} title={`Analyze ${label} prop`}
+      style={{ ...base, border:"none", padding:0, cursor:"pointer", font:"inherit" }}>{cells}</button>;
+  }
+  return <span style={base}>{cells}</span>;
 }
 
 /* ════════════════════════ PROP ANALYZER ════════════════════════ */
 function PropAnalyzer({ compact = false, injected = null }) {
-  const [season, setSeason] = useState(new Date().getFullYear());
+  const season = new Date().getFullYear();    // current season only
   const [name, setName] = useState("");
   const [group, setGroup] = useState("hitting");
   const [statKey, setStatKey] = useState("hits");
-  const [side, setSide] = useState("over");
+  const side = "over";                          // fixed
   const [line, setLine] = useState("1.5");
-  const [sampleN, setSampleN] = useState(10);
+  const [sampleN, setSampleN] = useState("20"); // "5"|"10"|"15"|"20"|"month"|"season"
   const [manual, setManual] = useState("");
   const [roster, setRoster] = useState(null);
   const [games, setGames] = useState(null);
@@ -434,14 +428,15 @@ function PropAnalyzer({ compact = false, injected = null }) {
   }, [roster]);
 
   const analyzeLive = useCallback(async (override) => {
-    const rawName = typeof override === "string" ? override : name;
+    const rawName = typeof override === "string" ? override : (override?.name ?? name);
+    const rawStat = (override && typeof override === "object" && override.stat) ? override.stat : statKey;
     setErr(""); setGames(null); setResolved(""); setLatest(null); setBusy(true);
     try {
       const people = await loadRoster(season);
       const q = rawName.trim().toLowerCase();
       if (!q) throw new Error("Enter a player name (or use manual entry).");
       const hits = people.filter(p=>(p.fullName||"").toLowerCase().includes(q));
-      if (!hits.length) throw new Error(`No ${season} MLB player matched "${rawName}". Try another season or manual entry.`);
+      if (!hits.length) throw new Error(`No ${season} MLB player matched "${rawName}".`);
       const player = hits[0];
       const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=${group}&season=${season}&gameType=R`);
       if (!r.ok) throw new Error(`game log ${r.status}`);
@@ -449,7 +444,7 @@ function PropAnalyzer({ compact = false, injected = null }) {
       const splits = j.stats?.[0]?.splits || [];
       if (!splits.length) throw new Error(`No ${season} game logs for ${player.fullName} in this group.`);
       const rows = splits.map(s=>({ date:s.date,
-        opp:s.opponent?.abbreviation||"", value:valOf(s.stat,statKey) }))
+        opp:s.opponent?.abbreviation||"", value:valOf(s.stat,rawStat) }))
         .sort((a,b)=>a.date.localeCompare(b.date));
       setLatest(rows[rows.length-1].date);
       setResolved(player.fullName); setGames(rows);
@@ -460,9 +455,13 @@ function PropAnalyzer({ compact = false, injected = null }) {
     } finally { setBusy(false); }
   }, [name, group, statKey, season, loadRoster]);
 
-  // when a player is clicked in the slate, fill the name and run
+  // clicking a stat in the slate fills name + stat and runs
   useEffect(() => {
-    if (injected && injected.name) { setName(injected.name); analyzeLive(injected.name); }
+    if (injected && injected.name) {
+      setName(injected.name);
+      if (injected.stat) { setGroup("hitting"); setStatKey(injected.stat); }
+      analyzeLive({ name:injected.name, stat:injected.stat });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injected?.ts]);
 
@@ -477,17 +476,26 @@ function PropAnalyzer({ compact = false, injected = null }) {
   const analysis = useMemo(() => {
     if (!games?.length) return null;
     const L = parseFloat(line);
-    const recent = games.slice(-sampleN);
+    let recent, sampleLabel;
+    if (sampleN === "season") {
+      recent = games; sampleLabel = "Season";
+    } else if (sampleN === "month") {
+      const mo = String(games[games.length-1].date).slice(0,7);
+      const m = games.filter(g=>String(g.date).startsWith(mo));
+      recent = m.length ? m : games; sampleLabel = "This month";
+    } else {
+      const n = Number(sampleN);
+      recent = games.slice(-n); sampleLabel = `Last ${n}`;
+    }
     const avg = (a)=>a.reduce((s,g)=>s+g.value,0)/a.length;
-    const clears = (g)=> side==="over" ? g.value>L : g.value<L;
+    const clears = (g)=> g.value>L;            // over
     const hitN = recent.filter(clears).length;
     let streak = 0;
     for (let i=games.length-1;i>=0;i--){ if(clears(games[i])) streak++; else break; }
     const recentAvg = avg(recent);
     return { L, recent, recentAvg, seasonAvg:avg(games), hitN,
-      hitRate:hitN/recent.length, streak,
-      edge: side==="over" ? recentAvg-L : L-recentAvg };
-  }, [games, line, sampleN, side]);
+      hitRate:hitN/recent.length, streak, sampleLabel, edge: recentAvg-L };
+  }, [games, line, sampleN]);
 
   const statLabel = statList.find(([k])=>k===statKey)?.[1] || statKey;
 
@@ -505,16 +513,16 @@ function PropAnalyzer({ compact = false, injected = null }) {
         <Field label="Stat"><select style={{ ...inputStyle, width:"100%" }} value={statKey}
           onChange={e=>setStatKey(e.target.value)}>
           {statList.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="Side"><select style={{ ...inputStyle, width:"100%" }} value={side}
-          onChange={e=>setSide(e.target.value)}>
-          <option value="over">Over</option><option value="under">Under</option></select></Field>
         <Field label="Line"><input style={{ ...inputStyle, width:"100%" }} value={line}
           inputMode="decimal" onChange={e=>setLine(e.target.value)} /></Field>
         <Field label="Sample"><select style={{ ...inputStyle, width:"100%" }} value={sampleN}
-          onChange={e=>setSampleN(Number(e.target.value))}>
-          {[5,10,15,20].map(n=><option key={n} value={n}>Last {n}</option>)}</select></Field>
-        <Field label="Season"><input style={{ ...inputStyle, width:"100%" }} value={season}
-          inputMode="numeric" onChange={e=>setSeason(e.target.value.replace(/\D/g,""))} /></Field>
+          onChange={e=>setSampleN(e.target.value)}>
+          <option value="5">Last 5</option>
+          <option value="10">Last 10</option>
+          <option value="15">Last 15</option>
+          <option value="20">Last 20</option>
+          <option value="month">This month</option>
+          <option value="season">Season</option></select></Field>
       </div>
 
       <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
@@ -538,8 +546,7 @@ function PropAnalyzer({ compact = false, injected = null }) {
       {latest && <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginBottom:14 }}>
         Latest game in data: <b style={{ color:C.ink }}>{latest}</b></div>}
       {err && <ErrBox>{err}</ErrBox>}
-      {analysis && <Results a={analysis} resolved={resolved} statLabel={statLabel}
-        side={side} sampleN={sampleN} />}
+      {analysis && <Results a={analysis} resolved={resolved} statLabel={statLabel} />}
     </div>
   );
 }
@@ -554,31 +561,31 @@ function StatCell({ label, value, sub, color }) {
     </div>
   );
 }
-function Results({ a, resolved, statLabel, side, sampleN }) {
+function Results({ a, resolved, statLabel }) {
   const edgeColor = a.edge>=0 ? C.over : C.under;
-  const chartData = a.recent.map(g=>({ name:(g.date.slice(5)||g.date), value:g.value,
-    clears: side==="over" ? g.value>a.L : g.value<a.L }));
+  const chartData = a.recent.map(g=>({ name:(String(g.date).slice(5)||g.date), value:g.value,
+    clears: g.value>a.L }));
   return (
     <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card, overflow:"hidden", marginTop:4 }}>
       <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.rule}`,
         display:"flex", justifyContent:"space-between", alignItems:"baseline", flexWrap:"wrap", gap:8 }}>
         <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>{resolved}</span>
         <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, textTransform:"uppercase",
-          letterSpacing:"0.08em" }}>{side} {a.L} {statLabel}</span>
+          letterSpacing:"0.08em" }}>over {a.L} {statLabel}</span>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",
         borderBottom:`1px solid ${C.rule}` }}>
-        <StatCell label={`Last ${sampleN} avg`} value={a.recentAvg.toFixed(2)} sub={`season ${a.seasonAvg.toFixed(2)}`} />
+        <StatCell label={`${a.sampleLabel} avg`} value={a.recentAvg.toFixed(2)} sub={`season ${a.seasonAvg.toFixed(2)}`} />
         <StatCell label="Edge vs line" color={edgeColor}
           value={`${a.edge>=0?"+":""}${a.edge.toFixed(2)}`} sub={a.edge>=0?"form beats line":"line beats form"} />
         <StatCell label="Hit rate" value={`${Math.round(a.hitRate*100)}%`} sub={`${a.hitN} / ${a.recent.length} cleared`}
           color={a.hitRate>=0.6?C.over:a.hitRate<=0.4?C.under:C.ink} />
-        <StatCell label="Streak" value={a.streak} sub={`game${a.streak===1?"":"s"} ${side}`}
+        <StatCell label="Streak" value={a.streak} sub={`game${a.streak===1?"":"s"} over`}
           color={a.streak>=3?C.over:C.ink} />
       </div>
       <div style={{ padding:"16px 12px 8px" }}>
         <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase",
-          color:C.inkSoft, padding:"0 6px 8px" }}>Game-by-game · bar clears line = {side}</div>
+          color:C.inkSoft, padding:"0 6px 8px" }}>Game-by-game · bar clears line = over</div>
         <ResponsiveContainer width="100%" height={210}>
           <ComposedChart data={chartData} margin={{ top:6, right:8, bottom:4, left:-18 }}>
             <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }}
@@ -591,7 +598,6 @@ function Results({ a, resolved, statLabel, side, sampleN }) {
             </Bar>
             <ReferenceLine y={a.L} stroke={C.ink} strokeWidth={1.5} strokeDasharray="4 3"
               label={{ value:`line ${a.L}`, position:"right", fontFamily:MONO, fontSize:10, fill:C.ink }} />
-            <Line type="monotone" dataKey="value" stroke={C.blue} strokeWidth={1.5} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
