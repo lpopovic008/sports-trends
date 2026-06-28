@@ -118,6 +118,7 @@ function DaySheet() {
   const [busy, setBusy] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
   const [err, setErr] = useState("");
+  const [pick, setPick] = useState(null);             // {name, ts} -> feeds Prop Lookup
 
   const loadSchedule = useCallback(async () => {
     setErr(""); setGames(null); setByPk({}); setBusy(true);
@@ -238,11 +239,15 @@ function DaySheet() {
 
         {games && games.map((g)=>(
           <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
-            onLoad={()=>loadGame(g)} />
+            onLoad={()=>loadGame(g)}
+            onPickPlayer={(name)=>{
+              setPick({ name, ts:Date.now() });
+              document.getElementById("prop-lookup")?.scrollIntoView({ behavior:"smooth", block:"start" });
+            }} />
         ))}
       </div>
 
-      <aside style={{ flex:"0 0 320px", maxWidth:"100%", position:"sticky", top:16 }}>
+      <aside id="prop-lookup" style={{ flex:"1 1 300px", maxWidth:"100%", position:"sticky", top:16 }}>
         <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card,
           padding:"0 16px 16px" }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.16em",
@@ -250,7 +255,7 @@ function DaySheet() {
             borderBottom:`2px solid ${C.ink}`, marginBottom:14 }}>
             Prop Lookup
           </div>
-          <PropAnalyzer compact />
+          <PropAnalyzer compact injected={pick} />
         </div>
       </aside>
     </div>
@@ -268,14 +273,14 @@ function ProbLine({ g }) {
   );
 }
 
-function GameCard({ g, data, onLoad }) {
+function GameCard({ g, data, onLoad, onPickPlayer }) {
   const tz = TEAM_TZ[g.teams.home.team.id] ?? "?";
   const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   return (
     <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, marginBottom:14, overflow:"hidden" }}>
       <div style={{ padding:"11px 14px", borderBottom:`1px solid ${C.rule}`, background:C.card,
         display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-        <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"baseline", gap:10, flexWrap:"wrap" }}>
           <span style={{ fontFamily:SANS, fontWeight:700, fontSize:15 }}>
             {g.teams.away.team.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.teams.home.team.name}
           </span>
@@ -292,17 +297,17 @@ function GameCard({ g, data, onLoad }) {
       {data?.status==="error" && (
         <div style={{ padding:14, fontFamily:SANS, fontSize:13, color:C.under }}>Couldn’t load: {data.msg}</div>)}
       {data?.status==="done" && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:0 }}>
-          <LineupCol side={data.away} borderRight />
-          <LineupCol side={data.home} />
+        <div className="ts-lineups">
+          <LineupCol side={data.away} borderRight onPickPlayer={onPickPlayer} />
+          <LineupCol side={data.home} onPickPlayer={onPickPlayer} />
         </div>)}
     </div>
   );
 }
 
-function LineupCol({ side, borderRight }) {
+function LineupCol({ side, borderRight, onPickPlayer }) {
   return (
-    <div style={{ borderRight: borderRight?`1px solid ${C.rule}`:"none" }}>
+    <div className="ts-lineup-col" style={{ borderRight: borderRight?`1px solid ${C.rule}`:"none" }}>
       <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
         display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <span style={{ fontFamily:SANS, fontWeight:600, fontSize:13 }}>{side.team}</span>
@@ -318,19 +323,26 @@ function LineupCol({ side, borderRight }) {
         </div>
         {side.players.length===0 && (
           <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>)}
-        {side.players.map((p)=>(
+        {side.players.map((p)=>{
+          const hot = nameStreak(p);
+          return (
           <div key={p.id} style={{ display:"grid", gridTemplateColumns:"18px 1fr auto",
             gap:8, padding:"4px 12px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
             <span style={{ fontFamily:SANS, fontSize:13, display:"flex", alignItems:"baseline", gap:6 }}>
-              <span style={ nameStreak(p) ? { background:"rgba(255,233,77,0.65)",
-                padding:"0 3px", borderRadius:1, boxShadow:`inset 0 0 0 1px ${C.markerDeep}` } : undefined }>
-                {p.name}</span>
+              {hot ? (
+                <button onClick={()=>onPickPlayer && onPickPlayer(p.name)}
+                  title="Analyze this player in Prop Lookup"
+                  style={{ font:"inherit", cursor:"pointer", border:"none",
+                    background:"rgba(255,233,77,0.65)", padding:"1px 4px", borderRadius:1,
+                    boxShadow:`inset 0 0 0 1px ${C.markerDeep}`, color:C.ink }}>
+                  {p.name}</button>
+              ) : <span>{p.name}</span>}
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{p.avg || "—"}</span>
             </span>
             <Seqs h={p.h} tb={p.tb} k={p.k} />
           </div>
-        ))}
+        );})}
       </div>
     </div>
   );
@@ -384,7 +396,7 @@ function Seqs({ h, tb, k }) {
 }
 
 /* ════════════════════════ PROP ANALYZER ════════════════════════ */
-function PropAnalyzer({ compact = false }) {
+function PropAnalyzer({ compact = false, injected = null }) {
   const [season, setSeason] = useState(new Date().getFullYear());
   const [name, setName] = useState("");
   const [group, setGroup] = useState("hitting");
@@ -411,14 +423,15 @@ function PropAnalyzer({ compact = false }) {
     return j.people||[];
   }, [roster]);
 
-  const analyzeLive = useCallback(async () => {
+  const analyzeLive = useCallback(async (override) => {
+    const rawName = typeof override === "string" ? override : name;
     setErr(""); setGames(null); setResolved(""); setLatest(null); setBusy(true);
     try {
       const people = await loadRoster(season);
-      const q = name.trim().toLowerCase();
+      const q = rawName.trim().toLowerCase();
       if (!q) throw new Error("Enter a player name (or use manual entry).");
       const hits = people.filter(p=>(p.fullName||"").toLowerCase().includes(q));
-      if (!hits.length) throw new Error(`No ${season} MLB player matched "${name}". Try another season or manual entry.`);
+      if (!hits.length) throw new Error(`No ${season} MLB player matched "${rawName}". Try another season or manual entry.`);
       const player = hits[0];
       const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=${group}&season=${season}&gameType=R`);
       if (!r.ok) throw new Error(`game log ${r.status}`);
@@ -436,6 +449,12 @@ function PropAnalyzer({ compact = false }) {
         : e.message);
     } finally { setBusy(false); }
   }, [name, group, statKey, season, loadRoster]);
+
+  // when a player is clicked in the slate, fill the name and run
+  useEffect(() => {
+    if (injected && injected.name) { setName(injected.name); analyzeLive(injected.name); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injected?.ts]);
 
   const analyzeManual = useCallback(() => {
     setErr(""); setResolved(""); setLatest(null);
@@ -808,14 +827,12 @@ function TravelTrends() {
         <div>
           <Eyebrow>7-day calendar · click a highlighted game</Eyebrow>
           <Legend />
-          <div style={{ display:"grid",
-            gridTemplateColumns:`repeat(${days.length}, minmax(150px,1fr))`,
-            gap:8, overflowX:"auto", paddingBottom:4 }}>
+          <div className="ts-cal" style={{ gap:8, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
               return (
-              <div key={d.date} style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
-                overflow:"hidden", minWidth:150 }}>
+              <div key={d.date} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
+                overflow:"hidden" }}>
                 <div style={{ padding:"8px 10px", borderBottom:`1px solid ${C.rule}`,
                   background:isToday?C.ink:C.card }}>
                   <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
@@ -883,27 +900,36 @@ const TREND_SLOTS = [
 function CalCard({ g, t, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+  const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
+  const awWon = final && g.awayScore > g.homeScore;
+  const hmWon = final && g.homeScore > g.awayScore;
   return (
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2,
-      padding:"6px 7px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
+      padding:"7px 8px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
       cursor: onOpen ? "pointer" : "default" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:4 }}>
-        <span style={{ fontFamily:MONO, fontSize:12, fontWeight:600 }}>
-          {aw}<span style={{ color:C.inkSoft }}>@</span>{hm}</span>
-        {g.isFinal && g.awayScore!=null && g.homeScore!=null ? (
-          <span style={{ fontFamily:MONO, fontSize:11, fontWeight:600 }}>
-            <span style={{ color: g.awayScore>g.homeScore?C.ink:C.inkSoft }}>{g.awayScore}</span>
-            <span style={{ color:C.ruleDark }}>–</span>
-            <span style={{ color: g.homeScore>g.awayScore?C.ink:C.inkSoft }}>{g.homeScore}</span>
-            <span style={{ color:C.ruleDark, marginLeft:3, fontSize:9 }}>F</span>
-          </span>
-        ) : (
+      {final ? (
+        <div style={{ fontFamily:MONO, fontSize:12.5 }}>
+          <div style={{ display:"flex", justifyContent:"space-between",
+            fontWeight: awWon?800:400, color: awWon?C.ink:C.inkSoft }}>
+            <span>{aw}</span><span>{g.awayScore}</span>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between",
+            fontWeight: hmWon?800:400, color: hmWon?C.ink:C.inkSoft }}>
+            <span>{hm}</span><span>{g.homeScore}</span>
+          </div>
+          <div style={{ fontFamily:MONO, fontSize:8.5, color:C.ruleDark, textAlign:"right",
+            marginTop:1 }}>FINAL</div>
+        </div>
+      ) : (
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:4 }}>
+          <span style={{ fontFamily:MONO, fontSize:12.5, fontWeight:600 }}>
+            {aw}<span style={{ color:C.inkSoft }}>@</span>{hm}</span>
           <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{time}</span>
-        )}
-      </div>
+        </div>
+      )}
       {/* fixed quadrant markers — every card shows the same slots, filled or empty */}
       <div style={{ display:"flex", gap:3, marginTop:5 }}>
         {TREND_SLOTS.map(slot=>{
@@ -1042,10 +1068,28 @@ function GameModal({ m, onClose }) {
 }
 
 /* ════════════════════════════ shell ════════════════════════════ */
+const RESPONSIVE_CSS = `
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(150px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:150px; }
+.ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
+.ts-app { padding:28px 18px 60px; }
+@media (max-width:760px){
+  .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
+            overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
+  .ts-cal-col { min-width:0; scroll-snap-align:start; }
+  .ts-lineups { grid-template-columns:1fr; }
+  .ts-lineup-col { border-right:none !important; }
+  .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
+  .ts-app { padding:18px 12px 48px; }
+}
+* { -webkit-tap-highlight-color: transparent; }
+`;
+
 export default function App() {
   const [tab, setTab] = useState("travel");
   return (
-    <div style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS, padding:"28px 18px 60px" }}>
+    <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
+      <style>{RESPONSIVE_CSS}</style>
       <div style={{ maxWidth:1040, margin:"0 auto" }}>
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
