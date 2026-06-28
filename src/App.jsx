@@ -31,6 +31,15 @@ const TEAM_ABBR = {
   135:"SD",136:"SEA",137:"SF",138:"STL",139:"TB",140:"TEX",141:"TOR",142:"MIN",
   143:"PHI",144:"ATL",145:"CWS",146:"MIA",147:"NYY",158:"MIL",
 };
+const TEAM_NAME = {
+  108:"Angels",109:"Diamondbacks",110:"Orioles",111:"Red Sox",112:"Cubs",113:"Reds",
+  114:"Guardians",115:"Rockies",116:"Tigers",117:"Astros",118:"Royals",119:"Dodgers",
+  120:"Nationals",121:"Mets",133:"Athletics",134:"Pirates",135:"Padres",136:"Mariners",
+  137:"Giants",138:"Cardinals",139:"Rays",140:"Rangers",141:"Blue Jays",142:"Twins",
+  143:"Phillies",144:"Braves",145:"White Sox",146:"Marlins",147:"Yankees",158:"Brewers",
+};
+const TEAMS = Object.keys(TEAM_ABBR).map(id=>({ id:Number(id), abbr:TEAM_ABBR[id], name:TEAM_NAME[id] }))
+  .sort((a,b)=>a.name.localeCompare(b.name));
 
 const HIT_STATS = [
   ["hits","Hits"],["totalBases","Total Bases"],["homeRuns","Home Runs"],
@@ -669,7 +678,7 @@ function TravelTrends() {
          fetch from 3 days back so the -2 day's travel has a "prev day". */
       const from = addDays(start,-3), to = addDays(start,4);
       const r = await fetch(`${API}/schedule?sportId=1&startDate=${from}&endDate=${to}` +
-        `&gameType=R&hydrate=probablePitcher`);
+        `&gameType=R&hydrate=probablePitcher,linescore`);
       if (!r.ok) throw new Error(`schedule ${r.status}`);
       const j = await r.json();
       const byTeamDate = {};   // teamId -> { date -> venueTz }
@@ -685,6 +694,7 @@ function TravelTrends() {
             awayId:away.id, awayName:away.name, venueTz, time:g.gameDate,
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
             isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score,
+            awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
@@ -743,6 +753,7 @@ function TravelTrends() {
       const grid = laneEnd.map(()=>DATES.map(()=>null));   // [row][dayIdx]
       const placed = new Set();                            // "di:pair" already placed
       multi.forEach(seg=>seg.cells.forEach(c=>{
+        c.g.seriesLane = seg.lane;                         // subtle grouping accent
         grid[seg.lane][c.di] = c.g; placed.add(c.di+":"+c.g.pair);
       }));
 
@@ -1003,16 +1014,18 @@ const TREND_SLOTS = [
     title:(t)=>t.travelers.map(x=>`${x.tname} ${x.from}→${x.to} · back-to-back`).join("; ") },
 ];
 
-function TeamRow({ abbr, score, won, final, teamId, t }) {
+function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   const keys = t.keysFor(teamId);
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"28px 13px 1fr", alignItems:"center", gap:3 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"24px 13px 18px 1fr", alignItems:"center", gap:2 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
         color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
+      <span style={{ fontFamily:MONO, fontSize:9.5, textAlign:"right", color:C.ruleDark }}>
+        {final && hits!=null ? `${hits}h` : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
@@ -1030,23 +1043,29 @@ function TeamRow({ abbr, score, won, final, teamId, t }) {
   );
 }
 
+/* muted accents so stacked series are subtly distinguishable */
+const SERIES_TINTS = ["#9FB3C2","#C2A99F","#9FC2A8","#B89FC2","#C2BC9F"];
+
 function CalCard({ g, t, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
+  const tint = g.seriesLane!=null ? SERIES_TINTS[g.seriesLane % SERIES_TINTS.length] : null;
   return (
     <div onClick={onOpen||undefined}
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
-      style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`, borderRadius:2, boxSizing:"border-box",
+      style={{ border:`1px solid ${t.any?C.markerDeep:C.rule}`,
+      borderLeft: tint ? `3px solid ${tint}` : `1px solid ${t.any?C.markerDeep:C.rule}`,
+      borderRadius:2, boxSizing:"border-box",
       minHeight:50, padding:"4px 6px", background: t.any ? "rgba(255,233,77,0.18)" : "#fff",
       cursor: onOpen ? "pointer" : "default" }}>
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
-      <TeamRow abbr={aw} score={g.awayScore} won={awWon} final={final} teamId={g.awayId} t={t} />
-      <TeamRow abbr={hm} score={g.homeScore} won={hmWon} final={final} teamId={g.homeId} t={t} />
+      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} teamId={g.awayId} t={t} />
+      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} teamId={g.homeId} t={t} />
     </div>
   );
 }
@@ -1179,6 +1198,134 @@ function GameModal({ m, onClose }) {
   );
 }
 
+/* ════════════════════════ HEAD TO HEAD ════════════════════════ */
+function H2HTab() {
+  const season = new Date().getFullYear();
+  const [aId, setAId] = useState("");
+  const [bId, setBId] = useState("");
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const run = useCallback(async (A, B) => {
+    if (!A || !B || A===B) { setData(null); return; }
+    setErr(""); setBusy(true); setData(null);
+    try {
+      const r = await fetch(`${API}/schedule?sportId=1&season=${season}&gameType=R&teamId=${A}&hydrate=linescore`);
+      if (!r.ok) throw new Error(`schedule ${r.status}`);
+      const j = await r.json();
+      const games = (j.dates||[]).flatMap(d=>d.games||[])
+        .filter(g=>g.teams.home.team.id===Number(B) || g.teams.away.team.id===Number(B))
+        .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
+      const finals=[]; let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
+      games.forEach(g=>{
+        const aHome = g.teams.home.team.id===Number(A);
+        const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
+        const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
+        const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
+        if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
+          finals.push({ date:g.officialDate||g.gameDate.slice(0,10), aS, bS, aHits, bHits, aHome });
+          ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
+          if (aS>bS) aw++; else if (bS>aS) bw++;
+        } else upcoming++;
+      });
+      setData({ aw,bw,ar,br,ah,bh,finals,upcoming });
+    } catch (e) {
+      setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
+    } finally { setBusy(false); }
+  }, [season]);
+
+  useEffect(()=>{ run(aId, bId); /* eslint-disable-next-line */ }, [aId, bId]);
+
+  const aT = TEAMS.find(t=>t.id===Number(aId)), bT = TEAMS.find(t=>t.id===Number(bId));
+  const sel = (val, setVal, other, label) => (
+    <Field label={label}>
+      <select style={{ ...inputStyle, minWidth:150 }} value={val} onChange={e=>setVal(e.target.value)}>
+        <option value="">Select…</option>
+        {TEAMS.map(t=><option key={t.id} value={t.id} disabled={String(t.id)===other}>{t.name}</option>)}
+      </select>
+    </Field>
+  );
+
+  return (
+    <div>
+      <Eyebrow n="01">Head to head · {season} season series</Eyebrow>
+      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-end", marginBottom:18 }}>
+        {sel(aId, setAId, bId, "Team A")}
+        <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, paddingBottom:10 }}>vs</span>
+        {sel(bId, setBId, aId, "Team B")}
+        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, paddingBottom:10 }}>loading…</span>}
+      </div>
+
+      {err && <ErrBox>{err}</ErrBox>}
+
+      {data && aT && bT && (
+        <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card, overflow:"hidden" }}>
+          <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.rule}`,
+            display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+            <span style={{ fontFamily:SANS, fontWeight:700, fontSize:17 }}>
+              {aT.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>vs</span> {bT.name}</span>
+            <span style={{ fontFamily:MONO, fontSize:15, fontWeight:700 }}>
+              <span style={{ color: data.aw>data.bw?C.over:C.ink }}>{data.aw}</span>
+              <span style={{ color:C.ruleDark }}> – </span>
+              <span style={{ color: data.bw>data.aw?C.over:C.ink }}>{data.bw}</span>
+            </span>
+          </div>
+
+          {data.finals.length===0 ? (
+            <div style={{ padding:"16px", fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
+              No completed matchups yet this season.{data.upcoming>0 && ` ${data.upcoming} scheduled.`}
+            </div>
+          ) : (
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr",
+                borderBottom:`1px solid ${C.rule}` }}>
+                <StatCell label={`${aT.abbr} runs · hits`} value={`${data.ar} · ${data.ah}`}
+                  sub={`${(data.ar/data.finals.length).toFixed(1)} R/g`} />
+                <StatCell label={`${bT.abbr} runs · hits`} value={`${data.br} · ${data.bh}`}
+                  sub={`${(data.br/data.finals.length).toFixed(1)} R/g`} />
+              </div>
+              <div style={{ padding:"6px 0" }}>
+                <div style={{ display:"grid", gridTemplateColumns:"90px 1fr auto", gap:8,
+                  padding:"4px 16px", fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em",
+                  textTransform:"uppercase", color:C.ruleDark }}>
+                  <span>Date</span><span>Result</span><span>at</span>
+                </div>
+                {data.finals.map((f,i)=>{
+                  const aWon=f.aS>f.bS;
+                  return (
+                  <div key={i} style={{ display:"grid", gridTemplateColumns:"90px 1fr auto", gap:8,
+                    padding:"6px 16px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
+                    <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>{f.date}</span>
+                    <span style={{ fontFamily:MONO, fontSize:13 }}>
+                      <span style={{ fontWeight:aWon?800:400, color:aWon?C.ink:C.inkSoft }}>{aT.abbr} {f.aS}</span>
+                      <span style={{ color:C.ruleDark }}> – </span>
+                      <span style={{ fontWeight:!aWon?800:400, color:!aWon?C.ink:C.inkSoft }}>{f.bS} {bT.abbr}</span>
+                    </span>
+                    <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+                      {f.aHome ? aT.abbr : bT.abbr}</span>
+                  </div>
+                );})}
+              </div>
+              {data.upcoming>0 && (
+                <div style={{ padding:"10px 16px", borderTop:`1px solid ${C.rule}`,
+                  fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+                  {data.upcoming} more scheduled this season.</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {!data && !busy && !err && (
+        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft, padding:"8px 0" }}>
+          Pick two teams to see their {season} season series.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(150px,1fr)); overflow-x:auto; }
@@ -1211,7 +1358,7 @@ export default function App() {
         </header>
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:22 }} />
         <div style={{ display:"flex", gap:4, marginBottom:24, flexWrap:"wrap" }}>
-          {[["travel","My Trends"],["day","Daily Slate"]].map(([id,lbl])=>(
+          {[["travel","My Trends"],["day","Daily Slate"],["h2h","Head to Head"]].map(([id,lbl])=>(
             <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
               border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
               background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
@@ -1219,7 +1366,7 @@ export default function App() {
               cursor:"pointer" }}>{lbl}</button>))}
         </div>
 
-        {tab==="day" ? <DaySheet/> : <TravelTrends/>}
+        {tab==="day" ? <DaySheet/> : tab==="h2h" ? <H2HTab/> : <TravelTrends/>}
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
