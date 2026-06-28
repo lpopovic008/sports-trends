@@ -212,52 +212,62 @@ function DaySheet() {
   }, [games, loadGame]);
 
   return (
-    <div style={{ display:"flex", gap:22, alignItems:"flex-start", flexWrap:"wrap" }}>
-      <div style={{ flex:"1 1 520px", minWidth:0 }}>
-        <Eyebrow n="01">Day sheet · starting nine, last 5 games</Eyebrow>
+    <div>
+      <Eyebrow n="01">Day sheet · starting nine, last 5 games</Eyebrow>
 
-        <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
-          <Field label="Date">
-            <input type="date" style={inputStyle} value={date}
-              onChange={e=>setDate(e.target.value)} />
-          </Field>
-          <button onClick={loadSchedule} disabled={busy} style={btn(true)}>
-            {busy ? "Loading…" : "Load slate"}</button>
-          {games && games.length>0 && (
-            <button onClick={loadAll} disabled={loadingAll} style={btn(false)}>
-              {loadingAll ? "Loading all…" : "Load all lineups"}</button>
-          )}
-        </div>
-
-        {err && <ErrBox>{err}</ErrBox>}
-
-        {games && games.length===0 && (
-          <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft, padding:"18px 0" }}>
-            No games scheduled on {prettyDay(date)}. Pick a date during the season.
-          </div>
+      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
+        <Field label="Date">
+          <input type="date" style={inputStyle} value={date}
+            onChange={e=>setDate(e.target.value)} />
+        </Field>
+        <button onClick={loadSchedule} disabled={busy} style={btn(true)}>
+          {busy ? "Loading…" : "Load slate"}</button>
+        {games && games.length>0 && (
+          <button onClick={loadAll} disabled={loadingAll} style={btn(false)}>
+            {loadingAll ? "Loading all…" : "Load all lineups"}</button>
         )}
-
-        {games && games.map((g)=>(
-          <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
-            onLoad={()=>loadGame(g)}
-            onPickPlayer={(name)=>{
-              setPick({ name, ts:Date.now() });
-              document.getElementById("prop-lookup")?.scrollIntoView({ behavior:"smooth", block:"start" });
-            }} />
-        ))}
+        <button onClick={()=>setPick({ name:"", ts:Date.now() })} style={btn(false)}>
+          Prop Lookup</button>
       </div>
 
-      <aside id="prop-lookup" style={{ flex:"1 1 300px", maxWidth:"100%", position:"sticky", top:16 }}>
-        <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card,
-          padding:"0 16px 16px" }}>
-          <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.16em",
-            textTransform:"uppercase", color:C.inkSoft, padding:"13px 0 11px",
-            borderBottom:`2px solid ${C.ink}`, marginBottom:14 }}>
-            Prop Lookup
-          </div>
-          <PropAnalyzer compact injected={pick} />
+      {err && <ErrBox>{err}</ErrBox>}
+
+      {games && games.length===0 && (
+        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft, padding:"18px 0" }}>
+          No games scheduled on {prettyDay(date)}. Pick a date during the season.
         </div>
-      </aside>
+      )}
+
+      {games && games.map((g)=>(
+        <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
+          onLoad={()=>loadGame(g)}
+          onPickPlayer={(name)=>setPick({ name, ts:Date.now() })} />
+      ))}
+
+      {pick && <PropModal injected={pick.name ? pick : null} onClose={()=>setPick(null)} />}
+    </div>
+  );
+}
+
+function PropModal({ injected, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
+      justifyContent:"center", padding:18, overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
+        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:560, width:"100%",
+        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+          display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.16em",
+            textTransform:"uppercase", color:C.inkSoft }}>Prop Lookup</span>
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ padding:"14px 18px 18px" }}>
+          <PropAnalyzer compact injected={injected} />
+        </div>
+      </div>
     </div>
   );
 }
