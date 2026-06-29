@@ -819,63 +819,88 @@ function TravelTrends() {
         }).sort((a,b)=>a.time.localeCompare(b.time));
       };
 
-      // ── global row assignment: each unique matchup (pair) gets one fixed row
-      //    determined by its first appearance anywhere in the window.
-      //    Within a day, games not yet assigned a row fill in by start time.
-      //    This eliminates gaps from series that haven't started from today's POV. ──
+      // ── Calendar layout ──────────────────────────────────────────────
+      // Core rule: every column is compact (no gaps unless unavoidable).
+      // For series (same pair on consecutive days), the game sits in the
+      // same row as the previous day's game.  Everything else packs from
+      // the top in start-time order.
+      //
+      // Algorithm (left → right, one column at a time):
+      //  1. Start with all games sorted by start time.
+      //  2. For each game that continues a series from the previous column,
+      //     slot it into the same row (expanding the grid if needed).
+      //  3. Pack remaining games into the lowest free rows.
+      //  4. Trim any trailing nulls per column.
+      // ─────────────────────────────────────────────────────────────────
 
-      // 1. Collect all (di, game) across all days
       const DATES = [];
       for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));
-      const perDay = DATES.map(d=>buildList(d));
+      const perDay = DATES.map(d=>buildList(d));   // each already sorted by time
 
-      // 2. Mark series (same pair on consecutive days) with a shared sid
+      // mark multi-day series: same pair on consecutive day-indices → shared sid
       const byPair = {};
-      perDay.forEach((games, di)=>games.forEach(g=>{
-        (byPair[g.pair] = byPair[g.pair]||[]).push({ di, g });
+      perDay.forEach((games,di)=>games.forEach(g=>{
+        (byPair[g.pair]=byPair[g.pair]||[]).push({di,g});
       }));
-      let sid = 0;
+      let sid=0;
       Object.values(byPair).forEach(apps=>{
         apps.sort((a,b)=>a.di-b.di);
-        let run = [apps[0]];
-        const flush = r=>{ if(r.length>=2){ const id=sid++; r.forEach(x=>{ x.g.series=true; x.g.sid=id; }); } };
-        for (let k=1;k<apps.length;k++){
+        let run=[apps[0]];
+        const flush=r=>{
+          if(r.length>=2){ const id=sid++; r.forEach(x=>{x.g.series=true;x.g.sid=id;}); }
+        };
+        for(let k=1;k<apps.length;k++){
           if(apps[k].di===run[run.length-1].di+1) run.push(apps[k]);
-          else { flush(run); run=[apps[k]]; }
+          else{ flush(run); run=[apps[k]]; }
         }
         flush(run);
       });
 
-      // 3. Build global pair→row by scanning window left-to-right.
-      //    Today's order is treated as the seeding reference so its rows come first.
-      //    Pairs that only appear before/after today fill remaining rows.
-      const todayPairs = perDay[2].map(g=>g.pair);
-      const pairRow = {};   // pair -> row index
-      // seed with today's order
-      todayPairs.forEach((p,i)=>{ pairRow[p]=i; });
-      // any pair that appears in the window but not today gets the next available row
-      let nextRow = todayPairs.length;
-      perDay.forEach(games=>games.forEach(g=>{
-        if (pairRow[g.pair]==null) { pairRow[g.pair]=nextRow++; }
-      }));
+      // build columns left→right
+      const cols = [];           // cols[di] = array of game|null (compact, no trailing nulls)
+      let prevRowByPair = {};    // pair → row it occupied in the previous column
 
-      // 4. Build out[di].games as a sparse array indexed by row; blanks = null
-      const numRows = nextRow;
-      const out = DATES.map((d, di)=>{
-        const rowArr = new Array(numRows).fill(null);
-        perDay[di].forEach(g=>{ rowArr[pairRow[g.pair]] = g; });
-        // trim trailing nulls
-        let last = -1;
-        rowArr.forEach((g,i)=>{ if(g) last=i; });
-        return { date:d, games: last===-1 ? [] : rowArr.slice(0,last+1) };
-      });
+      for(let di=0;di<DATES.length;di++){
+        const games = perDay[di];           // sorted by time
+        const rowByPair = {};               // pair → row assigned this column
+        const grid = [];                    // sparse: grid[row] = game | null
 
-      // 5. Series shading: 4-color graph coloring so no two adjacent series clash
-      //    Build adjacency (same row neighbors, same col neighbors)
-      const cell = (c,r)=>out[c]?.games[r]||null;
-      const R = Math.max(0,...out.map(o=>o.games.length));
-      const adj = {};
-      const link = (a,b)=>{ if(a==null||b==null||a===b) return;
+        // step 1: place series continuations first into their inherited row
+        const remaining = [];
+        games.forEach(g=>{
+          const prevRow = prevRowByPair[g.pair];
+          if(g.series && prevRow!=null){
+            while(grid.length<=prevRow) grid.push(null);
+            // if that slot is already taken (two series converging), defer
+            if(grid[prevRow]===null){ grid[prevRow]=g; rowByPair[g.pair]=prevRow; }
+            else remaining.push(g);
+          } else {
+            remaining.push(g);
+          }
+        });
+
+        // step 2: pack non-series (and deferred) games into lowest free rows
+        remaining.forEach(g=>{
+          let r=0;
+          while(r<grid.length && grid[r]!==null) r++;
+          if(r===grid.length) grid.push(null);
+          grid[r]=g; rowByPair[g.pair]=r;
+        });
+
+        // step 3: trim trailing nulls
+        let last=-1;
+        grid.forEach((g,i)=>{ if(g) last=i; });
+        cols.push(last===-1 ? [] : grid.slice(0,last+1));
+        prevRowByPair=rowByPair;
+      }
+
+      const out=DATES.map((d,di)=>({ date:d, games:cols[di] }));
+
+      // series shading: 4-color adjacency coloring so no touching series share a shade
+      const cell=(c,r)=>out[c]?.games[r]||null;
+      const R=Math.max(0,...out.map(o=>o.games.length));
+      const adj={};
+      const link=(a,b)=>{ if(a==null||b==null||a===b) return;
         (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); };
       for(let r=0;r<R;r++) for(let c=0;c<out.length;c++){
         const g=cell(c,r); if(!g||g.sid==null) continue;
@@ -1074,29 +1099,26 @@ function TravelTrends() {
                     textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.7)":C.inkSoft }}>{label}</span>
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
-                  {(() => {
-                    let last = -1;
-                    d.games.forEach((g,i)=>{ if (g) last = i; });   // trim trailing blanks
-                    if (last === -1) return <div style={{ fontFamily:SANS, fontSize:12,
-                      color:C.ruleDark, padding:"4px" }}>—</div>;
-                    const list = d.games.slice(0, last+1);
-                    // in today's column, the now-line rests after games already started
-                    const lineIdx = isToday
-                      ? list.filter(g=>g && new Date(g.time) <= now).length : -1;
-                    const cells = [];
-                    list.forEach((g,i)=>{
-                      if (i === lineIdx) cells.push(<NowLine key="nowline" />);
-                      if (!g) cells.push(<div key={i} style={{ minHeight:50, borderRadius:2,
-                        border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }} />);
-                      else {
-                        const t = gameTrends(d.date, g);
-                        cells.push(<CalCard key={i} g={g} t={t}
-                          onOpen={t.any ? ()=>setModal({ date:d.date, g, t }) : null} />);
-                      }
-                    });
-                    if (lineIdx >= list.length) cells.push(<NowLine key="nowline-end" />);
-                    return cells;
-                  })()}
+                  {d.games.length===0
+                    ? <div style={{ fontFamily:SANS, fontSize:12, color:C.ruleDark, padding:"4px" }}>—</div>
+                    : (() => {
+                        const lineIdx = isToday
+                          ? d.games.filter(g=>g && new Date(g.time) <= now).length : -1;
+                        const cells = [];
+                        d.games.forEach((g,i)=>{
+                          if(i===lineIdx) cells.push(<NowLine key="nl"/>);
+                          if(!g) cells.push(<div key={i} style={{ minHeight:50, borderRadius:2,
+                            border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
+                          else {
+                            const t=gameTrends(d.date,g);
+                            cells.push(<CalCard key={i} g={g} t={t}
+                              onOpen={t.any?()=>setModal({date:d.date,g,t}):null}/>);
+                          }
+                        });
+                        if(lineIdx>=d.games.length) cells.push(<NowLine key="nl-end"/>);
+                        return cells;
+                      })()
+                  }
                 </div>
               </div>);
             })}
