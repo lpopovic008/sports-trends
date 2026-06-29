@@ -820,21 +820,16 @@ function TravelTrends() {
       };
 
       // ── Calendar layout ─────────────────────────────────────────────
-      // Work columns outward from today: today, yesterday, 2-ago, tomorrow,
-      // +2, +3, +4. Each column's "reference" is the already-worked column
-      // one step closer to today.
-      //
-      // For each column (other than today):
-      //   Pass 1 — every game that matches a game in the reference column
-      //            (same matchup, gap-rule allowed) takes that game's row
-      //            and inherits its color scheme.
-      //   Pass 2 — remaining games fill the lowest empty rows, in start-time
-      //            order, using the white/gray scheme.
-      //
-      // Today: start-time order, navy/gray alternating by row.
-      //
-      // Gap rule: a matchup two days apart still matches IF neither team
-      // played a DIFFERENT opponent on the day in between.
+      // Series-first. Start with today's games (start-time order, navy/gray).
+      // For each today game, trace its series OUTWARD in both directions,
+      // one day at a time:
+      //   • same matchup that day  → place it in this game's row + color,
+      //                               keep tracing further out
+      //   • that day shows either team vs a DIFFERENT opponent → STOP
+      //     (the series is broken in that direction)
+      //   • neither team plays that day (off day) → not a break, keep going
+      // After all today series are placed, every remaining game fills the
+      // empty gaps (white/gray), in start-time order.
       // ────────────────────────────────────────────────────────────────
 
       const TODAY_DI = 2;
@@ -843,19 +838,18 @@ function TravelTrends() {
       const perDay = DATES.map(d=>buildList(d));   // sorted by start time
       const numDays = DATES.length;
 
-      // who each team played on each day (for the gap rule)
+      // who each team played each day (null if off)
       const oppByTeamDay = Array.from({length:numDays}, ()=>({}));
       perDay.forEach((games,di)=>games.forEach(g=>{
         oppByTeamDay[di][g.awayId] = g.homeId;
         oppByTeamDay[di][g.homeId] = g.awayId;
       }));
-      // index each day's games by pair
       const dayByPair = perDay.map(games=>{
         const m={}; games.forEach(g=>{ m[g.pair]=g; }); return m;
       });
 
-      const grid   = Array.from({length:numDays}, ()=>[]);   // grid[di][row]=game|null
-      const placed = Array.from({length:numDays}, ()=>({})); // di -> pair -> true
+      const grid   = Array.from({length:numDays}, ()=>[]);    // grid[di][row]=game|null
+      const placed = Array.from({length:numDays}, ()=>({}));  // di -> pair -> true
       const putAt = (di,row,g,shade)=>{
         while(grid[di].length<=row) grid[di].push(null);
         grid[di][row]=g; placed[di][g.pair]=true; g.seriesShade=shade;
@@ -866,24 +860,14 @@ function TravelTrends() {
         return r;
       };
 
-      // a game in column `di` matches a game in `refDi` if same pair AND,
-      // when they're 2 days apart, the in-between day had no DIFFERENT opp
-      const matchesRef = (g, di, refDi) => {
-        const ref = dayByPair[refDi][g.pair];
-        if(!ref) return null;
-        const gap = Math.abs(di - refDi);
-        if(gap >= 2){
-          const mid = (di + refDi) / 2 | 0;
-          // if either team faced a different opponent on the in-between day, no match
-          for(const tid of [g.awayId, g.homeId]){
-            const midOpp = oppByTeamDay[mid][tid];
-            if(midOpp!=null){
-              const stillSame = (tid===g.awayId ? g.homeId : g.awayId);
-              if(midOpp !== stillSame) return null;
-            }
-          }
-        }
-        return ref;
+      // does the series (awayId vs homeId) break on day `di`?
+      // breaks if EITHER team plays a different opponent that day.
+      const seriesBreaks = (awayId, homeId, di)=>{
+        const ao = oppByTeamDay[di][awayId];
+        const ho = oppByTeamDay[di][homeId];
+        if(ao!=null && ao!==homeId) return true;   // away team faces someone else
+        if(ho!=null && ho!==awayId) return true;   // home team faces someone else
+        return false;
       };
 
       // ---- today: place in start-time order, navy/gray alternating ----
@@ -891,35 +875,41 @@ function TravelTrends() {
         putAt(TODAY_DI, row, g, 2 + (row%2));   // 2=navy, 3=darker-gray
       });
 
-      // ---- work outward: yesterday, 2-ago, tomorrow, +2, +3, +4 ----
-      // order list with each column's reference (one step closer to today)
-      const workOrder = [
-        { di:1, ref:2 }, { di:0, ref:1 },        // back
-        { di:3, ref:2 }, { di:4, ref:3 }, { di:5, ref:4 }, { di:6, ref:5 }, // forward
-      ];
+      // ---- trace each today game's series outward (back, then forward) ----
+      perDay[TODAY_DI].forEach((g)=>{
+        const row = grid[TODAY_DI].indexOf(g);
+        const shade = g.seriesShade;
 
-      workOrder.forEach(({di, ref})=>{
-        const games = perDay[di];
-
-        // pass 1: match games to the reference column's row + color
-        const unmatched = [];
-        games.forEach(g=>{
-          const refGame = matchesRef(g, di, ref);
-          if(refGame && refGame.seriesShade!=null){
-            const refRow = grid[ref].indexOf(refGame);
-            const row = nextFreeFrom(di, refRow);   // prefer the ref's row
-            putAt(di, row, g, refGame.seriesShade); // inherit color scheme
-          } else {
-            unmatched.push(g);
+        // backward
+        for(let di=TODAY_DI-1; di>=0; di--){
+          if(seriesBreaks(g.awayId, g.homeId, di)) break;   // different opp → stop
+          const match = dayByPair[di][g.pair];
+          if(match && !placed[di][g.pair]){
+            const r = nextFreeFrom(di, row);
+            putAt(di, r, match, shade);
           }
-        });
+          // off day (no match, no break) → keep going further out
+        }
 
-        // pass 2: remaining games fill lowest gaps, white/gray scheme
-        unmatched.forEach(g=>{
-          const row = nextFreeFrom(di, 0);
-          putAt(di, row, g, 0 + (row%2));   // 0=light-gray, 1=white
-        });
+        // forward
+        for(let di=TODAY_DI+1; di<numDays; di++){
+          if(seriesBreaks(g.awayId, g.homeId, di)) break;
+          const match = dayByPair[di][g.pair];
+          if(match && !placed[di][g.pair]){
+            const r = nextFreeFrom(di, row);
+            putAt(di, r, match, shade);
+          }
+        }
       });
+
+      // ---- fill all remaining games into the empty gaps (white/gray) ----
+      for(let di=0; di<numDays; di++){
+        perDay[di].forEach(g=>{
+          if(placed[di][g.pair]) return;
+          const r = nextFreeFrom(di, 0);
+          putAt(di, r, g, 0 + (r%2));   // 0=light-gray, 1=white
+        });
+      }
 
       // ---- trim trailing nulls per column ----
       const out = DATES.map((d,di)=>{
