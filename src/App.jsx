@@ -902,14 +902,27 @@ function TravelTrends() {
         }
       });
 
-      // ---- fill all remaining games into the empty gaps (white/gray) ----
-      for(let di=0; di<numDays; di++){
+      // ---- fill remaining games — but first recheck each against the day
+      //      one step closer to today: if its matchup continues a placed
+      //      series there (no different-opponent break), inherit that row+color.
+      //      Process columns outward from today so the reference day is ready. ----
+      const fillOrder = [1, 0, 3, 4, 5, 6];   // yesterday, 2-ago, tomorrow, +2…
+      fillOrder.forEach(di=>{
+        const refDi = di < TODAY_DI ? di + 1 : di - 1;   // one step toward today
         perDay[di].forEach(g=>{
           if(placed[di][g.pair]) return;
-          const r = nextFreeFrom(di, 0);
-          putAt(di, r, g, 0 + (r%2));   // 0=light-gray, 1=white
+          const ref = grid[refDi].find(x=>x && x.pair===g.pair);
+          if(ref && !seriesBreaks(g.awayId, g.homeId, di)){
+            // continues a series from the adjacent-toward-today column
+            const refRow = grid[refDi].indexOf(ref);
+            const r = nextFreeFrom(di, refRow);
+            putAt(di, r, g, ref.seriesShade);   // inherit its color scheme
+          } else {
+            const r = nextFreeFrom(di, 0);
+            putAt(di, r, g, 0 + (r%2));          // gray/white gap fill
+          }
         });
-      }
+      });
 
       // ---- trim trailing nulls per column ----
       const out = DATES.map((d,di)=>{
@@ -1194,7 +1207,7 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
    wave 1 (future series):        soft navy   ↔  darker gray  */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
    2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
-const SERIES_SHADE = ["#E7E9EC", "#FFFFFF", "#BCC7D8", "#D3D7DC"];
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
