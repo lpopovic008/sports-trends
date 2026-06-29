@@ -821,13 +821,17 @@ function TravelTrends() {
         }).sort((a,b)=>a.time.localeCompare(b.time));
       };
 
-      // ── ordering: past columns follow TODAY's matchup order, future columns
-      //    follow TOMORROW's; today & tomorrow are the reference columns ──
+      // ── global row assignment: each unique matchup (pair) gets one fixed row
+      //    determined by its first appearance anywhere in the window.
+      //    Within a day, games not yet assigned a row fill in by start time.
+      //    This eliminates gaps from series that haven't started from today's POV. ──
+
+      // 1. Collect all (di, game) across all days
       const DATES = [];
-      for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));   // index 0..6, offset i = idx-2
+      for (let i=-2;i<=4;i++) DATES.push(addDays(start,i));
       const perDay = DATES.map(d=>buildList(d));
 
-      // mark games that belong to a 2+ day series, each series getting an id
+      // 2. Mark series (same pair on consecutive days) with a shared sid
       const byPair = {};
       perDay.forEach((games, di)=>games.forEach(g=>{
         (byPair[g.pair] = byPair[g.pair]||[]).push({ di, g });
@@ -836,48 +840,60 @@ function TravelTrends() {
       Object.values(byPair).forEach(apps=>{
         apps.sort((a,b)=>a.di-b.di);
         let run = [apps[0]];
-        const flush = (r)=>{ if (r.length>=2) { const id=sid++; r.forEach(x=>{ x.g.series=true; x.g.sid=id; }); } };
+        const flush = r=>{ if(r.length>=2){ const id=sid++; r.forEach(x=>{ x.g.series=true; x.g.sid=id; }); } };
         for (let k=1;k<apps.length;k++){
-          if (apps[k].di === run[run.length-1].di + 1) run.push(apps[k]);
-          else { flush(run); run = [apps[k]]; }
+          if(apps[k].di===run[run.length-1].di+1) run.push(apps[k]);
+          else { flush(run); run=[apps[k]]; }
         }
         flush(run);
       });
 
-      const todayList = perDay[2], tomorrowList = perDay[3];
-      const todayPairs = todayList.map(g=>g.pair);
-      const tomorrowPairs = tomorrowList.map(g=>g.pair);
-      const alignTo = (list, refPairs) => {
-        const used = new Set();
-        const aligned = refPairs.map(pk=>{
-          const idx = list.findIndex((g,i)=>g.pair===pk && !used.has(i));
-          if (idx === -1) return null;
-          used.add(idx); return list[idx];
-        });
-        const leftovers = list.filter((g,i)=>!used.has(i));
-        return [...aligned, ...leftovers];
-      };
+      // 3. Build global pair→row by scanning window left-to-right.
+      //    Today's order is treated as the seeding reference so its rows come first.
+      //    Pairs that only appear before/after today fill remaining rows.
+      const todayPairs = perDay[2].map(g=>g.pair);
+      const tomorrowPairs = perDay[3].map(g=>g.pair);
+      const pairRow = {};   // pair -> row index
+      // seed with today's order
+      todayPairs.forEach((p,i)=>{ pairRow[p]=i; });
+      // any pair that appears in the window but not today gets the next available row
+      let nextRow = todayPairs.length;
+      perDay.forEach(games=>games.forEach(g=>{
+        if (pairRow[g.pair]==null) { pairRow[g.pair]=nextRow++; }
+      }));
 
+      // 4. Build out[di].games as a sparse array indexed by row; blanks = null
+      const numRows = nextRow;
       const out = DATES.map((d, di)=>{
-        const offset = di - 2;
-        if (offset === 0) return { date:d, games: todayList };       // today (reference)
-        if (offset === 1) return { date:d, games: tomorrowList };    // tomorrow (reference)
-        const ref = offset < 0 ? todayPairs : tomorrowPairs;
-        return { date:d, games: alignTo(perDay[di], ref) };
+        const rowArr = new Array(numRows).fill(null);
+        perDay[di].forEach(g=>{ rowArr[pairRow[g.pair]] = g; });
+        // trim trailing nulls
+        let last = -1;
+        rowArr.forEach((g,i)=>{ if(g) last=i; });
+        return { date:d, games: last===-1 ? [] : rowArr.slice(0,last+1) };
       });
 
-      // ── series shading: two tints alternate down each column of series,
-      //    the other two down the next column to the right ──
-      const cell = (c, r) => out[c]?.games[r] || null;
-      const R = Math.max(0, ...out.map(o=>o.games.length));
-      const pos = {};                                   // sid -> {col, row} of leftmost cell
-      for (let r=0;r<R;r++) for (let c=0;c<out.length;c++){
-        const g = cell(c,r); if (!g || g.sid==null) continue;
-        if (!pos[g.sid] || c < pos[g.sid].col) pos[g.sid] = { col:c, row:r };
+      // 5. Series shading: 4-color graph coloring so no two adjacent series clash
+      //    Build adjacency (same row neighbors, same col neighbors)
+      const cell = (c,r)=>out[c]?.games[r]||null;
+      const R = Math.max(0,...out.map(o=>o.games.length));
+      const adj = {};
+      const link = (a,b)=>{ if(a==null||b==null||a===b) return;
+        (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); };
+      for(let r=0;r<R;r++) for(let c=0;c<out.length;c++){
+        const g=cell(c,r); if(!g||g.sid==null) continue;
+        const right=cell(c+1,r), down=cell(c,r+1);
+        if(right?.sid!=null) link(g.sid,right.sid);
+        if(down?.sid!=null)  link(g.sid,down.sid);
       }
-      out.forEach(o=>o.games.forEach(g=>{
-        if (g && g.sid!=null){ const p=pos[g.sid]; g.seriesShade = (p.col%2)*2 + (p.row%2); }
-      }));
+      const N=SERIES_SHADE.length, shadeOf={};
+      for(let id=0;id<sid;id++){
+        const used=new Set();
+        (adj[id]||[]).forEach(n=>{ if(shadeOf[n]!=null) used.add(shadeOf[n]); });
+        let k=0; while(k<N-1&&used.has(k)) k++;
+        shadeOf[id]=k;
+      }
+      out.forEach(o=>o.games.forEach(g=>{ if(g&&g.sid!=null) g.seriesShade=shadeOf[g.sid]; }));
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
