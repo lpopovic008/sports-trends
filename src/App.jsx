@@ -89,6 +89,7 @@ async function mapPool(items, n, fn) {
   await Promise.all(workers); return res;
 }
 const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
+const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 
 /* ───────────────────────── shared UI bits ───────────────────────── */
 const Eyebrow = ({ children, n }) => (
@@ -125,156 +126,6 @@ const Tag = ({ children, tone }) => (
     color: tone==="ok"?C.over:C.inkSoft }}>{children}</span>
 );
 
-/* ════════════════════════════ DAY SHEET ════════════════════════════ */
-/* All games for a chosen day; each team's starting 9 with last-5 H / TB / HRR. */
-function DaySheet() {
-  const [date, setDate] = useState(todayISO());
-  const [games, setGames] = useState(null);
-  const [byPk, setByPk] = useState({});
-  const [busy, setBusy] = useState(false);
-  const [loadingAll, setLoadingAll] = useState(false);
-  const [err, setErr] = useState("");
-  const [pick, setPick] = useState(null);
-  const [bvp, setBvp] = useState(null);
-
-  const loadSchedule = useCallback(async () => {
-    setErr(""); setGames(null); setByPk({}); setBusy(true);
-    try {
-      const r = await fetch(
-        `${API}/schedule?sportId=1&date=${date}` +
-        `&hydrate=lineups,probablePitcher,team,venue`);
-      if (!r.ok) throw new Error(`schedule ${r.status}`);
-      const j = await r.json();
-      const gs = (j.dates?.[0]?.games) || [];
-      setGames(gs);
-    } catch (e) {
-      setErr(isNet(e.message)
-        ? "Couldn't reach the MLB schedule. In your own React app this works from a normal browser tab."
-        : e.message);
-    } finally { setBusy(false); }
-  }, [date]);
-
-  /* last-5 H / TB / HRR plus this month's batting average for one player */
-  const trendFor = useCallback(async (id) => {
-    const r = await fetch(
-      `${API}/people/${id}/stats?stats=gameLog&group=hitting&season=${SEASON}&gameType=R`);
-    if (!r.ok) return { h:[], tb:[], k:[], avg:null };
-    const j = await r.json();
-    const splits = (j.stats?.[0]?.splits || [])
-      .slice().sort((a,b)=>a.date.localeCompare(b.date));
-    const last5 = splits.slice(-5);
-    // batting average over games in the selected month (YYYY-MM)
-    const month = date.slice(0,7);
-    let h = 0, ab = 0;
-    splits.filter(s=>(s.date||"").startsWith(month)).forEach(s=>{
-      h += Number(s.stat.hits)||0; ab += Number(s.stat.atBats)||0;
-    });
-    const avg = ab>0 ? (h/ab).toFixed(3).replace(/^0/,"") : null;
-    return {
-      h: last5.map(s=>valOf(s.stat,"hits")),
-      tb: last5.map(s=>valOf(s.stat,"totalBases")),
-      hrr: last5.map(s=>valOf(s.stat,"hits+runs+rbi")),
-      avg,
-    };
-  }, [season, date]);
-
-  /* resolve a team's starting 9 — confirmed lineup or last-game fallback */
-  const lineupFor = useCallback(async (game, side) => {
-    const lp = game.lineups?.[side+"Players"];
-    if (lp && lp.length) {
-      return { source:"confirmed",
-        players: lp.slice(0,9).map((p,i)=>({ id:p.id, name:p.fullName, order:i+1 })) };
-    }
-    // fallback: most recent completed game's batting order
-    const teamId = game.teams[side].team.id;
-    const back = addDays(date,-14);
-    const sr = await fetch(
-      `${API}/schedule?sportId=1&teamId=${teamId}&startDate=${back}&endDate=${addDays(date,-1)}&gameType=R`);
-    const sj = await sr.json();
-    const prevGames = (sj.dates||[]).flatMap(d=>d.games||[])
-      .filter(g=>g.status?.abstractGameState==="Final")
-      .sort((a,b)=>a.gameDate.localeCompare(b.gameDate));
-    const last = prevGames[prevGames.length-1];
-    if (!last) return { source:"none", players:[] };
-    const br = await fetch(`${API}/game/${last.gamePk}/boxscore`);
-    const bj = await br.json();
-    const which = last.teams.home.team.id===teamId ? "home" : "away";
-    const t = bj.teams[which];
-    const order = (t.battingOrder||[]).slice(0,9);
-    const players = order.map((pid,i)=>({
-      id:pid, name:t.players?.["ID"+pid]?.person?.fullName || `#${pid}`, order:i+1 }));
-    return { source:"projected", players };
-  }, [date]);
-
-  const loadGame = useCallback(async (game) => {
-    setByPk(p=>({ ...p, [game.gamePk]:{ status:"loading" } }));
-    try {
-      const sides = await Promise.all(["away","home"].map(async (side)=>{
-        const lu = await lineupFor(game, side);
-        const players = await mapPool(lu.players, 4, async (pl)=>({
-          ...pl, ...(await trendFor(pl.id)) }));
-        const oppSide = side==="away" ? "home" : "away";
-        const oppPitcher = game.teams[oppSide]?.probablePitcher;
-        return { source:lu.source, players, team:game.teams[side].team.name,
-          oppPitcherName: oppPitcher?.fullName || null,
-          oppPitcherId:   oppPitcher?.id       || null };
-      }));
-      setByPk(p=>({ ...p, [game.gamePk]:{ status:"done", away:sides[0], home:sides[1] } }));
-    } catch (e) {
-      setByPk(p=>({ ...p, [game.gamePk]:{ status:"error", msg:e.message } }));
-    }
-  }, [lineupFor, trendFor]);
-
-  const loadAll = useCallback(async () => {
-    if (!games) return;
-    setLoadingAll(true);
-    await mapPool(games, 2, (g)=>loadGame(g));
-    setLoadingAll(false);
-  }, [games, loadGame]);
-
-  useEffect(() => { loadSchedule(); /* eslint-disable-next-line */ }, []);
-
-  return (
-    <div>
-      <Eyebrow n="01">Day sheet · starting nine, last 5 games</Eyebrow>
-
-      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
-        <Field label="Date">
-          <input type="date" style={inputStyle} value={date}
-            onChange={e=>setDate(e.target.value)} />
-        </Field>
-        <button onClick={loadSchedule} disabled={busy} style={btn(true)}>
-          {busy ? "Loading…" : "Load slate"}</button>
-        {games && games.length>0 && (
-          <button onClick={loadAll} disabled={loadingAll} style={btn(false)}>
-            {loadingAll ? "Loading all…" : "Load all lineups"}</button>
-        )}
-        <button onClick={()=>setPick({ name:"", ts:Date.now() })} style={btn(false)}>
-          Prop Lookup</button>
-      </div>
-
-      {err && <ErrBox>{err}</ErrBox>}
-
-      {games && games.length===0 && (
-        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft, padding:"18px 0" }}>
-          No games scheduled on {prettyDay(date)}. Pick a date during the season.
-        </div>
-      )}
-
-      {games && games.map((g)=>(
-        <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
-          onLoad={()=>loadGame(g)}
-          onPick={(name, stat)=>setPick({ name, stat, ts:Date.now() })}
-          onBvP={setBvp} />
-      ))}
-
-      {pick && <PropModal injected={pick.name ? pick : null} onClose={()=>setPick(null)} />}
-      {bvp && <BvPModal {...bvp} onClose={()=>setBvp(null)} />}
-    </div>
-  );
-}
-
-/* ── Batter vs Pitcher career stats modal ── */
 function BvPModal({ batterId, batterName, pitcherId, pitcherName, onClose }) {
   const [data, setData] = useState(undefined);
   const [err, setErr] = useState("");
@@ -348,139 +199,10 @@ function BvPModal({ batterId, batterName, pitcherId, pitcherName, onClose }) {
   );
 }
 
-function PropModal({ injected, onClose }) {
-  return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
-      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
-      justifyContent:"center", padding:18, overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
-        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:560, width:"100%",
-        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
-          display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.16em",
-            textTransform:"uppercase", color:C.inkSoft }}>Prop Lookup</span>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
-        </div>
-        <div style={{ padding:"14px 18px 18px" }}>
-          <PropAnalyzer injected={injected} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProbLine({ g }) {
-  const a = g.teams.away.probablePitcher?.fullName;
-  const h = g.teams.home.probablePitcher?.fullName;
-  if (!a && !h) return null;
-  return (
-    <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-      SP: {a||"TBD"} vs {h||"TBD"}
-    </span>
-  );
-}
-
-function GameCard({ g, data, onLoad, onPick, onBvP }) {
-  const tz = TEAM_TZ[g.teams.home.team.id] ?? "?";
-  const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-  return (
-    <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, marginBottom:14, overflow:"hidden" }}>
-      <div style={{ padding:"11px 14px", borderBottom:`1px solid ${C.rule}`, background:C.card,
-        display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-        <div style={{ display:"flex", alignItems:"baseline", gap:10, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:SANS, fontWeight:700, fontSize:15 }}>
-            {g.teams.away.team.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.teams.home.team.name}
-          </span>
-          <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{time} · {tz}</span>
-        </div>
-        <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-          <ProbLine g={g} />
-          {!data && <button onClick={onLoad} style={{ ...btn(false), padding:"6px 12px" }}>Load lineups</button>}
-        </div>
-      </div>
-
-      {data?.status==="loading" && (
-        <div style={{ padding:14, fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Pulling lineups & trends…</div>)}
-      {data?.status==="error" && (
-        <div style={{ padding:14, fontFamily:SANS, fontSize:13, color:C.under }}>Couldn’t load: {data.msg}</div>)}
-      {data?.status==="done" && (
-        <div className="ts-lineups">
-          <LineupCol side={data.away} borderRight onPick={onPick}
-            onBvP={onBvP} />
-          <LineupCol side={data.home} onPick={onPick}
-            onBvP={onBvP} />
-        </div>)}
-    </div>
-  );
-}
-
-/* shared column template so header + every row line up exactly */
 const ROW_COLS = "14px minmax(36px,1fr) 30px 60px 9px 60px 9px 60px";
 const SEP = <span style={{ textAlign:"center", fontFamily:MONO, fontSize:12,
   color:C.ruleDark, fontWeight:700 }}>|</span>;
 
-function LineupCol({ side, borderRight, onPick, onBvP }) {
-  const hasPitcher = !!side.oppPitcherName;
-  return (
-    <div className="ts-lineup-col" style={{ borderRight: borderRight?`1px solid ${C.rule}`:"none" }}>
-      <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
-        display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <span style={{ fontFamily:SANS, fontWeight:600, fontSize:13 }}>{side.team}</span>
-        <span style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
-          {side.source==="confirmed" ? <Tag tone="ok">Confirmed</Tag>
-            : side.source==="projected" ? <Tag>Projected · last game</Tag>
-            : <Tag>No lineup</Tag>}
-          {hasPitcher && <span style={{ fontFamily:MONO, fontSize:9, color:C.inkSoft }}>
-            vs {side.oppPitcherName}</span>}
-        </span>
-      </div>
-      <div style={{ padding:"4px 0" }}>
-        <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
-          fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
-          color:C.ruleDark, alignItems:"center" }}>
-          <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
-          <span style={{ textAlign:"center" }}>H</span>{SEP}
-          <span style={{ textAlign:"center" }}>TB</span>{SEP}
-          <span style={{ textAlign:"center" }}>HRR</span>
-        </div>
-        {side.players.length===0 && (
-          <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>)}
-        {side.players.map((p)=>{
-          const hot = nameStreak(p);
-          return (
-          <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
-            padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
-            <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
-            {hasPitcher && onBvP
-              ? <button title={`${p.name} vs ${side.oppPitcherName} career`}
-                  onClick={()=>onBvP({ batterId:p.id, batterName:p.name,
-                    pitcherId:side.oppPitcherId, pitcherName:side.oppPitcherName })}
-                  style={{ font:"inherit", cursor:"pointer", border:"none", padding:"0 3px",
-                    fontFamily:SANS, fontSize:12.5, textAlign:"left",
-                    background: hot ? "rgba(255,233,77,0.5)" : "transparent",
-                    borderRadius:1, textDecoration:"underline dotted", textDecorationColor:C.ruleDark,
-                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
-                  title={p.name}>{p.name}</button>
-              : <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
-                  overflow:"hidden", textOverflow:"ellipsis",
-                  background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}
-                  title={p.name}>{p.name}</span>}
-            <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
-            <SeqBlock arr={p.h} statKey="hits" label="hits" onPick={onPick && (()=>onPick(p.name,"hits"))} />
-            {SEP}
-            <SeqBlock arr={p.tb} statKey="totalBases" label="total bases" onPick={onPick && (()=>onPick(p.name,"totalBases"))} />
-            {SEP}
-            <SeqBlock arr={p.hrr} statKey="hits+runs+rbi" label="H+R+RBI" onPick={onPick && (()=>onPick(p.name,"hits+runs+rbi"))} />
-          </div>
-        );})}
-      </div>
-    </div>
-  );
-}
-
-/* color category per stat value, then test if the last 3 share one color */
 const CAT = {
   ht: (v)=> v===0 ? "r" : v>=2 ? "g" : "b",   // hits / total bases / HRR
 };
@@ -519,247 +241,6 @@ function SeqBlock({ arr, label, onPick }) {
   return <span style={base}>{cells}</span>;
 }
 
-/* ════════════════════════ PROP ANALYZER ════════════════════════ */
-function PropAnalyzer({ injected = null }) {
-  const [name, setName] = useState("");
-  const [group, setGroup] = useState("hitting");
-  const [statKey, setStatKey] = useState("hits");
-  const side = "over";
-  const [line, setLine] = useState("1.5");
-  const [sampleN, setSampleN] = useState("20");
-  const [manual, setManual] = useState("");
-  const [roster, setRoster] = useState(null);
-  const [games, setGames] = useState(null);
-  const [resolved, setResolved] = useState("");
-  const [latest, setLatest] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const statList = group==="hitting" ? HIT_STATS : PITCH_STATS;
-
-  const loadRoster = useCallback(async (yr) => {
-    if (roster && roster.year===yr) return roster.people;
-    const r = await fetch(`${API}/sports/1/players?season=${yr}`);
-    if (!r.ok) throw new Error(`roster ${r.status}`);
-    const j = await r.json();
-    setRoster({ year:yr, people:j.people||[] });
-    return j.people||[];
-  }, [roster]);
-
-  const analyzeLive = useCallback(async (override) => {
-    const rawName = typeof override === "string" ? override : (override?.name ?? name);
-    const rawStat = (override && typeof override === "object" && override.stat) ? override.stat : statKey;
-    setErr(""); setGames(null); setResolved(""); setLatest(null); setBusy(true);
-    try {
-      const people = await loadRoster(SEASON);
-      const q = rawName.trim().toLowerCase();
-      if (!q) throw new Error("Enter a player name (or use manual entry).");
-      const hits = people.filter(p=>(p.fullName||"").toLowerCase().includes(q));
-      if (!hits.length) throw new Error(`No ${SEASON} MLB player matched "${rawName}".`);
-      const player = hits[0];
-      const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=${group}&season=${SEASON}&gameType=R`);
-      if (!r.ok) throw new Error(`game log ${r.status}`);
-      const j = await r.json();
-      const splits = j.stats?.[0]?.splits || [];
-      if (!splits.length) throw new Error(`No ${SEASON} game logs for ${player.fullName} in this group.`);
-      const rows = splits.map(s=>({ date:s.date,
-        opp:s.opponent?.abbreviation||"", value:valOf(s.stat,rawStat) }))
-        .sort((a,b)=>a.date.localeCompare(b.date));
-      setLatest(rows[rows.length-1].date);
-      setResolved(player.fullName); setGames(rows);
-    } catch (e) {
-      setErr(isNet(e.message)
-        ? "Couldn't reach the MLB data service. This works from a normal browser tab in your own app."
-        : e.message);
-    } finally { setBusy(false); }
-  }, [name, group, statKey, loadRoster]);
-
-  // clicking a stat in the slate fills name + stat and runs
-  useEffect(() => {
-    if (injected && injected.name) {
-      setName(injected.name);
-      if (injected.stat) { setGroup("hitting"); setStatKey(injected.stat); }
-      analyzeLive({ name:injected.name, stat:injected.stat });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [injected?.ts]);
-
-  const analyzeManual = useCallback(() => {
-    setErr(""); setResolved(""); setLatest(null);
-    const nums = manual.split(/[\s,]+/).map(Number).filter(x=>!isNaN(x));
-    if (!nums.length) { setErr("Enter comma- or space-separated numbers."); return; }
-    setGames(nums.map((v,i)=>({ date:`G${i+1}`, opp:"", value:v })));
-    setResolved(name.trim()||"Manual entry");
-  }, [manual, name]);
-
-  const analysis = useMemo(() => {
-    if (!games?.length) return null;
-    const L = parseFloat(line);
-    let recent, sampleLabel;
-    if (sampleN === "season") {
-      recent = games; sampleLabel = "Season";
-    } else if (sampleN === "month") {
-      const mo = String(games[games.length-1].date).slice(0,7);
-      const m = games.filter(g=>String(g.date).startsWith(mo));
-      recent = m.length ? m : games; sampleLabel = "This month";
-    } else {
-      const n = Number(sampleN);
-      recent = games.slice(-n); sampleLabel = `Last ${n}`;
-    }
-    const avg = (a)=>a.reduce((s,g)=>s+g.value,0)/a.length;
-    const clears = (g)=> g.value>L;            // over
-    const hitN = recent.filter(clears).length;
-    let streak = 0;
-    for (let i=games.length-1;i>=0;i--){ if(clears(games[i])) streak++; else break; }
-    const recentAvg = avg(recent);
-    return { L, recent, recentAvg, seasonAvg:avg(games), hitN,
-      hitRate:hitN/recent.length, streak, sampleLabel, edge: recentAvg-L };
-  }, [games, line, sampleN]);
-
-  const statLabel = statList.find(([k])=>k===statKey)?.[1] || statKey;
-
-  return (
-    <div>
-      <div style={{ display:"grid", gap:14,
-        gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", marginBottom:16 }}>
-        <Field label="Player"><input style={{ ...inputStyle, width:"100%" }} value={name}
-          placeholder="e.g. Aaron Judge" onChange={e=>setName(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&analyzeLive()} /></Field>
-        <Field label="Group"><select style={{ ...inputStyle, width:"100%" }} value={group}
-          onChange={e=>{const g=e.target.value;setGroup(g);setStatKey(g==="hitting"?"hits":"strikeOuts");}}>
-          <option value="hitting">Hitting</option><option value="pitching">Pitching</option></select></Field>
-        <Field label="Stat"><select style={{ ...inputStyle, width:"100%" }} value={statKey}
-          onChange={e=>setStatKey(e.target.value)}>
-          {statList.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="Line"><input style={{ ...inputStyle, width:"100%" }} value={line}
-          inputMode="decimal" onChange={e=>setLine(e.target.value)} /></Field>
-        <Field label="Sample"><select style={{ ...inputStyle, width:"100%" }} value={sampleN}
-          onChange={e=>setSampleN(e.target.value)}>
-          <option value="5">Last 5</option>
-          <option value="10">Last 10</option>
-          <option value="15">Last 15</option>
-          <option value="20">Last 20</option>
-          <option value="month">This month</option>
-          <option value="season">Season</option></select></Field>
-      </div>
-
-      <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
-        <button onClick={analyzeLive} disabled={busy} style={btn(true)}>
-          {busy ? "Pulling…" : "Pull MLB game logs"}</button>
-        <span style={{ fontFamily:SANS, fontSize:12, color:C.inkSoft, alignSelf:"center" }}>
-          Live for MLB. Other sports → paste values below.</span>
-      </div>
-
-      <details style={{ marginBottom:18 }}>
-        <summary style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.1em",
-          textTransform:"uppercase", color:C.blue, cursor:"pointer" }}>Manual entry (any sport)</summary>
-        <div style={{ marginTop:10, display:"flex", gap:10, flexWrap:"wrap" }}>
-          <input style={{ ...inputStyle, flex:1, minWidth:240 }}
-            placeholder="oldest → newest, e.g.  2, 1, 3, 0, 2" value={manual}
-            onChange={e=>setManual(e.target.value)} />
-          <button onClick={analyzeManual} style={btn(false)}>Analyze</button>
-        </div>
-      </details>
-
-      {latest && <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginBottom:14 }}>
-        Latest game in data: <b style={{ color:C.ink }}>{latest}</b></div>}
-      {err && <ErrBox>{err}</ErrBox>}
-      {analysis && <Results a={analysis} resolved={resolved} statLabel={statLabel} />}
-    </div>
-  );
-}
-
-function StatCell({ label, value, sub, color }) {
-  return (
-    <div style={{ padding:"14px 16px", borderRight:`1px solid ${C.rule}` }}>
-      <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.12em",
-        textTransform:"uppercase", color:C.inkSoft, marginBottom:6 }}>{label}</div>
-      <div style={{ fontFamily:MONO, fontSize:30, fontWeight:600, color:color||C.ink, lineHeight:1 }}>{value}</div>
-      {sub && <div style={{ fontFamily:SANS, fontSize:12, color:C.inkSoft, marginTop:5 }}>{sub}</div>}
-    </div>
-  );
-}
-function Results({ a, resolved, statLabel }) {
-  const edgeColor = a.edge>=0 ? C.over : C.under;
-  const chartData = a.recent.map(g=>({ name:(String(g.date).slice(5)||g.date), value:g.value,
-    clears: g.value>a.L }));
-  return (
-    <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card, overflow:"hidden", marginTop:4 }}>
-      <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.rule}`,
-        display:"flex", justifyContent:"space-between", alignItems:"baseline", flexWrap:"wrap", gap:8 }}>
-        <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>{resolved}</span>
-        <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, textTransform:"uppercase",
-          letterSpacing:"0.08em" }}>over {a.L} {statLabel}</span>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",
-        borderBottom:`1px solid ${C.rule}` }}>
-        <StatCell label={`${a.sampleLabel} avg`} value={a.recentAvg.toFixed(2)} sub={`season ${a.seasonAvg.toFixed(2)}`} />
-        <StatCell label="Edge vs line" color={edgeColor}
-          value={`${a.edge>=0?"+":""}${a.edge.toFixed(2)}`} sub={a.edge>=0?"form beats line":"line beats form"} />
-        <StatCell label="Hit rate" value={`${Math.round(a.hitRate*100)}%`} sub={`${a.hitN} / ${a.recent.length} cleared`}
-          color={a.hitRate>=0.6?C.over:a.hitRate<=0.4?C.under:C.ink} />
-        <StatCell label="Streak" value={a.streak} sub={`game${a.streak===1?"":"s"} over`}
-          color={a.streak>=3?C.over:C.ink} />
-      </div>
-      <div style={{ padding:"16px 12px 8px" }}>
-        <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase",
-          color:C.inkSoft, padding:"0 6px 8px" }}>Game-by-game · bar clears line = over</div>
-        <ResponsiveContainer width="100%" height={210}>
-          <ComposedChart data={chartData} margin={{ top:6, right:8, bottom:4, left:-18 }}>
-            <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }}
-              axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }} axisLine={false} tickLine={false} />
-            <Tooltip cursor={{ fill:"rgba(0,0,0,0.04)" }}
-              contentStyle={{ fontFamily:MONO, fontSize:12, border:`1px solid ${C.ruleDark}`, borderRadius:2 }} />
-            <Bar dataKey="value" radius={[2,2,0,0]} maxBarSize={34}>
-              {chartData.map((d,i)=><Cell key={i} fill={d.clears?C.over:C.under} fillOpacity={d.clears?0.85:0.55} />)}
-            </Bar>
-            <ReferenceLine y={a.L} stroke={C.ink} strokeWidth={1.5} strokeDasharray="4 3"
-              label={{ value:`line ${a.L}`, position:"right", fontFamily:MONO, fontSize:10, fill:C.ink }} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-/* detect a team that just snapped a long streak.
-   results: chronological [{date,res:'W'|'L'}] of completed games.
-   Returns the echo signal when the LAST game broke a run of >= minStreak. */
-function detectStreakBreak(results, minStreak) {
-  if (results.length < minStreak + 1) return null;
-  const last = results[results.length - 1];
-  const runRes = results[results.length - 2].res;
-  if (runRes === last.res) return null;            // last game continued, didn't break
-  let run = 0;
-  for (let i = results.length - 2; i >= 0; i--) {
-    if (results[i].res === runRes) run++; else break;
-  }
-  if (run < minStreak) return null;
-  return { streakLen: run, streakRes: runRes, predicted: last.res, breakDate: last.date };
-}
-
-/* did the winner first take the lead in the 8th inning or later?
-   ls = linescore; winnerSide = 'home' | 'away'. */
-function detectLateComeback(ls, winnerSide) {
-  const innings = ls?.innings || [];
-  if (innings.length < 8) return null;
-  let aw = 0, hm = 0, firstLead = null;
-  for (const inn of innings) {
-    const i = inn.num;
-    aw += inn.away?.runs || 0;                       // top half
-    if (firstLead === null && (winnerSide==="away" ? aw>hm : hm>aw)) firstLead = i;
-    hm += inn.home?.runs || 0;                       // bottom half
-    if (firstLead === null && (winnerSide==="home" ? hm>aw : aw>hm)) firstLead = i;
-  }
-  if (firstLead !== null && firstLead >= 8) return { firstLeadInning: firstLead };
-  return null;
-}
-const ord = (n) => {
-  const s = ["th","st","nd","rd"], v = n % 100;
-  return n + (s[(v-20)%10] || s[v] || s[0]);
-};
-
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
 function TravelTrends() {
   const start = todayISO();                    // anchor: today
@@ -783,7 +264,7 @@ function TravelTrends() {
          fetch from 3 days back so the -2 day's travel has a "prev day". */
       const from = addDays(start,-3), to = addDays(start,4);
       const r = await fetch(`${API}/schedule?sportId=1&startDate=${from}&endDate=${to}` +
-        `&gameType=R&hydrate=probablePitcher,linescore`);
+        `&gameType=R&hydrate=probablePitcher,linescore,lineups`);
       if (!r.ok) throw new Error(`schedule ${r.status}`);
       const j = await r.json();
       const byTeamDate = {};   // teamId -> { date -> venueTz }
@@ -800,6 +281,7 @@ function TravelTrends() {
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
             isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score,
             awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
+            gamePk:g.gamePk, _raw:g,
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
@@ -1104,7 +586,7 @@ function TravelTrends() {
                           else {
                             const t=gameTrends(d.date,g);
                             cells.push(<CalCard key={i} g={g} t={t}
-                              onOpen={t.any?()=>setModal({date:d.date,g,t}):null}/>);
+                              onOpen={()=>setModal({date:d.date,g,t})}/>);
                           }
                         });
                         if(lineIdx>=d.games.length) cells.push(<NowLine key="nl-end"/>);
@@ -1226,9 +708,9 @@ const pLine = (s) => {
   return `${st.inningsPitched} IP · ${st.hits} H · ${st.earnedRuns} ER · ` +
     `${st.baseOnBalls} BB · ${st.strikeOuts} K`;
 };
-function PitcherBlock({ name, vsName, info }) {
+function PitcherBlock({ name, vsName, info, bare }) {
   return (
-    <div style={{ borderTop:`1px solid ${C.rule}`, padding:"12px 0" }}>
+    <div style={ bare ? {} : { borderTop:`1px solid ${C.rule}`, padding:"12px 0" }}>
       <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700 }}>
         {name || "TBD"}
         <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, fontWeight:400 }}>
@@ -1267,250 +749,267 @@ function PitcherBlock({ name, vsName, info }) {
   );
 }
 
+/* ─────────── shared loaders for the unified game modal ─────────── */
+
+// last-5 H / TB / HRR + this-month AVG for one batter (date = game date)
+async function loadBatterTrend(id, date) {
+  try {
+    const r = await fetch(`${API}/people/${id}/stats?stats=gameLog&group=hitting&season=${SEASON}&gameType=R`);
+    if (!r.ok) return { h:[], tb:[], hrr:[], avg:null };
+    const j = await r.json();
+    const splits = (j.stats?.[0]?.splits||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+    const last5 = splits.slice(-5);
+    const month = date.slice(0,7);
+    let h=0, ab=0;
+    splits.filter(s=>(s.date||"").startsWith(month)).forEach(s=>{
+      h+=Number(s.stat.hits)||0; ab+=Number(s.stat.atBats)||0;
+    });
+    return {
+      h:   last5.map(s=>valOf(s.stat,"hits")),
+      tb:  last5.map(s=>valOf(s.stat,"totalBases")),
+      hrr: last5.map(s=>valOf(s.stat,"hits+runs+rbi")),
+      avg: ab>0 ? (h/ab).toFixed(3).replace(/^0/,"") : null,
+    };
+  } catch { return { h:[], tb:[], hrr:[], avg:null }; }
+}
+
+// resolve a team's starting nine: confirmed lineup, else last completed game's order
+async function loadLineup(game, side, date) {
+  const lp = game.lineups?.[side+"Players"];
+  if (lp && lp.length) {
+    return { source:"confirmed",
+      players: lp.slice(0,9).map((p,i)=>({ id:p.id, name:p.fullName, order:i+1 })) };
+  }
+  const teamId = game.teams[side].team.id;
+  const back = addDays(date,-14);
+  try {
+    const sr = await fetch(`${API}/schedule?sportId=1&teamId=${teamId}&startDate=${back}&endDate=${addDays(date,-1)}&gameType=R`);
+    const sj = await sr.json();
+    const prev = (sj.dates||[]).flatMap(d=>d.games||[])
+      .filter(g=>g.status?.abstractGameState==="Final")
+      .sort((a,b)=>a.gameDate.localeCompare(b.gameDate));
+    const last = prev[prev.length-1];
+    if (!last) return { source:"none", players:[] };
+    const br = await fetch(`${API}/game/${last.gamePk}/boxscore`);
+    const bj = await br.json();
+    const which = last.teams.home.team.id===teamId ? "home" : "away";
+    const t = bj.teams[which];
+    const players = (t.battingOrder||[]).slice(0,9).map((pid,i)=>({
+      id:pid, name:t.players?.["ID"+pid]?.person?.fullName || `#${pid}`, order:i+1 }));
+    return { source:"projected", players };
+  } catch { return { source:"none", players:[] }; }
+}
+
+// a pitcher's prior starts vs a specific opponent this season (before `date`)
+async function loadPitcherVs(pid, oppId, date) {
+  if (!pid) return null;
+  try {
+    const r = await fetch(`${API}/people/${pid}/stats?stats=gameLog&group=pitching&season=${SEASON}&gameType=R`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const splits = (j.stats?.[0]?.splits||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+    return { vs: splits.filter(s=>s.opponent?.id===oppId && s.date < date) };
+  } catch { return null; }
+}
+
+// season head-to-head summary between two teams
+async function loadH2H(aId, bId) {
+  const r = await fetch(`${API}/schedule?sportId=1&season=${SEASON}&gameType=R&teamId=${aId}&hydrate=linescore`);
+  if (!r.ok) throw new Error(`schedule ${r.status}`);
+  const j = await r.json();
+  const games = (j.dates||[]).flatMap(d=>d.games||[])
+    .filter(g=>g.teams.home.team.id===bId || g.teams.away.team.id===bId)
+    .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
+  let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
+  games.forEach(g=>{
+    const aHome = g.teams.home.team.id===aId;
+    const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
+    const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
+    const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
+    if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
+      ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
+      if (aS>bS) aw++; else if (bS>aS) bw++;
+    } else upcoming++;
+  });
+  const played = aw+bw;
+  return { aw,bw,ar,br,ah,bh,upcoming,played };
+}
+
+/* one team's column: lineup of 9 hitters, then its starting pitcher block below */
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP, oppPitcherName, oppPitcherId, side }) {
+  return (
+    <div className="ts-lineup-col" style={{ minWidth:0 }}>
+      <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
+        display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+        <span style={{ fontFamily:SANS, fontWeight:700, fontSize:14 }}>{teamName}</span>
+        {!lineup ? <Tag>…</Tag>
+          : lineup.source==="confirmed" ? <Tag tone="ok">Confirmed</Tag>
+          : lineup.source==="projected" ? <Tag>Projected</Tag> : <Tag>No lineup</Tag>}
+      </div>
+
+      {/* lineup table */}
+      <div style={{ padding:"4px 0" }}>
+        <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
+          fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
+          color:C.ruleDark, alignItems:"center" }}>
+          <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
+          <span style={{ textAlign:"center" }}>H</span>{SEP}
+          <span style={{ textAlign:"center" }}>TB</span>{SEP}
+          <span style={{ textAlign:"center" }}>HRR</span>
+        </div>
+        {!lineup && <div style={{ padding:"10px 12px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading lineup…</div>}
+        {lineup && lineup.players.length===0 &&
+          <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>}
+        {lineup && lineup.players.map(p=>{
+          const hot = nameStreak(p);
+          const canBvP = !!oppPitcherName && !!onBvP;
+          return (
+          <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
+            padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
+            <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
+            {canBvP
+              ? <button onClick={()=>onBvP({ batterId:p.id, batterName:p.name,
+                    pitcherId:oppPitcherId, pitcherName:oppPitcherName })}
+                  title={`${p.name} career vs ${oppPitcherName}`}
+                  style={{ font:"inherit", cursor:"pointer", border:"none", padding:"0 2px",
+                    fontFamily:SANS, fontSize:12.5, textAlign:"left",
+                    background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1,
+                    textDecoration:"underline dotted", textDecorationColor:C.ruleDark,
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</button>
+              : <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
+                  overflow:"hidden", textOverflow:"ellipsis",
+                  background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}>{p.name}</span>}
+            <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
+            <SeqBlock arr={p.h} label="hits" />{SEP}
+            <SeqBlock arr={p.tb} label="total bases" />{SEP}
+            <SeqBlock arr={p.hrr} label="H+R+RBI" />
+          </div>
+        );})}
+      </div>
+
+      {/* starting pitcher — visually separated from the hitters */}
+      <div style={{ margin:"6px 10px 12px", padding:"10px 12px", borderRadius:3,
+        background:"#fff", border:`1px solid ${C.rule}` }}>
+        <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
+          color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
+        <PitcherBlock name={pitcherName} vsName={oppName} info={pitcherInfo} bare />
+      </div>
+    </div>
+  );
+}
+
 function GameModal({ m, onClose }) {
   const { g, date } = m;
-  const [away, setAway] = useState(undefined);   // undefined = loading
-  const [home, setHome] = useState(undefined);
+  const [awayLU, setAwayLU] = useState(null);
+  const [homeLU, setHomeLU] = useState(null);
+  const [awayP,  setAwayP]  = useState(undefined);   // away SP vs home
+  const [homeP,  setHomeP]  = useState(undefined);   // home SP vs away
+  const [h2h,    setH2H]    = useState(undefined);
+  const [bvp,    setBvp]    = useState(null);
 
   useEffect(() => {
     let alive = true;
-    const season = SEASON;
-    const fetchP = async (pid, oppId) => {
-      if (!pid) return null;
-      try {
-        const r = await fetch(`${API}/people/${pid}/stats` +
-          `?stats=gameLog&group=pitching&season=${season}&gameType=R`);
-        if (!r.ok) return null;
-        const j = await r.json();
-        const splits = (j.stats?.[0]?.splits || []).slice()
-          .sort((a,b)=>a.date.localeCompare(b.date));
-        if (!splits.length) return null;
-        // every prior start vs this opponent, excluding the game being viewed
-        const vs = splits.filter(s=>s.opponent?.id===oppId && s.date < date);
-        return { vs };
-      } catch { return null; }
-    };
     (async () => {
-      const a = await fetchP(g.awayPid, g.homeId); if (alive) setAway(a);
-      const h = await fetchP(g.homePid, g.awayId); if (alive) setHome(h);
+      // H2H summary first (top-of-modal overview)
+      try { const s = await loadH2H(g.awayId, g.homeId); if(alive) setH2H(s); }
+      catch { if(alive) setH2H(null); }
+      // pitchers vs opposing team
+      loadPitcherVs(g.awayPid, g.homeId, date).then(r=>{ if(alive) setAwayP(r); });
+      loadPitcherVs(g.homePid, g.awayId, date).then(r=>{ if(alive) setHomeP(r); });
+      // lineups + per-batter trends
+      for (const side of ["away","home"]) {
+        loadLineup(g._raw, side, date).then(async lu=>{
+          const players = await mapPool(lu.players, 4, async pl=>({ ...pl, ...(await loadBatterTrend(pl.id, date)) }));
+          if(!alive) return;
+          (side==="away"?setAwayLU:setHomeLU)({ ...lu, players });
+        });
+      }
     })();
     return () => { alive = false; };
   }, [g, date]);
 
+  const aAbbr = TEAM_ABBR[g.awayId]||"?", hAbbr = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-  return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
-      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"center",
-      justifyContent:"center", padding:18 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
-        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:520, width:"100%",
-        maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-        <div style={{ padding:"16px 20px", borderBottom:`2px solid ${C.ink}`,
-          display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:10 }}>
-          <div>
-            <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.16em",
-              textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}</div>
-            <div style={{ fontFamily:SANS, fontSize:20, fontWeight:800, letterSpacing:"-0.01em" }}>
-              {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
-          </div>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
-        </div>
-
-        <div style={{ padding:"4px 20px 8px" }}>
-          {m.t.any && (
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"12px 0 4px" }}>
-              {m.t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
-              {m.t.echo.map((e,i)=><Pill key={i} color={C.echo}>
-                streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
-              {m.t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
-              {m.t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
-              {m.t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
-            </div>
-          )}
-          <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
-            textTransform:"uppercase", color:C.inkSoft, paddingTop:10 }}>Probable starters</div>
-          <div className="ts-lineups" style={{ gap:0, marginTop:4 }}>
-            <div className="ts-lineup-col" style={{ paddingRight:14, borderRight:`1px solid ${C.rule}` }}>
-              <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
-                textTransform:"uppercase", color:C.inkSoft, paddingTop:8 }}>{g.awayName}</div>
-              <PitcherBlock name={g.awayPname} vsName={g.homeName} info={away} />
-            </div>
-            <div className="ts-lineup-col" style={{ paddingLeft:14 }}>
-              <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
-                textTransform:"uppercase", color:C.inkSoft, paddingTop:8 }}>{g.homeName}</div>
-              <PitcherBlock name={g.homePname} vsName={g.awayName} info={home} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ════════════════════════ HEAD TO HEAD ════════════════════════ */
-/* today's slate; click a game to see this season's series between the teams */
-function H2HTab() {
-  const [games, setGames] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [sel, setSel] = useState(null);   // {aId,bId,aName,bName}
-
-  const load = useCallback(async () => {
-    setErr(""); setBusy(true); setGames(null);
-    try {
-      const r = await fetch(`${API}/schedule?sportId=1&date=${todayISO()}&hydrate=linescore`);
-      if (!r.ok) throw new Error(`schedule ${r.status}`);
-      const j = await r.json();
-      setGames((j.dates?.[0]?.games) || []);
-    } catch (e) {
-      setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
-    } finally { setBusy(false); }
-  }, []);
-  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, []);
-
-  return (
-    <div>
-      <Eyebrow n="01">Head to head · today’s games</Eyebrow>
-      <p style={{ fontFamily:SANS, fontSize:13.5, color:C.inkSoft, lineHeight:1.6,
-        marginTop:0, marginBottom:16, maxWidth:640 }}>
-        Click any game to see this season’s series between the two teams.
-      </p>
-
-      {busy && <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading slate…</div>}
-      {err && <ErrBox>{err}</ErrBox>}
-      {games && games.length===0 && (
-        <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>No games scheduled today.</div>)}
-
-      {games && games.length>0 && (
-        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          {games.map(g=>{
-            const away=g.teams.away.team, home=g.teams.home.team;
-            const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-            const final = g.status?.abstractGameState==="Final";
-            return (
-              <button key={g.gamePk}
-                onClick={()=>setSel({ aId:away.id, bId:home.id, aName:away.name, bName:home.name })}
-                style={{ width:"100%", textAlign:"left", border:`1px solid ${C.ruleDark}`, borderRadius:3,
-                  background:C.card, padding:"13px 16px", cursor:"pointer", font:"inherit",
-                  display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
-                <span style={{ fontFamily:SANS, fontWeight:600, fontSize:15 }}>
-                  {away.name} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {home.name}</span>
-                <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, whiteSpace:"nowrap" }}>
-                  {final ? `Final ${g.teams.away.score}–${g.teams.home.score}` : time} · tap for series →</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {sel && <H2HModal {...sel} season={SEASON} onClose={()=>setSel(null)} />}
-    </div>
-  );
-}
-
-function H2HModal({ aId, bId, aName, bName, season, onClose }) {
-  const [data, setData] = useState(undefined);   // undefined = loading
-  const [err, setErr] = useState("");
-  const aAbbr = TEAM_ABBR[aId]||"?", bAbbr = TEAM_ABBR[bId]||"?";
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/schedule?sportId=1&season=${season}&gameType=R&teamId=${aId}&hydrate=linescore`);
-        if (!r.ok) throw new Error(`schedule ${r.status}`);
-        const j = await r.json();
-        const games = (j.dates||[]).flatMap(d=>d.games||[])
-          .filter(g=>g.teams.home.team.id===bId || g.teams.away.team.id===bId)
-          .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
-        const finals=[]; let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
-        games.forEach(g=>{
-          const aHome = g.teams.home.team.id===aId;
-          const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
-          const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
-          const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
-          if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
-            finals.push({ date:g.officialDate||g.gameDate.slice(0,10), aS, bS, aHits, bHits, aHome });
-            ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
-            if (aS>bS) aw++; else if (bS>aS) bw++;
-          } else upcoming++;
-        });
-        if (alive) setData({ aw,bw,ar,br,ah,bh,finals,upcoming });
-      } catch (e) {
-        if (alive) setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
-      }
-    })();
-    return () => { alive = false; };
-  }, [aId, bId, season]);
 
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
-      justifyContent:"center", padding:18, overflowY:"auto" }}>
+      justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px",
+      overflowY:"auto" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
-        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:600, width:"100%",
-        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
+        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
+
+        {/* header */}
         <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
-          display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
-          <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>
-            {aName} <span style={{ color:C.inkSoft, fontWeight:400 }}>vs</span> {bName}</span>
+          display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10,
+          position:"sticky", top:0, background:C.paper, zIndex:2, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
+              textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}</div>
+            <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800, letterSpacing:"-0.01em" }}>
+              {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
+          </div>
           <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
+            borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>✕</button>
         </div>
 
-        <div style={{ padding:"14px 18px 18px" }}>
-          {err && <ErrBox>{err}</ErrBox>}
-          {data===undefined && !err && (
-            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading season series…</div>)}
-          {data && (
-            data.finals.length===0 ? (
-              <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
-                No completed matchups yet this season.{data.upcoming>0 && ` ${data.upcoming} scheduled.`}
+        {/* ── H2H OVERVIEW (top) ── */}
+        <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}`, background:C.card }}>
+          <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
+            color:C.inkSoft, marginBottom:6 }}>Season head-to-head</div>
+          {h2h===undefined ? (
+            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
+          ) : !h2h || h2h.played===0 ? (
+            <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
+              No completed meetings yet this season{h2h&&h2h.upcoming>0?` · ${h2h.upcoming} scheduled`:""}.</div>
+          ) : (
+            <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+              <div style={{ fontFamily:MONO, fontSize:20, fontWeight:700 }}>
+                <span style={{ color: h2h.aw>h2h.bw?C.over:C.ink }}>{aAbbr} {h2h.aw}</span>
+                <span style={{ color:C.ruleDark }}> – </span>
+                <span style={{ color: h2h.bw>h2h.aw?C.over:C.ink }}>{h2h.bw} {hAbbr}</span>
               </div>
-            ) : (
-              <>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                  marginBottom:12, flexWrap:"wrap", gap:8 }}>
-                  <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.1em",
-                    textTransform:"uppercase", color:C.inkSoft }}>Season series</span>
-                  <span style={{ fontFamily:MONO, fontSize:16, fontWeight:700 }}>
-                    <span style={{ color: data.aw>data.bw?C.over:C.ink }}>{aAbbr} {data.aw}</span>
-                    <span style={{ color:C.ruleDark }}> – </span>
-                    <span style={{ color: data.bw>data.aw?C.over:C.ink }}>{data.bw} {bAbbr}</span>
-                  </span>
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", border:`1px solid ${C.rule}`,
-                  borderRadius:3, overflow:"hidden", marginBottom:14 }}>
-                  <StatCell label={`${aAbbr} runs · hits`} value={`${data.ar} · ${data.ah}`}
-                    sub={`${(data.ar/data.finals.length).toFixed(1)} R/g`} />
-                  <StatCell label={`${bAbbr} runs · hits`} value={`${data.br} · ${data.bh}`}
-                    sub={`${(data.br/data.finals.length).toFixed(1)} R/g`} />
-                </div>
-                {data.finals.map((f,i)=>{
-                  const aWon=f.aS>f.bS;
-                  return (
-                  <div key={i} style={{ display:"grid", gridTemplateColumns:"86px 1fr auto", gap:8,
-                    padding:"6px 2px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
-                    <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>{f.date}</span>
-                    <span style={{ fontFamily:MONO, fontSize:13 }}>
-                      <span style={{ fontWeight:aWon?800:400, color:aWon?C.ink:C.inkSoft }}>{aAbbr} {f.aS}</span>
-                      <span style={{ color:C.ruleDark }}> – </span>
-                      <span style={{ fontWeight:!aWon?800:400, color:!aWon?C.ink:C.inkSoft }}>{f.bS} {bAbbr}</span>
-                    </span>
-                    <span style={{ fontFamily:MONO, fontSize:10.5, color:C.inkSoft }}>
-                      @{f.aHome ? aAbbr : bAbbr}</span>
-                  </div>
-                );})}
-                {data.upcoming>0 && (
-                  <div style={{ marginTop:10, fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-                    {data.upcoming} more scheduled this season.</div>
-                )}
-              </>
-            )
+              <div style={{ display:"flex", gap:14, fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+                <span>{aAbbr} {h2h.ar}R · {h2h.ah}H <span style={{color:C.ruleDark}}>({(h2h.ar/h2h.played).toFixed(1)}/g)</span></span>
+                <span>{hAbbr} {h2h.br}R · {h2h.bh}H <span style={{color:C.ruleDark}}>({(h2h.br/h2h.played).toFixed(1)}/g)</span></span>
+              </div>
+              {h2h.upcoming>0 && <span style={{ fontFamily:MONO, fontSize:10.5, color:C.ruleDark }}>{h2h.upcoming} more scheduled</span>}
+            </div>
           )}
         </div>
+
+        {/* trend pills, if any */}
+        {m.t && m.t.any && (
+          <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"10px 18px 2px" }}>
+            {m.t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
+            {m.t.echo.map((e,i)=><Pill key={i} color={C.echo}>streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
+            {m.t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
+            {m.t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
+            {m.t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+          </div>
+        )}
+
+        {/* ── lineups: away left, home right (stack on mobile) ── */}
+        <div className="ts-lineups" style={{ gap:0 }}>
+          <TeamPanel teamName={g.awayName} oppName={g.homeName}
+            lineup={awayLU} pitcherName={g.awayPname} pitcherInfo={awayP}
+            oppPitcherName={g.homePname} oppPitcherId={g.homePid}
+            onBvP={setBvp} side="away" />
+          <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
+            <TeamPanel teamName={g.homeName} oppName={g.awayName}
+              lineup={homeLU} pitcherName={g.homePname} pitcherInfo={homeP}
+              oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
+              onBvP={setBvp} side="home" />
+          </div>
+        </div>
+
+        <div style={{ padding:"8px 18px 16px", fontFamily:MONO, fontSize:9.5, color:C.ruleDark, lineHeight:1.6 }}>
+          Tap a hitter to see their career numbers vs the opposing starter. H · TB · HRR = last 5 games.
+        </div>
       </div>
+
+      {bvp && <BvPModal {...bvp} onClose={()=>setBvp(null)} />}
     </div>
   );
 }
@@ -1528,14 +1027,13 @@ const RESPONSIVE_CSS = `
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
+  .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:18px 12px 48px; }
 }
 * { -webkit-tap-highlight-color: transparent; }
 `;
 
 export default function App() {
-  const [tab, setTab] = useState("travel");
-
   useEffect(() => {
     document.title = "The Trend Sheet";
     const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
@@ -1560,22 +1058,15 @@ export default function App() {
             letterSpacing:"-0.02em", lineHeight:1 }}>The Trend Sheet</h1>
         </header>
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:22 }} />
-        <div style={{ display:"flex", gap:4, marginBottom:24, flexWrap:"wrap" }}>
-          {[["travel","TRENDS"],["day","PROPS"],["h2h","HEAD TO HEAD"]].map(([id,lbl])=>(
-            <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
-              border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
-              background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
-              fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
-              cursor:"pointer" }}>{lbl}</button>))}
-        </div>
 
-        {tab==="day" ? <DaySheet/> : tab==="h2h" ? <H2HTab/> : <TravelTrends/>}
+        <TravelTrends/>
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
-          Stats & schedule: MLB Stats API (free, no key). Lineups are confirmed only a few hours
-          pre-game; before that, projected from each team’s last batting order. Monthly AVG is
-          computed from the selected date’s month; H/TB/K show the last five games.
+          Stats & schedule: MLB Stats API (free, no key). Click any game for lineups, the
+          probable starters’ history vs the opponent, and the season head-to-head. Lineups are
+          confirmed only a few hours pre-game; before that they’re projected from each team’s
+          last batting order.
         </footer>
       </div>
     </div>
