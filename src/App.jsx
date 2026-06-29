@@ -875,52 +875,44 @@ function TravelTrends() {
         putAt(TODAY_DI, row, g, 2 + (row%2));   // 2=navy, 3=darker-gray
       });
 
-      // ---- trace each today game's series outward (back, then forward) ----
-      perDay[TODAY_DI].forEach((g)=>{
-        const row = grid[TODAY_DI].indexOf(g);
-        const shade = g.seriesShade;
+      // ---- build every other column outward from today, one at a time ----
+      // colOrder visits each column with its reference = the already-built
+      // column one step toward today. Within a column:
+      //   Pass A: every game whose matchup also sits in the reference column
+      //           (and didn't break) claims that game's EXACT row + color.
+      //           Claims happen before any gap-fill, so continuations always
+      //           win their row → identical rows line up across all columns.
+      //   Pass B: leftover games take the lowest free rows, gray/white.
+      const colOrder = [
+        {di:1,ref:2},{di:0,ref:1},                       // back: yesterday, 2-ago
+        {di:3,ref:2},{di:4,ref:3},{di:5,ref:4},{di:6,ref:5}, // fwd: +1..+4
+      ];
 
-        // backward
-        for(let di=TODAY_DI-1; di>=0; di--){
-          if(seriesBreaks(g.awayId, g.homeId, di)) break;   // different opp → stop
-          const match = dayByPair[di][g.pair];
-          if(match && !placed[di][g.pair]){
-            const r = nextFreeFrom(di, row);
-            putAt(di, r, match, shade);
-          }
-          // off day (no match, no break) → keep going further out
-        }
-
-        // forward
-        for(let di=TODAY_DI+1; di<numDays; di++){
-          if(seriesBreaks(g.awayId, g.homeId, di)) break;
-          const match = dayByPair[di][g.pair];
-          if(match && !placed[di][g.pair]){
-            const r = nextFreeFrom(di, row);
-            putAt(di, r, match, shade);
-          }
-        }
-      });
-
-      // ---- fill remaining games — but first recheck each against the day
-      //      one step closer to today: if its matchup continues a placed
-      //      series there (no different-opponent break), inherit that row+color.
-      //      Process columns outward from today so the reference day is ready. ----
-      const fillOrder = [1, 0, 3, 4, 5, 6];   // yesterday, 2-ago, tomorrow, +2…
-      fillOrder.forEach(di=>{
-        const refDi = di < TODAY_DI ? di + 1 : di - 1;   // one step toward today
+      colOrder.forEach(({di, ref})=>{
+        const matched = [];   // {g, refRow, shade}
+        const leftover = [];
         perDay[di].forEach(g=>{
-          if(placed[di][g.pair]) return;
-          const ref = grid[refDi].find(x=>x && x.pair===g.pair);
-          if(ref && !seriesBreaks(g.awayId, g.homeId, di)){
-            // continues a series from the adjacent-toward-today column
-            const refRow = grid[refDi].indexOf(ref);
-            const r = nextFreeFrom(di, refRow);
-            putAt(di, r, g, ref.seriesShade);   // inherit its color scheme
+          const refGame = grid[ref].find(x=>x && x.pair===g.pair);
+          if(refGame && !seriesBreaks(g.awayId, g.homeId, di)){
+            matched.push({ g, refRow: grid[ref].indexOf(refGame), shade: refGame.seriesShade });
           } else {
-            const r = nextFreeFrom(di, 0);
-            putAt(di, r, g, 0 + (r%2));          // gray/white gap fill
+            leftover.push(g);
           }
+        });
+
+        // Pass A — place continuations at their exact reference row.
+        // Sort by refRow so lower rows claim first; if two want the same row
+        // (rare convergence) the second falls to the next free slot.
+        matched.sort((a,b)=>a.refRow-b.refRow).forEach(({g,refRow,shade})=>{
+          let r = refRow;
+          while(grid[di][r]!==undefined && grid[di][r]!==null) r++;
+          putAt(di, r, g, shade);
+        });
+
+        // Pass B — leftovers fill the lowest empty rows, gray/white.
+        leftover.forEach(g=>{
+          const r = nextFreeFrom(di, 0);
+          putAt(di, r, g, 0 + (r%2));
         });
       });
 
