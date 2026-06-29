@@ -896,26 +896,49 @@ function TravelTrends() {
 
       const out=DATES.map((d,di)=>({ date:d, games:cols[di] }));
 
-      // series shading: 4-color adjacency coloring so no touching series share a shade
-      const cell=(c,r)=>out[c]?.games[r]||null;
-      const R=Math.max(0,...out.map(o=>o.games.length));
-      const adj={};
-      const link=(a,b)=>{ if(a==null||b==null||a===b) return;
-        (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); };
-      for(let r=0;r<R;r++) for(let c=0;c<out.length;c++){
-        const g=cell(c,r); if(!g||g.sid==null) continue;
-        const right=cell(c+1,r), down=cell(c,r+1);
-        if(right?.sid!=null) link(g.sid,right.sid);
-        if(down?.sid!=null)  link(g.sid,down.sid);
+      // series shading: two deterministic color pairs
+      // first series wave (earliest start day) → shades 0 & 1, alternating by row
+      // second series wave (start after first wave ends) → shades 2 & 3, alternating by row
+      // within each wave, adjacent rows get different shades so neighbors never match
+
+      // find the day each series first and last appears
+      const seriesSpan = {};  // sid → {first, last, minRow}
+      for(let c=0;c<out.length;c++){
+        out[c].games.forEach((g,r)=>{
+          if(!g||g.sid==null) return;
+          const sp = seriesSpan[g.sid] = seriesSpan[g.sid]||{first:c,last:c,minRow:r};
+          sp.last = c;
+          if(r < sp.minRow) sp.minRow = r;
+        });
       }
-      const N=SERIES_SHADE.length, shadeOf={};
-      for(let id=0;id<sid;id++){
-        const used=new Set();
-        (adj[id]||[]).forEach(n=>{ if(shadeOf[n]!=null) used.add(shadeOf[n]); });
-        let k=0; while(k<N-1&&used.has(k)) k++;
-        shadeOf[id]=k;
-      }
-      out.forEach(o=>o.games.forEach(g=>{ if(g&&g.sid!=null) g.seriesShade=shadeOf[g.sid]; }));
+
+      // sort series by first appearance day, then by row
+      const seriesOrder = Object.keys(seriesSpan)
+        .map(id=>({ id:Number(id), ...seriesSpan[id] }))
+        .sort((a,b)=> a.first-b.first || a.minRow-b.minRow);
+
+      // find where wave 1 ends: the day the last series of the first group finishes
+      // wave 2 = any series that starts strictly after wave 1's latest end
+      let wave1End = -1;
+      // greedily assign wave1 = everything whose first day overlaps with the initial cluster
+      // simplest definition: series starting on day 0-2 (the first half, inc. today) = wave 1
+      // series starting on day 3+ (tomorrow onward) = wave 2
+      // this naturally splits "current series" from "future series"
+      const todayDi = 2;  // index of today in DATES (offset 0 = di 0 = start-2, today = di 2)
+
+      const waveOf = {};  // sid → 0 or 1
+      seriesOrder.forEach(s=>{
+        waveOf[s.id] = s.first <= todayDi ? 0 : 1;
+      });
+
+      // within each wave, alternate shade by row position so adjacent rows differ
+      // shade = wave*2 + (minRow % 2)
+      out.forEach(o=>o.games.forEach(g=>{
+        if(!g||g.sid==null) return;
+        const sp = seriesSpan[g.sid];
+        const wave = waveOf[g.sid] ?? 0;
+        g.seriesShade = wave*2 + (sp.minRow%2);
+      }));
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
@@ -1188,9 +1211,9 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
   );
 }
 
-/* series tints, indexed (col%2)*2 + (row%2):
-   even columns alternate light-gray / white going down,
-   odd columns alternate soft-navy / darker-gray going down */
+/* series shading — two pairs, two waves:
+   wave 0 (current/past series):  light gray  ↔  white
+   wave 1 (future series):        soft navy   ↔  darker gray  */
 const SERIES_SHADE = ["#E7E9EC", "#FFFFFF", "#BCC7D8", "#D3D7DC"];
 
 /* the "current time" marker that rests in the gap between today's games */
