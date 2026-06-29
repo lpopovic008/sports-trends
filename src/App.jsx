@@ -1103,8 +1103,7 @@ function Legend() {
     <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
       {TREND_SLOTS.map(s=>(
         <span key={s.key} style={{ display:"flex", alignItems:"center", gap:4 }}>
-          <span style={{ width:13, height:9, borderRadius:2, background:s.color,
-            boxShadow:`0 0 0 1.5px rgba(255,255,255,0.75), 0 0 0 2.5px ${s.color}` }} />
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color }} />
           <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{s.label}</span>
         </span>
       ))}
@@ -1157,9 +1156,9 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
             style={{ width:13, height:11, borderRadius:2,
               background: present ? color : "transparent",
               boxShadow: present
-                ? `0 0 0 1.5px rgba(255,255,255,0.75), 0 0 0 2.5px ${color}`
-                : `inset 0 0 0 1px ${C.rule}`,
-              opacity: present ? 1 : 0.3 }} />;
+                ? "none"
+                : `inset 0 0 0 1.5px ${C.inkSoft}`,
+              opacity: present ? 1 : 0.45 }} />;
         })}
       </span>
     </div>
