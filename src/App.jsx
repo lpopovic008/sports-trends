@@ -784,6 +784,183 @@ function PitcherBlock({ name, vsName, info, bare }) {
   );
 }
 
+/* ════════════════════════ PROP ANALYZER ════════════════════════ */
+function PropAnalyzer({ injected = null }) {
+  const [name, setName] = useState("");
+  const [statKey, setStatKey] = useState("hits");
+  const [line, setLine] = useState("1.5");
+  const [sampleN, setSampleN] = useState("20");   // "5"|"10"|"15"|"20"|"month"|"season"
+  const [roster, setRoster] = useState(null);
+  const [games, setGames] = useState(null);
+  const [resolved, setResolved] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const loadRoster = useCallback(async () => {
+    if (roster) return roster;
+    const r = await fetch(`${API}/sports/1/players?season=${SEASON}`);
+    if (!r.ok) throw new Error(`roster ${r.status}`);
+    const j = await r.json();
+    const people = j.people || [];
+    setRoster(people);
+    return people;
+  }, [roster]);
+
+  const analyzeLive = useCallback(async (override) => {
+    const rawName = typeof override === "string" ? override : (override?.name ?? name);
+    const rawStat = (override && typeof override === "object" && override.stat) ? override.stat : statKey;
+    setErr(""); setGames(null); setResolved(""); setBusy(true);
+    try {
+      const people = await loadRoster();
+      const q = rawName.trim().toLowerCase();
+      if (!q) throw new Error("Enter a player name.");
+      const hits = people.filter(p=>(p.fullName||"").toLowerCase().includes(q));
+      if (!hits.length) throw new Error(`No ${SEASON} MLB player matched "${rawName}".`);
+      const player = hits[0];
+      const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=hitting&season=${SEASON}&gameType=R`);
+      if (!r.ok) throw new Error(`game log ${r.status}`);
+      const j = await r.json();
+      const splits = j.stats?.[0]?.splits || [];
+      if (!splits.length) throw new Error(`No ${SEASON} game logs for ${player.fullName}.`);
+      const rows = splits.map(s=>({ date:s.date, opp:s.opponent?.abbreviation||"",
+        value:valOf(s.stat, rawStat) })).sort((a,b)=>a.date.localeCompare(b.date));
+      setResolved(player.fullName); setGames(rows);
+    } catch (e) {
+      setErr(isNet(e.message)
+        ? "Couldn't reach the MLB data service. This works from a normal browser tab in your own app."
+        : e.message);
+    } finally { setBusy(false); }
+  }, [name, statKey, loadRoster]);
+
+  // clicking a stat fills name + stat and runs immediately
+  useEffect(() => {
+    if (injected && injected.name) {
+      setName(injected.name);
+      if (injected.stat) setStatKey(injected.stat);
+      analyzeLive({ name:injected.name, stat:injected.stat });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injected?.ts]);
+
+  const analysis = useMemo(() => {
+    if (!games?.length) return null;
+    const L = parseFloat(line);
+    let recent, sampleLabel;
+    if (sampleN === "season") { recent = games; sampleLabel = "Season"; }
+    else if (sampleN === "month") {
+      const mo = String(games[games.length-1].date).slice(0,7);
+      const m = games.filter(g=>String(g.date).startsWith(mo));
+      recent = m.length ? m : games; sampleLabel = "This month";
+    } else { const n=Number(sampleN); recent = games.slice(-n); sampleLabel = `Last ${n}`; }
+    const avg = a => a.reduce((s,g)=>s+g.value,0)/a.length;
+    const clears = g => g.value > L;
+    const hitN = recent.filter(clears).length;
+    let streak = 0;
+    for (let i=games.length-1;i>=0;i--){ if(clears(games[i])) streak++; else break; }
+    const recentAvg = avg(recent);
+    return { L, recent, recentAvg, seasonAvg:avg(games), hitN,
+      hitRate:hitN/recent.length, streak, sampleLabel, edge:recentAvg-L };
+  }, [games, line, sampleN]);
+
+  const statLabel = (HIT_STATS.find(s=>s[0]===statKey)||[statKey,statKey])[1];
+
+  return (
+    <div>
+      <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end", marginBottom:14 }}>
+        <Field label="Player"><input style={{ ...inputStyle, minWidth:150 }} value={name}
+          placeholder="e.g. Aaron Judge"
+          onChange={e=>setName(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter") analyzeLive(); }} /></Field>
+        <Field label="Stat"><select style={{ ...inputStyle, minWidth:120 }} value={statKey}
+          onChange={e=>setStatKey(e.target.value)}>
+          {HIT_STATS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="Line"><input style={{ ...inputStyle, width:70 }} value={line}
+          inputMode="decimal" onChange={e=>setLine(e.target.value)} /></Field>
+        <Field label="Sample"><select style={{ ...inputStyle, width:120 }} value={sampleN}
+          onChange={e=>setSampleN(e.target.value)}>
+          <option value="5">Last 5</option><option value="10">Last 10</option>
+          <option value="15">Last 15</option><option value="20">Last 20</option>
+          <option value="month">This month</option><option value="season">Season</option></select></Field>
+        <button onClick={()=>analyzeLive()} disabled={busy} style={{ padding:"8px 16px",
+          border:`1px solid ${C.ink}`, borderRadius:2, background:busy?C.rule:C.ink, color:"#fff",
+          fontFamily:MONO, fontSize:12, letterSpacing:"0.06em", textTransform:"uppercase",
+          cursor:busy?"default":"pointer" }}>{busy?"…":"Analyze"}</button>
+      </div>
+
+      {err && <ErrBox>{err}</ErrBox>}
+
+      {analysis && (
+        <div style={{ border:`1px solid ${C.ruleDark}`, borderRadius:3, background:C.card, overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.rule}`,
+            display:"flex", justifyContent:"space-between", alignItems:"baseline", flexWrap:"wrap", gap:8 }}>
+            <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>{resolved}</span>
+            <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, textTransform:"uppercase",
+              letterSpacing:"0.08em" }}>over {analysis.L} {statLabel}</span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",
+            borderBottom:`1px solid ${C.rule}` }}>
+            {[[`${analysis.sampleLabel} avg`, analysis.recentAvg.toFixed(2), `season ${analysis.seasonAvg.toFixed(2)}`, C.ink],
+              ["Edge vs line", `${analysis.edge>=0?"+":""}${analysis.edge.toFixed(2)}`, analysis.edge>=0?"form beats line":"line beats form", analysis.edge>=0?C.over:C.under],
+              ["Hit rate", `${Math.round(analysis.hitRate*100)}%`, `${analysis.hitN}/${analysis.recent.length} cleared`, analysis.hitRate>=0.6?C.over:analysis.hitRate<=0.4?C.under:C.ink],
+              ["Streak", analysis.streak, `game${analysis.streak===1?"":"s"} over`, analysis.streak>=3?C.over:C.ink],
+            ].map(([lab,val,sub,col],i)=>(
+              <div key={i} style={{ padding:"10px 14px", borderRight:`1px solid ${C.rule}` }}>
+                <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.08em",
+                  textTransform:"uppercase", color:C.inkSoft }}>{lab}</div>
+                <div style={{ fontFamily:MONO, fontSize:18, fontWeight:700, color:col, marginTop:2 }}>{val}</div>
+                <div style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark, marginTop:1 }}>{sub}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding:"16px 12px 8px" }}>
+            <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase",
+              color:C.inkSoft, padding:"0 6px 8px" }}>Game-by-game · bar clears line = over</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <ComposedChart data={analysis.recent.map(g=>({ name:String(g.date).slice(5), value:g.value,
+                clears:g.value>analysis.L }))} margin={{ top:4, right:16, bottom:4, left:-18 }}>
+                <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
+                  axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill:"rgba(0,0,0,0.04)" }}
+                  contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}` }} />
+                <Bar dataKey="value" radius={[2,2,0,0]}>
+                  {analysis.recent.map((g,i)=>(
+                    <Cell key={i} fill={g.value>analysis.L ? C.over : C.under} />
+                  ))}
+                </Bar>
+                <ReferenceLine y={analysis.L} stroke={C.ink} strokeWidth={1.5} strokeDasharray="4 3"
+                  label={{ value:`line ${analysis.L}`, position:"right", fontFamily:MONO, fontSize:10, fill:C.ink }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PropModal({ injected, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:60,
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
+      justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
+        border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:600, width:"100%",
+        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+          display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+          <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>Prop Lookup</span>
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+            borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ padding:"14px 18px 20px" }}>
+          <PropAnalyzer injected={injected} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────── shared loaders for the unified game modal ─────────── */
 
 // last-5 H / TB / HRR + this-month AVG for one batter (date = game date)
@@ -871,7 +1048,7 @@ async function loadH2H(aId, bId) {
 }
 
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
-function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP, oppPitcherName, oppPitcherId, side }) {
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP, onStat, oppPitcherName, oppPitcherId, side }) {
   return (
     <div className="ts-lineup-col" style={{ minWidth:0 }}>
       <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
@@ -915,9 +1092,9 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP,
                   overflow:"hidden", textOverflow:"ellipsis",
                   background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}>{p.name}</span>}
             <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
-            <SeqBlock arr={p.h} label="hits" />{SEP}
-            <SeqBlock arr={p.tb} label="total bases" />{SEP}
-            <SeqBlock arr={p.hrr} label="H+R+RBI" />
+            <SeqBlock arr={p.h} label="hits" onPick={onStat && (()=>onStat(p.name,"hits"))} />{SEP}
+            <SeqBlock arr={p.tb} label="total bases" onPick={onStat && (()=>onStat(p.name,"totalBases"))} />{SEP}
+            <SeqBlock arr={p.hrr} label="H+R+RBI" onPick={onStat && (()=>onStat(p.name,"hits+runs+rbi"))} />
           </div>
         );})}
       </div>
@@ -941,6 +1118,7 @@ function GameModal({ m, onClose }) {
   const [homeP,  setHomeP]  = useState(undefined);   // home SP vs away
   const [h2h,    setH2H]    = useState(undefined);
   const [bvp,    setBvp]    = useState(null);
+  const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
 
   useEffect(() => {
     let alive = true;
@@ -1030,21 +1208,23 @@ function GameModal({ m, onClose }) {
           <TeamPanel teamName={g.awayName} oppName={g.homeName}
             lineup={awayLU} pitcherName={g.awayPname} pitcherInfo={awayP}
             oppPitcherName={g.homePname} oppPitcherId={g.homePid}
-            onBvP={setBvp} side="away" />
+            onBvP={setBvp} onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} side="away" />
           <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
             <TeamPanel teamName={g.homeName} oppName={g.awayName}
               lineup={homeLU} pitcherName={g.homePname} pitcherInfo={homeP}
               oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
-              onBvP={setBvp} side="home" />
+              onBvP={setBvp} onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} side="home" />
           </div>
         </div>
 
         <div style={{ padding:"8px 18px 16px", fontFamily:MONO, fontSize:9.5, color:C.ruleDark, lineHeight:1.6 }}>
-          Tap a hitter to see their career numbers vs the opposing starter. H · TB · HRR = last 5 games.
+          Tap a hitter’s name for their career vs the opposing starter; tap any H · TB · HRR
+          last-5 line to open the prop analyzer for that stat.
         </div>
       </div>
 
       {bvp && <BvPModal {...bvp} onClose={()=>setBvp(null)} />}
+      {pick && <PropModal injected={pick} onClose={()=>setPick(null)} />}
     </div>
   );
 }
