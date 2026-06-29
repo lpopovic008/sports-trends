@@ -13,12 +13,12 @@ const C = {
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — each evokes the trend */
-  rematch:"#4A3580",       /* deep indigo: cerebral, the chess-move pitcher */
-  rematchLight:"#A99AC8",  /* muted violet: faced but short outing */
-  bigday:"#D97706",        /* amber-orange: scoreboard explosion, 10-run game */
-  late:"#9B1C2E",          /* deep crimson: clutch, late-night drama */
-  echo:"#0E7490",          /* teal: momentum wave, streak energy */
-  travel:"#7B7FA8",        /* dusty lavender-gray: jet-lagged, sleepy west→east */
+  rematch:"#8B5CF6",       /* neon indigo/violet: chess-move pitcher */
+  rematchLight:"#C4B5FD",  /* light neon violet: faced but short outing */
+  bigday:"#FF8C1A",        /* neon amber-orange: 10-run scoreboard explosion */
+  late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
+  echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
+  travel:"#A78BFA",        /* neon lavender: jet-lagged west→east */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
