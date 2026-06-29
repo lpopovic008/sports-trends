@@ -11,7 +11,14 @@ import {
 const C = {
   paper:"#ECEEF1", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
-  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E", rematch:"#6D4AA8", rematchLight:"#C3B0E3", bigday:"#E07B00",
+  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
+  /* indicator colors — each evokes the trend */
+  rematch:"#4A3580",       /* deep indigo: cerebral, the chess-move pitcher */
+  rematchLight:"#A99AC8",  /* muted violet: faced but short outing */
+  bigday:"#D97706",        /* amber-orange: scoreboard explosion, 10-run game */
+  late:"#9B1C2E",          /* deep crimson: clutch, late-night drama */
+  echo:"#0E7490",          /* teal: momentum wave, streak energy */
+  travel:"#7B7FA8",        /* dusty lavender-gray: jet-lagged, sleepy west→east */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -128,6 +135,7 @@ function DaySheet() {
   const [loadingAll, setLoadingAll] = useState(false);
   const [err, setErr] = useState("");
   const [pick, setPick] = useState(null);             // {name, ts} -> feeds Prop Lookup
+  const [bvp, setBvp] = useState(null);               // {batterId, batterName, pitcherId, pitcherName}
 
   const loadSchedule = useCallback(async () => {
     setErr(""); setGames(null); setByPk({}); setBusy(true);
@@ -205,7 +213,11 @@ function DaySheet() {
         const lu = await lineupFor(game, side);
         const players = await mapPool(lu.players, 4, async (pl)=>({
           ...pl, ...(await trendFor(pl.id)) }));
-        return { source:lu.source, players, team:game.teams[side].team.name };
+        const oppSide = side==="away" ? "home" : "away";
+        const oppPitcher = game.teams[oppSide]?.probablePitcher;
+        return { source:lu.source, players, team:game.teams[side].team.name,
+          oppPitcherName: oppPitcher?.fullName || null,
+          oppPitcherId:   oppPitcher?.id       || null };
       }));
       setByPk(p=>({ ...p, [game.gamePk]:{ status:"done", away:sides[0], home:sides[1] } }));
     } catch (e) {
@@ -252,10 +264,86 @@ function DaySheet() {
       {games && games.map((g)=>(
         <GameCard key={g.gamePk} g={g} data={byPk[g.gamePk]}
           onLoad={()=>loadGame(g)}
-          onPick={(name, stat)=>setPick({ name, stat, ts:Date.now() })} />
+          onPick={(name, stat)=>setPick({ name, stat, ts:Date.now() })}
+          onBvP={setBvp} />
       ))}
 
       {pick && <PropModal injected={pick.name ? pick : null} onClose={()=>setPick(null)} />}
+      {bvp && <BvPModal {...bvp} onClose={()=>setBvp(null)} />}
+    </div>
+  );
+}
+
+/* ── Batter vs Pitcher career stats modal ── */
+function BvPModal({ batterId, batterName, pitcherId, pitcherName, onClose }) {
+  const [data, setData] = useState(undefined);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/people/${batterId}/stats` +
+          `?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting&gameType=R`);
+        if (!r.ok) throw new Error(`stats ${r.status}`);
+        const j = await r.json();
+        const splits = j.stats?.[0]?.splits || [];
+        if (alive) setData(splits[0]?.stat || null);
+      } catch (e) {
+        if (alive) setErr(isNet(e.message) ? "Couldn't reach MLB stats service." : e.message);
+      }
+    })();
+    return () => { alive = false; };
+  }, [batterId, pitcherId]);
+
+  const rows = data ? [
+    ["AB",  data.atBats], ["H",   data.hits], ["2B",  data.doubles],
+    ["3B",  data.triples], ["HR",  data.homeRuns], ["RBI", data.rbi],
+    ["BB",  data.baseOnBalls], ["SO",  data.strikeOuts], ["AVG", data.avg],
+    ["OBP", data.obp], ["SLG", data.slg], ["OPS", data.ops],
+  ] : [];
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:60,
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
+      justifyContent:"center", padding:18, overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
+        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:480, width:"100%",
+        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+          display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+          <div>
+            <div style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>{batterName}</div>
+            <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:2 }}>
+              career vs {pitcherName}</div>
+          </div>
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer",
+            flexShrink:0 }}>✕</button>
+        </div>
+        <div style={{ padding:"14px 18px 18px" }}>
+          {err && <ErrBox>{err}</ErrBox>}
+          {data===undefined && !err && (
+            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>)}
+          {data===null && !err && (
+            <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
+              No career matchup data found between these two players.</div>)}
+          {data && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1,
+              border:`1px solid ${C.rule}`, borderRadius:3, overflow:"hidden" }}>
+              {rows.map(([label, val])=>(
+                <div key={label} style={{ padding:"8px 10px", background:C.card,
+                  borderRight:`1px solid ${C.rule}`, borderBottom:`1px solid ${C.rule}` }}>
+                  <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.08em",
+                    textTransform:"uppercase", color:C.inkSoft }}>{label}</div>
+                  <div style={{ fontFamily:MONO, fontSize:15, fontWeight:600,
+                    color:C.ink, marginTop:2 }}>{val ?? "—"}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -294,7 +382,7 @@ function ProbLine({ g }) {
   );
 }
 
-function GameCard({ g, data, onLoad, onPick }) {
+function GameCard({ g, data, onLoad, onPick, onBvP }) {
   const tz = TEAM_TZ[g.teams.home.team.id] ?? "?";
   const time = new Date(g.gameDate).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   return (
@@ -319,8 +407,10 @@ function GameCard({ g, data, onLoad, onPick }) {
         <div style={{ padding:14, fontFamily:SANS, fontSize:13, color:C.under }}>Couldn’t load: {data.msg}</div>)}
       {data?.status==="done" && (
         <div className="ts-lineups">
-          <LineupCol side={data.away} borderRight onPick={onPick} />
-          <LineupCol side={data.home} onPick={onPick} />
+          <LineupCol side={data.away} borderRight onPick={onPick}
+            onBvP={onBvP} />
+          <LineupCol side={data.home} onPick={onPick}
+            onBvP={onBvP} />
         </div>)}
     </div>
   );
@@ -331,15 +421,20 @@ const ROW_COLS = "14px minmax(36px,1fr) 30px 60px 9px 60px 9px 60px";
 const SEP = <span style={{ textAlign:"center", fontFamily:MONO, fontSize:12,
   color:C.ruleDark, fontWeight:700 }}>|</span>;
 
-function LineupCol({ side, borderRight, onPick }) {
+function LineupCol({ side, borderRight, onPick, onBvP }) {
+  const hasPitcher = !!side.oppPitcherName;
   return (
     <div className="ts-lineup-col" style={{ borderRight: borderRight?`1px solid ${C.rule}`:"none" }}>
       <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
         display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <span style={{ fontFamily:SANS, fontWeight:600, fontSize:13 }}>{side.team}</span>
-        {side.source==="confirmed" ? <Tag tone="ok">Confirmed</Tag>
-          : side.source==="projected" ? <Tag>Projected · last game</Tag>
-          : <Tag>No lineup</Tag>}
+        <span style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
+          {side.source==="confirmed" ? <Tag tone="ok">Confirmed</Tag>
+            : side.source==="projected" ? <Tag>Projected · last game</Tag>
+            : <Tag>No lineup</Tag>}
+          {hasPitcher && <span style={{ fontFamily:MONO, fontSize:9, color:C.inkSoft }}>
+            vs {side.oppPitcherName}</span>}
+        </span>
       </div>
       <div style={{ padding:"4px 0" }}>
         <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
@@ -358,10 +453,20 @@ function LineupCol({ side, borderRight, onPick }) {
           <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
             padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
-            <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
-              overflow:"hidden", textOverflow:"ellipsis",
-              background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}
-              title={p.name}>{p.name}</span>
+            {hasPitcher && onBvP
+              ? <button title={`${p.name} vs ${side.oppPitcherName} career`}
+                  onClick={()=>onBvP({ batterId:p.id, batterName:p.name,
+                    pitcherId:side.oppPitcherId, pitcherName:side.oppPitcherName })}
+                  style={{ font:"inherit", cursor:"pointer", border:"none", padding:"0 3px",
+                    fontFamily:SANS, fontSize:12.5, textAlign:"left",
+                    background: hot ? "rgba(255,233,77,0.5)" : "transparent",
+                    borderRadius:1, textDecoration:"underline dotted", textDecorationColor:C.ruleDark,
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+                  title={p.name}>{p.name}</button>
+              : <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
+                  overflow:"hidden", textOverflow:"ellipsis",
+                  background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}
+                  title={p.name}>{p.name}</span>}
             <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
             <SeqBlock arr={p.h} statKey="hits" label="hits" onPick={onPick && (()=>onPick(p.name,"hits"))} />
             {SEP}
@@ -998,7 +1103,8 @@ function Legend() {
     <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
       {TREND_SLOTS.map(s=>(
         <span key={s.key} style={{ display:"flex", alignItems:"center", gap:4 }}>
-          <span style={{ width:13, height:9, borderRadius:2, background:s.color }} />
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color,
+            boxShadow:`0 0 0 1.5px rgba(255,255,255,0.75), 0 0 0 2.5px ${s.color}` }} />
           <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{s.label}</span>
         </span>
       ))}
@@ -1012,19 +1118,19 @@ function Pill({ children, color, title }) {
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
 const TREND_SLOTS = [
-  { key:"rematch", color:C.rematch, label:"pitcher rematch",
+  { key:"rematch",  color:C.rematch,  label:"pitcher rematch",
     on:(t)=>t.rematch.length>0,
     title:(t)=>t.rematch.map(m=>`${m.pitcher} already faced ${m.opp} this season`).join("; ") },
-  { key:"bigday", color:C.bigday, label:"10+ runs prior day",
+  { key:"bigday",   color:C.bigday,   label:"10+ runs prior day",
     on:(t)=>t.bigday.length>0,
     title:(t)=>t.bigday.map(b=>`${b.team} scored ${b.runs} the day before`).join("; ") },
-  { key:"late", color:C.under, label:"late go-ahead",
+  { key:"late",     color:C.late,     label:"late go-ahead",
     on:(t)=>t.cb.length>0,
     title:(t)=>t.cb.map(c=>`${c.team} first led ${ord(c.inning)} yesterday`).join("; ") },
-  { key:"echo", color:C.blue, label:"streak echo",
+  { key:"echo",     color:C.echo,     label:"streak echo",
     on:(t)=>t.echo.length>0,
     title:(t)=>t.echo.map(e=>`${e.team}: broke ${e.streakLen}-game ${e.streakRes==="W"?"win":"loss"} streak`).join("; ") },
-  { key:"travel", color:C.over, label:"W→E back-to-back",
+  { key:"travel",   color:C.travel,   label:"W→E back-to-back",
     on:(t)=>t.travel,
     title:(t)=>t.travelers.map(x=>`${x.tname} ${x.from}→${x.to} · back-to-back`).join("; ") },
 ];
@@ -1050,7 +1156,9 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ width:13, height:11, borderRadius:2,
               background: present ? color : "transparent",
-              boxShadow: present ? "none" : `inset 0 0 0 1px ${C.rule}`,
+              boxShadow: present
+                ? `0 0 0 1.5px rgba(255,255,255,0.75), 0 0 0 2.5px ${color}`
+                : `inset 0 0 0 1px ${C.rule}`,
               opacity: present ? 1 : 0.3 }} />;
         })}
       </span>
@@ -1412,6 +1520,20 @@ const RESPONSIVE_CSS = `
 
 export default function App() {
   const [tab, setTab] = useState("travel");
+
+  useEffect(() => {
+    document.title = "The Trend Sheet";
+    const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
+      `<ellipse cx='18' cy='18' rx='14' ry='10' fill='%23964B00' stroke='%23fff' stroke-width='1.5'/>` +
+      `<line x1='10' y1='18' x2='26' y2='18' stroke='%23fff' stroke-width='1.5'/>` +
+      `<line x1='14' y1='12' x2='14' y2='24' stroke='%23fff' stroke-width='1'/>` +
+      `<line x1='18' y1='10' x2='18' y2='26' stroke='%23fff' stroke-width='1'/>` +
+      `<line x1='22' y1='12' x2='22' y2='24' stroke='%23fff' stroke-width='1'/>` +
+      `</svg>`;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+    link.href = svg;
+  }, []);
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
       <style>{RESPONSIVE_CSS}</style>
@@ -1424,7 +1546,7 @@ export default function App() {
         </header>
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:22 }} />
         <div style={{ display:"flex", gap:4, marginBottom:24, flexWrap:"wrap" }}>
-          {[["travel","My Trends"],["day","Daily Slate"],["h2h","Head to Head"]].map(([id,lbl])=>(
+          {[["travel","TRENDS"],["day","PROPS"],["h2h","HEAD TO HEAD"]].map(([id,lbl])=>(
             <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
               border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
               background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
