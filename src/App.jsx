@@ -820,16 +820,15 @@ function TravelTrends() {
       };
 
       // ── Calendar layout ─────────────────────────────────────────────
-      // Anchor: today (DATES index 2). Today's games are sorted by start
-      // time and placed in rows 0, 1, 2… Each row is navy/gray alternating.
-      //
-      // Series branch-out from today:
-      //   For each today game, walk backward and forward day by day,
-      //   placing the matching series game in the same row as today's game.
-      //
-      // Leftovers (no connection to today):
-      //   Fill the lowest free row in each column in start-time order,
-      //   using the light-gray/white pair.
+      // 1. Series = same matchup with no DIFFERENT opponent in between for
+      //    either team (a 1-day rest keeps the series; a different opponent
+      //    breaks it). Each game gets seriesGameNum = 1,2,3…
+      // 2. Anchor on today. Branch each today game's series across ALL
+      //    columns (back and forward), matching the row of the adjacent
+      //    previously-worked column.
+      // 3. Color by parallel game-number: whatever game-number today mostly
+      //    features becomes the navy/gray phase. Games sharing that number
+      //    (even offset by a day) get navy/gray; everything else gray/white.
       // ────────────────────────────────────────────────────────────────
 
       const TODAY_DI = 2;
@@ -837,80 +836,126 @@ function TravelTrends() {
       for(let i=-2;i<=4;i++) DATES.push(addDays(start,i));
       const perDay = DATES.map(d=>buildList(d));   // sorted by start time
 
+      // ---- compute seriesGameNum for every game in the window ----
+      // For each team, walk its chronological games; a series continues while
+      // the opponent stays the same, and resets when the opponent changes.
+      // A game's seriesGameNum = max of the two teams' running counts so a
+      // resumed-after-rest matchup keeps climbing.
+      {
+        const byTeam = {};   // teamId -> [{di, g, oppId}]
+        perDay.forEach((games,di)=>games.forEach(g=>{
+          (byTeam[g.awayId]=byTeam[g.awayId]||[]).push({di,g,oppId:g.homeId});
+          (byTeam[g.homeId]=byTeam[g.homeId]||[]).push({di,g,oppId:g.awayId});
+        }));
+        const perTeamNum = new Map();  // g -> {teamId: n}
+        Object.entries(byTeam).forEach(([tid, arr])=>{
+          arr.sort((a,b)=>a.di-b.di);
+          let lastOpp=null, n=0;
+          arr.forEach(({g,oppId})=>{
+            if(oppId===lastOpp) n++; else { n=1; lastOpp=oppId; }
+            const rec = perTeamNum.get(g) || {};
+            rec[tid] = n;
+            perTeamNum.set(g, rec);
+          });
+        });
+        // a game's seriesGameNum = the larger of the two teams' counts
+        perDay.forEach(games=>games.forEach(g=>{
+          const rec = perTeamNum.get(g) || {};
+          g.seriesGameNum = Math.max(rec[g.awayId]||1, rec[g.homeId]||1);
+        }));
+      }
+
       // index each day's games by pair for fast lookup
       const dayByPair = perDay.map(games=>{
-        const m = {};
-        games.forEach(g=>{ m[g.pair]=g; });
-        return m;
+        const m = {}; games.forEach(g=>{ m[g.pair]=g; }); return m;
       });
 
-      // build the grid: grid[di][row] = game | null
       const numDays = DATES.length;
       const grid = Array.from({length:numDays}, ()=>[]);
-      const placed = Array.from({length:numDays}, ()=>({})); // di → pair → true
-
-      // helper: find the lowest free row in a column
+      const placed = Array.from({length:numDays}, ()=>({}));   // di -> pair -> true
       const freeRow = (di) => {
-        let r = 0;
-        while(grid[di][r] !== undefined && grid[di][r] !== null) r++;
-        return r;
+        let r=0; while(grid[di][r]!==undefined && grid[di][r]!==null) r++; return r;
+      };
+      const putAt = (di,row,g)=>{
+        while(grid[di].length<=row) grid[di].push(null);
+        grid[di][row]=g; placed[di][g.pair]=true; g.anchorRow=row;
       };
 
-      // step 1: place today's games in time order, assign rows
-      perDay[TODAY_DI].forEach((g, row) => {
-        grid[TODAY_DI][row] = g;
-        placed[TODAY_DI][g.pair] = true;
-        // shade: navy (2) / darker-gray (3) alternating by row
-        g.seriesShade = 2 + (row % 2);
-        g.anchorRow = row;
+      // ---- determine today's dominant series game-number (the navy phase) ----
+      const todayGames = perDay[TODAY_DI];
+      const numFreq = {};
+      todayGames.forEach(g=>{ numFreq[g.seriesGameNum]=(numFreq[g.seriesGameNum]||0)+1; });
+      let dominantNum = 1, best=-1;
+      Object.entries(numFreq).forEach(([n,c])=>{ if(c>best){ best=c; dominantNum=Number(n); } });
+      // a game is "navy phase" if its game-number equals today's dominant number
+      const isNavy = (g)=> g.seriesGameNum===dominantNum;
 
-        // step 2: branch out — walk backward from today
-        for(let di = TODAY_DI - 1; di >= 0; di--) {
+      // ---- step 1: place today's games, assign rows + colors ----
+      todayGames.forEach((g,row)=>{
+        putAt(TODAY_DI,row,g);
+        g.seriesShade = isNavy(g) ? 2+(row%2) : 0+(row%2);
+      });
+
+      // ---- step 2: branch each today game across ALL columns ----
+      // Track the last-worked column's row for this pair so disagreeing
+      // columns snap to the adjacent worked column's row.
+      todayGames.forEach((g)=>{
+        // backward
+        let lastRow = g.anchorRow;
+        for(let di=TODAY_DI-1; di>=0; di--){
           const prev = dayByPair[di][g.pair];
-          if(!prev) break;   // series doesn't extend this far back
-          if(placed[di][g.pair]) break;
-          // extend grid if needed
-          while(grid[di].length <= row) grid[di].push(null);
-          grid[di][row] = prev;
-          placed[di][g.pair] = true;
-          prev.seriesShade = g.seriesShade;   // same color as today's anchor
-          prev.anchorRow = row;
+          if(prev && !placed[di][g.pair]){
+            // try to use the adjacent worked column's row; if taken, nearest free
+            let row = lastRow;
+            while(grid[di][row]!==undefined && grid[di][row]!==null) row++;
+            putAt(di,row,prev);
+            prev.seriesShade = g.seriesShade;   // inherit today's color
+            lastRow = row;
+          }
+          // do NOT break on a gap — keep scanning further-out columns
         }
-
-        // step 3: branch out — walk forward from today
-        for(let di = TODAY_DI + 1; di < numDays; di++) {
+        // forward
+        lastRow = g.anchorRow;
+        for(let di=TODAY_DI+1; di<numDays; di++){
           const next = dayByPair[di][g.pair];
-          if(!next) break;   // series doesn't extend this far forward
-          if(placed[di][g.pair]) break;
-          while(grid[di].length <= row) grid[di].push(null);
-          grid[di][row] = next;
-          placed[di][g.pair] = true;
-          next.seriesShade = g.seriesShade;
-          next.anchorRow = row;
+          if(next && !placed[di][g.pair]){
+            let row = lastRow;
+            while(grid[di][row]!==undefined && grid[di][row]!==null) row++;
+            putAt(di,row,next);
+            next.seriesShade = g.seriesShade;
+            lastRow = row;
+          }
         }
       });
 
-      // step 4: fill leftover games (not connected to today) into each column
-      // sorted by start time, into the lowest free row, using light-gray/white
-      for(let di = 0; di < numDays; di++) {
-        const leftovers = perDay[di].filter(g => !placed[di][g.pair]);
-        leftovers.forEach(g => {
-          const row = freeRow(di);
-          while(grid[di].length <= row) grid[di].push(null);
-          grid[di][row] = g;
-          placed[di][g.pair] = true;
-          g.seriesShade = row % 2;   // light-gray (0) / white (1)
+      // ---- step 3: leftovers — games not connected to today ----
+      // Each leftover first tries to match (branch from) an already-placed
+      // game of the same pair in an adjacent worked column; otherwise it
+      // fills the lowest free row. Color: navy phase if its game-number
+      // matches today's dominant number, else gray/white.
+      for(let di=0; di<numDays; di++){
+        const leftovers = perDay[di].filter(g=>!placed[di][g.pair]);
+        leftovers.forEach(g=>{
+          // look at the nearest already-worked neighbor column for this pair
+          let targetRow = null;
+          for(const ndi of [di-1, di+1]){
+            if(ndi<0||ndi>=numDays) continue;
+            const neighbor = (grid[ndi]||[]).findIndex(x=>x&&x.pair===g.pair);
+            if(neighbor>=0){ targetRow = neighbor; break; }
+          }
+          let row = targetRow!=null ? targetRow : freeRow(di);
+          while(grid[di][row]!==undefined && grid[di][row]!==null) row++;
+          putAt(di,row,g);
+          g.seriesShade = isNavy(g) ? 2+(row%2) : 0+(row%2);
         });
       }
 
-      // step 5: trim trailing nulls per column
-      const out = DATES.map((d, di) => {
+      // ---- step 4: trim trailing nulls per column ----
+      const out = DATES.map((d,di)=>{
         const col = grid[di];
-        let last = -1;
-        col.forEach((g, i) => { if(g) last = i; });
-        return { date: d, games: last === -1 ? [] : col.slice(0, last + 1) };
+        let last=-1; col.forEach((g,i)=>{ if(g) last=i; });
+        return { date:d, games: last===-1 ? [] : col.slice(0,last+1) };
       });
-
       setDays(out);
 
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
