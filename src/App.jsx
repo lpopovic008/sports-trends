@@ -896,48 +896,51 @@ function TravelTrends() {
 
       const out=DATES.map((d,di)=>({ date:d, games:cols[di] }));
 
-      // series shading: two deterministic color pairs
-      // first series wave (earliest start day) → shades 0 & 1, alternating by row
-      // second series wave (start after first wave ends) → shades 2 & 3, alternating by row
-      // within each wave, adjacent rows get different shades so neighbors never match
+      // series shading — two forced color pairs, split by continuity wave:
+      // wave 0: the opening run of columns where series carry across day boundaries
+      // wave 1: starts at the first column where no series continues from the previous one
+      // within each wave, rows alternate between the pair's two shades
 
-      // find the day each series first and last appears
-      const seriesSpan = {};  // sid → {first, last, minRow}
+      // find which series ids appear in each column
+      const sidsByCol = out.map(col=>{
+        const s = new Set();
+        col.games.forEach(g=>{ if(g&&g.sid!=null) s.add(g.sid); });
+        return s;
+      });
+
+      // find the first column index where NO series from the previous column continues
+      let waveBoundary = out.length;   // default: all one wave
+      for(let c=1;c<out.length;c++){
+        const prev = sidsByCol[c-1], cur = sidsByCol[c];
+        const anyContinues = [...prev].some(id=>cur.has(id));
+        if(!anyContinues){ waveBoundary = c; break; }
+      }
+
+      // find each series' earliest row (for alternating within wave)
+      const seriesMinRow = {};
       for(let c=0;c<out.length;c++){
         out[c].games.forEach((g,r)=>{
           if(!g||g.sid==null) return;
-          const sp = seriesSpan[g.sid] = seriesSpan[g.sid]||{first:c,last:c,minRow:r};
-          sp.last = c;
-          if(r < sp.minRow) sp.minRow = r;
+          if(seriesMinRow[g.sid]==null || r < seriesMinRow[g.sid])
+            seriesMinRow[g.sid] = r;
         });
       }
 
-      // sort series by first appearance day, then by row
-      const seriesOrder = Object.keys(seriesSpan)
-        .map(id=>({ id:Number(id), ...seriesSpan[id] }))
-        .sort((a,b)=> a.first-b.first || a.minRow-b.minRow);
+      // find each series' first column
+      const seriesFirstCol = {};
+      for(let c=0;c<out.length;c++){
+        out[c].games.forEach(g=>{
+          if(!g||g.sid==null) return;
+          if(seriesFirstCol[g.sid]==null) seriesFirstCol[g.sid] = c;
+        });
+      }
 
-      // find where wave 1 ends: the day the last series of the first group finishes
-      // wave 2 = any series that starts strictly after wave 1's latest end
-      let wave1End = -1;
-      // greedily assign wave1 = everything whose first day overlaps with the initial cluster
-      // simplest definition: series starting on day 0-2 (the first half, inc. today) = wave 1
-      // series starting on day 3+ (tomorrow onward) = wave 2
-      // this naturally splits "current series" from "future series"
-      const todayDi = 2;  // index of today in DATES (offset 0 = di 0 = start-2, today = di 2)
-
-      const waveOf = {};  // sid → 0 or 1
-      seriesOrder.forEach(s=>{
-        waveOf[s.id] = s.first <= todayDi ? 0 : 1;
-      });
-
-      // within each wave, alternate shade by row position so adjacent rows differ
-      // shade = wave*2 + (minRow % 2)
+      // assign shade: wave 0 → shades 0 & 1 alternating by minRow
+      //               wave 1 → shades 2 & 3 alternating by minRow
       out.forEach(o=>o.games.forEach(g=>{
         if(!g||g.sid==null) return;
-        const sp = seriesSpan[g.sid];
-        const wave = waveOf[g.sid] ?? 0;
-        g.seriesShade = wave*2 + (sp.minRow%2);
+        const wave = seriesFirstCol[g.sid] < waveBoundary ? 0 : 1;
+        g.seriesShade = wave*2 + (seriesMinRow[g.sid]%2);
       }));
       setDays(out);
 
