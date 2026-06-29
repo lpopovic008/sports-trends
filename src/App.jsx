@@ -91,6 +91,41 @@ async function mapPool(items, n, fn) {
 const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 
+/* streak echo: a team that just snapped a long W or L streak. `results` is
+   [{date,res:"W"|"L"}]. Returns the broken streak's length/result plus the
+   "predicted" repeat (the result that ended the streak), or null. */
+function detectStreakBreak(results, minLen) {
+  if (!results || results.length < minLen + 1) return null;
+  const r = results.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const lastRes = r[r.length-1].res;              // the game that broke the streak
+  // count the run of the OPPOSITE result immediately before the last game
+  const prior = lastRes === "W" ? "L" : "W";
+  let streakLen = 0;
+  for (let i=r.length-2; i>=0; i--){
+    if (r[i].res === prior) streakLen++; else break;
+  }
+  if (streakLen < minLen) return null;
+  return { streakLen, streakRes: prior, predicted: lastRes };
+}
+
+/* late go-ahead: winner first took the lead in the 8th inning or later.
+   `ls` is an MLB linescore; winnerSide is "home"|"away". Returns
+   {firstLeadInning} or null. */
+function detectLateComeback(ls, winnerSide) {
+  const innings = ls?.innings || [];
+  let homeCum = 0, awayCum = 0;
+  for (const inn of innings) {
+    homeCum += Number(inn.home?.runs)||0;
+    awayCum += Number(inn.away?.runs)||0;
+    const winnerAhead = winnerSide === "home" ? homeCum > awayCum : awayCum > homeCum;
+    if (winnerAhead) {
+      const num = inn.num || 0;
+      return num >= 8 ? { firstLeadInning: num } : null;   // first lead must be 8th+
+    }
+  }
+  return null;
+}
+
 /* ───────────────────────── shared UI bits ───────────────────────── */
 const Eyebrow = ({ children, n }) => (
   <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:14 }}>
