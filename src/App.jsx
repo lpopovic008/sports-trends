@@ -161,79 +161,6 @@ const Tag = ({ children, tone }) => (
     color: tone==="ok"?C.over:C.inkSoft }}>{children}</span>
 );
 
-function BvPModal({ batterId, batterName, pitcherId, pitcherName, onClose }) {
-  const [data, setData] = useState(undefined);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/people/${batterId}/stats` +
-          `?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting&gameType=R`);
-        if (!r.ok) throw new Error(`stats ${r.status}`);
-        const j = await r.json();
-        const splits = j.stats?.[0]?.splits || [];
-        if (alive) setData(splits[0]?.stat || null);
-      } catch (e) {
-        if (alive) setErr(isNet(e.message) ? "Couldn't reach MLB stats service." : e.message);
-      }
-    })();
-    return () => { alive = false; };
-  }, [batterId, pitcherId]);
-
-  const rows = data ? [
-    ["AB",  data.atBats], ["H",   data.hits], ["2B",  data.doubles],
-    ["3B",  data.triples], ["HR",  data.homeRuns], ["RBI", data.rbi],
-    ["BB",  data.baseOnBalls], ["SO",  data.strikeOuts], ["AVG", data.avg],
-    ["OBP", data.obp], ["SLG", data.slg], ["OPS", data.ops],
-  ] : [];
-
-  return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:60,
-      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
-      justifyContent:"center", padding:18, overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
-        border:`1px solid ${C.ink}`, borderRadius:4, maxWidth:480, width:"100%",
-        margin:"24px 0", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
-          display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
-          <div>
-            <div style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>{batterName}</div>
-            <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:2 }}>
-              career vs {pitcherName}</div>
-          </div>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-            borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer",
-            flexShrink:0 }}>✕</button>
-        </div>
-        <div style={{ padding:"14px 18px 18px" }}>
-          {err && <ErrBox>{err}</ErrBox>}
-          {data===undefined && !err && (
-            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>)}
-          {data===null && !err && (
-            <div style={{ fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
-              No career matchup data found between these two players.</div>)}
-          {data && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1,
-              border:`1px solid ${C.rule}`, borderRadius:3, overflow:"hidden" }}>
-              {rows.map(([label, val])=>(
-                <div key={label} style={{ padding:"8px 10px", background:C.card,
-                  borderRight:`1px solid ${C.rule}`, borderBottom:`1px solid ${C.rule}` }}>
-                  <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.08em",
-                    textTransform:"uppercase", color:C.inkSoft }}>{label}</div>
-                  <div style={{ fontFamily:MONO, fontSize:15, fontWeight:600,
-                    color:C.ink, marginTop:2 }}>{val ?? "—"}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const ROW_COLS = "14px minmax(36px,1fr) 30px 60px 9px 60px 9px 60px";
 const SEP = <span style={{ textAlign:"center", fontFamily:MONO, fontSize:12,
   color:C.ruleDark, fontWeight:700 }}>|</span>;
@@ -941,7 +868,7 @@ function PropAnalyzer({ injected = null }) {
 
 function PropModal({ injected, onClose }) {
   return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:60,
+    <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
@@ -1047,8 +974,49 @@ async function loadH2H(aId, bId) {
   return { aw,bw,ar,br,ah,bh,upcoming,played };
 }
 
+// a batter's career line vs a specific pitcher (single split row of stats)
+async function loadBatterVs(batterId, pitcherId) {
+  if (!batterId || !pitcherId) return null;
+  try {
+    const r = await fetch(`${API}/people/${batterId}/stats` +
+      `?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting&gameType=R`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j.stats?.[0]?.splits?.[0]?.stat || null;
+  } catch { return null; }
+}
+
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
-function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP, onStat, oppPitcherName, oppPitcherId, side }) {
+const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onStat, oppPitcherName, oppPitcherId }) {
+  const [view, setView] = useState("last5");      // "last5" | "vssp"
+  const [vsData, setVsData] = useState({});       // batterId -> stat | null
+  const [vsLoading, setVsLoading] = useState(false);
+  const canVs = !!oppPitcherId && !!oppPitcherName;
+
+  // lazy-load batter-vs-pitcher lines the first time the toggle flips
+  useEffect(() => {
+    if (view !== "vssp" || !canVs || !lineup?.players?.length) return;
+    let alive = true;
+    setVsLoading(true);
+    (async () => {
+      const data = {};
+      await mapPool(lineup.players, 4, async p=>{
+        data[p.id] = await loadBatterVs(p.id, oppPitcherId);
+      });
+      if (alive) { setVsData(data); setVsLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [view, canVs, oppPitcherId, lineup]);
+
+  const tabBtn = (id,label,enabled=true) => (
+    <button onClick={()=>enabled&&setView(id)} disabled={!enabled}
+      style={{ flex:1, padding:"5px 8px", border:"none", cursor:enabled?"pointer":"not-allowed",
+        fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em", textTransform:"uppercase",
+        background: view===id ? C.ink : "transparent", color: view===id ? "#fff" : (enabled?C.inkSoft:C.rule),
+        borderRadius:2 }}>{label}</button>
+  );
+
   return (
     <div className="ts-lineup-col" style={{ minWidth:0 }}>
       <div style={{ padding:"8px 12px", borderBottom:`1px solid ${C.rule}`,
@@ -1059,44 +1027,85 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onBvP,
           : lineup.source==="projected" ? <Tag>Projected</Tag> : <Tag>No lineup</Tag>}
       </div>
 
-      {/* lineup table */}
+      {/* view toggle */}
+      <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid #EEF0F2` }}>
+        {tabBtn("last5","Last 5")}
+        {tabBtn("vssp", canVs ? `vs ${oppPitcherName.split(" ").slice(-1)[0]}` : "vs SP", canVs)}
+      </div>
+
       <div style={{ padding:"4px 0" }}>
-        <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
-          fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
-          color:C.ruleDark, alignItems:"center" }}>
-          <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
-          <span style={{ textAlign:"center" }}>H</span>{SEP}
-          <span style={{ textAlign:"center" }}>TB</span>{SEP}
-          <span style={{ textAlign:"center" }}>HRR</span>
-        </div>
+        {/* header row depends on view */}
+        {view==="last5" ? (
+          <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
+            fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
+            color:C.ruleDark, alignItems:"center" }}>
+            <span>#</span><span>Hitter</span><span style={{ textAlign:"right" }}>AVG</span>
+            <span style={{ textAlign:"center" }}>H</span>{SEP}
+            <span style={{ textAlign:"center" }}>TB</span>{SEP}
+            <span style={{ textAlign:"center" }}>HRR</span>
+          </div>
+        ) : (
+          <div style={{ display:"grid", gridTemplateColumns:HV_COLS, gap:6, padding:"2px 10px",
+            fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
+            color:C.ruleDark, alignItems:"center" }}>
+            <span>#</span><span>Hitter</span>
+            <span style={{ textAlign:"right" }}>AB</span><span style={{ textAlign:"right" }}>H</span>
+            <span style={{ textAlign:"right" }}>HR</span><span style={{ textAlign:"right" }}>AVG</span>
+          </div>
+        )}
+
         {!lineup && <div style={{ padding:"10px 12px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading lineup…</div>}
         {lineup && lineup.players.length===0 &&
           <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>}
+
         {lineup && lineup.players.map(p=>{
           const hot = nameStreak(p);
-          const canBvP = !!oppPitcherName && !!onBvP;
+          if (view==="last5") {
+            return (
+            <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
+              padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
+              <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
+                overflow:"hidden", textOverflow:"ellipsis",
+                background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}
+                title={p.name}>{p.name}</span>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
+              <SeqBlock arr={p.h} label="hits" onPick={onStat && (()=>onStat(p.name,"hits"))} />{SEP}
+              <SeqBlock arr={p.tb} label="total bases" onPick={onStat && (()=>onStat(p.name,"totalBases"))} />{SEP}
+              <SeqBlock arr={p.hrr} label="H+R+RBI" onPick={onStat && (()=>onStat(p.name,"hits+runs+rbi"))} />
+            </div>
+            );
+          }
+          // vs-pitcher view
+          const st = vsData[p.id];
           return (
-          <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
+          <div key={p.id} style={{ display:"grid", gridTemplateColumns:HV_COLS, gap:6,
             padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
-            {canBvP
-              ? <button onClick={()=>onBvP({ batterId:p.id, batterName:p.name,
-                    pitcherId:oppPitcherId, pitcherName:oppPitcherName })}
-                  title={`${p.name} career vs ${oppPitcherName}`}
-                  style={{ font:"inherit", cursor:"pointer", border:"none", padding:"0 2px",
-                    fontFamily:SANS, fontSize:12.5, textAlign:"left",
-                    background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1,
-                    textDecoration:"underline dotted", textDecorationColor:C.ruleDark,
-                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</button>
-              : <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
-                  overflow:"hidden", textOverflow:"ellipsis",
-                  background: hot ? "rgba(255,233,77,0.5)" : "transparent", borderRadius:1 }}>{p.name}</span>}
-            <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, textAlign:"right" }}>{p.avg || "—"}</span>
-            <SeqBlock arr={p.h} label="hits" onPick={onStat && (()=>onStat(p.name,"hits"))} />{SEP}
-            <SeqBlock arr={p.tb} label="total bases" onPick={onStat && (()=>onStat(p.name,"totalBases"))} />{SEP}
-            <SeqBlock arr={p.hrr} label="H+R+RBI" onPick={onStat && (()=>onStat(p.name,"hits+runs+rbi"))} />
+            <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
+              overflow:"hidden", textOverflow:"ellipsis" }} title={p.name}>{p.name}</span>
+            {vsLoading && !st ? (
+              <span style={{ gridColumn:"3 / span 4", fontFamily:MONO, fontSize:10,
+                color:C.ruleDark, textAlign:"right" }}>…</span>
+            ) : !st || Number(st.atBats)===0 ? (
+              <span style={{ gridColumn:"3 / span 4", fontFamily:MONO, fontSize:10,
+                color:C.ruleDark, textAlign:"right" }}>no history</span>
+            ) : (
+              <>
+                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right", color:C.ink }}>{st.atBats}</span>
+                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right",
+                  color: Number(st.hits)>0?C.over:C.ink }}>{st.hits}</span>
+                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right",
+                  color: Number(st.homeRuns)>0?C.over:C.ink }}>{st.homeRuns}</span>
+                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right", fontWeight:700 }}>{st.avg}</span>
+              </>
+            )}
           </div>
-        );})}
+          );
+        })}
+        {view==="vssp" && !canVs && (
+          <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>
+            No probable starter posted for {oppName} yet.</div>)}
       </div>
 
       {/* starting pitcher — visually separated from the hitters */}
@@ -1117,7 +1126,6 @@ function GameModal({ m, onClose }) {
   const [awayP,  setAwayP]  = useState(undefined);   // away SP vs home
   const [homeP,  setHomeP]  = useState(undefined);   // home SP vs away
   const [h2h,    setH2H]    = useState(undefined);
-  const [bvp,    setBvp]    = useState(null);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
 
   useEffect(() => {
@@ -1208,12 +1216,12 @@ function GameModal({ m, onClose }) {
           <TeamPanel teamName={g.awayName} oppName={g.homeName}
             lineup={awayLU} pitcherName={g.awayPname} pitcherInfo={awayP}
             oppPitcherName={g.homePname} oppPitcherId={g.homePid}
-            onBvP={setBvp} onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} side="away" />
+            onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
             <TeamPanel teamName={g.homeName} oppName={g.awayName}
               lineup={homeLU} pitcherName={g.homePname} pitcherInfo={homeP}
               oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
-              onBvP={setBvp} onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} side="home" />
+              onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           </div>
         </div>
 
@@ -1223,7 +1231,6 @@ function GameModal({ m, onClose }) {
         </div>
       </div>
 
-      {bvp && <BvPModal {...bvp} onClose={()=>setBvp(null)} />}
       {pick && <PropModal injected={pick} onClose={()=>setPick(null)} />}
     </div>
   );
