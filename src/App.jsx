@@ -23,6 +23,7 @@ const C = {
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
+const SEASON = new Date().getFullYear();
 
 /* MLB home-park time zones for travel detection */
 const TEAM_TZ = {
@@ -125,17 +126,16 @@ const Tag = ({ children, tone }) => (
 );
 
 /* ════════════════════════════ DAY SHEET ════════════════════════════ */
-/* All games for a chosen day; each team's starting 9 with last-5 H / TB / K. */
+/* All games for a chosen day; each team's starting 9 with last-5 H / TB / HRR. */
 function DaySheet() {
   const [date, setDate] = useState(todayISO());
-  const season = new Date().getFullYear();           // current season for stat pulls
-  const [games, setGames] = useState(null);          // schedule games
-  const [byPk, setByPk] = useState({});               // gamePk -> lineup data
+  const [games, setGames] = useState(null);
+  const [byPk, setByPk] = useState({});
   const [busy, setBusy] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
   const [err, setErr] = useState("");
-  const [pick, setPick] = useState(null);             // {name, ts} -> feeds Prop Lookup
-  const [bvp, setBvp] = useState(null);               // {batterId, batterName, pitcherId, pitcherName}
+  const [pick, setPick] = useState(null);
+  const [bvp, setBvp] = useState(null);
 
   const loadSchedule = useCallback(async () => {
     setErr(""); setGames(null); setByPk({}); setBusy(true);
@@ -154,10 +154,10 @@ function DaySheet() {
     } finally { setBusy(false); }
   }, [date]);
 
-  /* last-5 H / TB / K plus this month's batting average for one player */
+  /* last-5 H / TB / HRR plus this month's batting average for one player */
   const trendFor = useCallback(async (id) => {
     const r = await fetch(
-      `${API}/people/${id}/stats?stats=gameLog&group=hitting&season=${season}&gameType=R`);
+      `${API}/people/${id}/stats?stats=gameLog&group=hitting&season=${SEASON}&gameType=R`);
     if (!r.ok) return { h:[], tb:[], k:[], avg:null };
     const j = await r.json();
     const splits = (j.stats?.[0]?.splits || [])
@@ -364,7 +364,7 @@ function PropModal({ injected, onClose }) {
             borderRadius:2, fontFamily:MONO, fontSize:12, padding:"4px 9px", cursor:"pointer" }}>✕</button>
         </div>
         <div style={{ padding:"14px 18px 18px" }}>
-          <PropAnalyzer compact injected={injected} />
+          <PropAnalyzer injected={injected} />
         </div>
       </div>
     </div>
@@ -520,14 +520,13 @@ function SeqBlock({ arr, label, onPick }) {
 }
 
 /* ════════════════════════ PROP ANALYZER ════════════════════════ */
-function PropAnalyzer({ compact = false, injected = null }) {
-  const season = new Date().getFullYear();    // current season only
+function PropAnalyzer({ injected = null }) {
   const [name, setName] = useState("");
   const [group, setGroup] = useState("hitting");
   const [statKey, setStatKey] = useState("hits");
-  const side = "over";                          // fixed
+  const side = "over";
   const [line, setLine] = useState("1.5");
-  const [sampleN, setSampleN] = useState("20"); // "5"|"10"|"15"|"20"|"month"|"season"
+  const [sampleN, setSampleN] = useState("20");
   const [manual, setManual] = useState("");
   const [roster, setRoster] = useState(null);
   const [games, setGames] = useState(null);
@@ -552,17 +551,17 @@ function PropAnalyzer({ compact = false, injected = null }) {
     const rawStat = (override && typeof override === "object" && override.stat) ? override.stat : statKey;
     setErr(""); setGames(null); setResolved(""); setLatest(null); setBusy(true);
     try {
-      const people = await loadRoster(season);
+      const people = await loadRoster(SEASON);
       const q = rawName.trim().toLowerCase();
       if (!q) throw new Error("Enter a player name (or use manual entry).");
       const hits = people.filter(p=>(p.fullName||"").toLowerCase().includes(q));
-      if (!hits.length) throw new Error(`No ${season} MLB player matched "${rawName}".`);
+      if (!hits.length) throw new Error(`No ${SEASON} MLB player matched "${rawName}".`);
       const player = hits[0];
-      const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=${group}&season=${season}&gameType=R`);
+      const r = await fetch(`${API}/people/${player.id}/stats?stats=gameLog&group=${group}&season=${SEASON}&gameType=R`);
       if (!r.ok) throw new Error(`game log ${r.status}`);
       const j = await r.json();
       const splits = j.stats?.[0]?.splits || [];
-      if (!splits.length) throw new Error(`No ${season} game logs for ${player.fullName} in this group.`);
+      if (!splits.length) throw new Error(`No ${SEASON} game logs for ${player.fullName} in this group.`);
       const rows = splits.map(s=>({ date:s.date,
         opp:s.opponent?.abbreviation||"", value:valOf(s.stat,rawStat) }))
         .sort((a,b)=>a.date.localeCompare(b.date));
@@ -573,7 +572,7 @@ function PropAnalyzer({ compact = false, injected = null }) {
         ? "Couldn't reach the MLB data service. This works from a normal browser tab in your own app."
         : e.message);
     } finally { setBusy(false); }
-  }, [name, group, statKey, season, loadRoster]);
+  }, [name, group, statKey, loadRoster]);
 
   // clicking a stat in the slate fills name + stat and runs
   useEffect(() => {
@@ -621,7 +620,6 @@ function PropAnalyzer({ compact = false, injected = null }) {
 
   return (
     <div>
-      {!compact && <Eyebrow n="02">Prop vs. recent form</Eyebrow>}
       <div style={{ display:"grid", gap:14,
         gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", marginBottom:16 }}>
         <Field label="Player"><input style={{ ...inputStyle, width:"100%" }} value={name}
@@ -812,7 +810,7 @@ function TravelTrends() {
         const prev = addDays(date,-1);
         return (dayGames[date]||[]).map(g=>{
           const todayTz = TZ_RANK[g.venueTz], travelers=[];
-          [["away",g.awayId,g.awayName],["home",g.homeId,g.homeName]].forEach(([role,tid,tname])=>{
+          [["away",g.awayId,g.awayName],["home",g.homeId,g.homeName]].forEach(([,tid,tname])=>{
             const prevTz = TZ_RANK[byTeamDate[tid]?.[prev]];
             if (prevTz!=null && todayTz===TZ_RANK.ET && prevTz<=westThreshold)
               travelers.push({ teamId:tid, tname, from:byTeamDate[tid][prev], to:g.venueTz });
@@ -852,7 +850,6 @@ function TravelTrends() {
       //    Today's order is treated as the seeding reference so its rows come first.
       //    Pairs that only appear before/after today fill remaining rows.
       const todayPairs = perDay[2].map(g=>g.pair);
-      const tomorrowPairs = perDay[3].map(g=>g.pair);
       const pairRow = {};   // pair -> row index
       // seed with today's order
       todayPairs.forEach((p,i)=>{ pairRow[p]=i; });
@@ -971,7 +968,6 @@ function TravelTrends() {
       const cbList = cbResults.filter(Boolean).sort((a,b)=>b.inning-a.inning);
 
       /* ── pitcher rematch: has each probable already faced today's opponent? ── */
-      const season = new Date().getFullYear();
       const pitcherIds = new Set();
       Object.values(dayGames).flat().forEach(g=>{
         if (g.awayPid) pitcherIds.add(g.awayPid);
@@ -981,7 +977,7 @@ function TravelTrends() {
       await mapPool([...pitcherIds], 4, async (pid)=>{
         try {
           const pr = await fetch(`${API}/people/${pid}/stats` +
-            `?stats=gameLog&group=pitching&season=${season}&gameType=R`);
+            `?stats=gameLog&group=pitching&season=${SEASON}&gameType=R`);
           if (!pr.ok) return;
           const pj = await pr.json();
           const list = [];
@@ -1002,7 +998,6 @@ function TravelTrends() {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
     } finally { setBusy(false); }
   }, [start, westThreshold, minStreak]);
-
   useEffect(() => { load(); }, [load]);   // auto-load on open and when min streak changes
 
   /* which trends touch a game, attributed to the specific team they apply to */
@@ -1133,21 +1128,11 @@ function Pill({ children, color, title }) {
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
 const TREND_SLOTS = [
-  { key:"rematch",  color:C.rematch,  label:"pitcher rematch",
-    on:(t)=>t.rematch.length>0,
-    title:(t)=>t.rematch.map(m=>`${m.pitcher} already faced ${m.opp} this season`).join("; ") },
-  { key:"bigday",   color:C.bigday,   label:"10+ runs prior day",
-    on:(t)=>t.bigday.length>0,
-    title:(t)=>t.bigday.map(b=>`${b.team} scored ${b.runs} the day before`).join("; ") },
-  { key:"late",     color:C.late,     label:"late go-ahead",
-    on:(t)=>t.cb.length>0,
-    title:(t)=>t.cb.map(c=>`${c.team} first led ${ord(c.inning)} yesterday`).join("; ") },
-  { key:"echo",     color:C.echo,     label:"streak echo",
-    on:(t)=>t.echo.length>0,
-    title:(t)=>t.echo.map(e=>`${e.team}: broke ${e.streakLen}-game ${e.streakRes==="W"?"win":"loss"} streak`).join("; ") },
-  { key:"travel",   color:C.travel,   label:"W→E back-to-back",
-    on:(t)=>t.travel,
-    title:(t)=>t.travelers.map(x=>`${x.tname} ${x.from}→${x.to} · back-to-back`).join("; ") },
+  { key:"rematch", color:C.rematch, label:"pitcher rematch" },
+  { key:"bigday",  color:C.bigday,  label:"10+ runs prior day" },
+  { key:"late",    color:C.late,    label:"late go-ahead" },
+  { key:"echo",    color:C.echo,    label:"streak echo" },
+  { key:"travel",  color:C.travel,  label:"W→E back-to-back" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
@@ -1240,7 +1225,7 @@ function PitcherBlock({ name, vsName, info }) {
         <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft, marginTop:6 }}>Loading…</div>
       ) : !info ? (
         <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft, marginTop:4 }}>
-          No {new Date().getFullYear()} game log found.</div>
+          No {SEASON} game log found.</div>
       ) : (
         <div style={{ marginTop:8 }}>
           <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.1em",
@@ -1273,7 +1258,7 @@ function GameModal({ m, onClose }) {
 
   useEffect(() => {
     let alive = true;
-    const season = new Date().getFullYear();
+    const season = SEASON;
     const fetchP = async (pid, oppId) => {
       if (!pid) return null;
       try {
@@ -1319,10 +1304,10 @@ function GameModal({ m, onClose }) {
         <div style={{ padding:"4px 20px 8px" }}>
           {m.t.any && (
             <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"12px 0 4px" }}>
-              {m.t.travel && <Pill color={C.over}>W→E back-to-back</Pill>}
-              {m.t.echo.map((e,i)=><Pill key={i} color={C.blue}>
+              {m.t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
+              {m.t.echo.map((e,i)=><Pill key={i} color={C.echo}>
                 streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
-              {m.t.cb.map((c,i)=><Pill key={i} color={C.under}>late go-ahead {ord(c.inning)}</Pill>)}
+              {m.t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
               {m.t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
               {m.t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
             </div>
@@ -1350,7 +1335,6 @@ function GameModal({ m, onClose }) {
 /* ════════════════════════ HEAD TO HEAD ════════════════════════ */
 /* today's slate; click a game to see this season's series between the teams */
 function H2HTab() {
-  const season = new Date().getFullYear();
   const [games, setGames] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1404,7 +1388,7 @@ function H2HTab() {
         </div>
       )}
 
-      {sel && <H2HModal {...sel} season={season} onClose={()=>setSel(null)} />}
+      {sel && <H2HModal {...sel} season={SEASON} onClose={()=>setSel(null)} />}
     </div>
   );
 }
