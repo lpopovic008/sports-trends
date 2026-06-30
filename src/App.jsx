@@ -155,7 +155,7 @@ function useTags() {
         const existing = (typeof prev[game.gamePk] === "object") ? prev[game.gamePk] : {};
         next[game.gamePk] = { ...existing, text:v, away:game.awayName, home:game.homeName,
           awayId:game.awayId, homeId:game.homeId,
-          date:(game.time||"").slice(0,10) || game._date || "" };
+          date: game.gameDay || (game.time||"").slice(0,10) || "" };
       } else {
         delete next[game.gamePk];
       }
@@ -329,6 +329,7 @@ function TravelTrends({ tags, setTag, tagStatus }) {
           const isFinal = g.status?.abstractGameState==="Final";
           dayGames[d.date].push({ homeId:home.id, homeName:home.name,
             awayId:away.id, awayName:away.name, venueTz, time:g.gameDate,
+            gameDay: g.officialDate || d.date,
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
             isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score,
             awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
@@ -1636,10 +1637,34 @@ function TagsView({ tags, setResult }) {
     );
   };
 
+  const wins = rows.filter(r=>r.result==="W").length;
+  const losses = rows.filter(r=>r.result==="L").length;
+  const graded = wins + losses;
+  const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
+
   return (
     <div>
-      <Eyebrow n="01">My tagged plays · newest first</Eyebrow>
-      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
+      <Eyebrow n="01">My plays · newest first</Eyebrow>
+
+      {/* W/L record */}
+      <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap",
+        border:`1px solid ${C.ruleDark}`, borderRadius:4, background:C.card,
+        padding:"12px 16px", margin:"14px 0 18px" }}>
+        <div style={{ fontFamily:MONO, fontSize:24, fontWeight:700 }}>
+          <span style={{ color:C.over }}>{wins}</span>
+          <span style={{ color:C.ruleDark }}> – </span>
+          <span style={{ color:C.under }}>{losses}</span>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
+          <span style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.1em",
+            textTransform:"uppercase", color:C.inkSoft }}>Record</span>
+          <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>
+            {pct!=null ? `${pct}% · ${graded} graded` : "none graded yet"}
+            {rows.length>graded ? ` · ${rows.length-graded} untracked` : ""}</span>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {rows.map(r => {
           const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
                      : r.result==="L" ? "rgba(215,38,61,0.09)" : C.card;
@@ -1700,7 +1725,7 @@ export default function App() {
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:18 }} />
 
         <div style={{ display:"flex", gap:4, marginBottom:22, flexWrap:"wrap" }}>
-          {[["calendar","CALENDAR"],["tags","MY TAGS"]].map(([id,lbl])=>(
+          {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
             <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
               border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
               background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
