@@ -576,7 +576,7 @@ function TravelTrends() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3, gap:8 }}>
             <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.14em",
               textTransform:"uppercase", color:"#9A7B00" }}>
-              Notes
+              Plays
               <span style={{ marginLeft:6, letterSpacing:0, textTransform:"none", opacity:0.85 }}>
                 {noteStatus==="loading" ? "· syncing…"
                   : noteStatus==="saving" ? "· saving…"
@@ -589,7 +589,7 @@ function TravelTrends() {
                 fontFamily:MONO, fontSize:11, color:"#9A7B00", padding:"0 2px" }}>clear ✕</button>}
           </div>
           <textarea value={notes} onChange={e=>saveNotes(e.target.value)}
-            placeholder="Jot picks, reminders, anything… saved automatically."
+            placeholder="top plays, ideas, and thoughts"
             rows={3} style={{ width:"100%", resize:"vertical", minHeight:46,
               border:"none", outline:"none", background:"transparent",
               fontFamily:SANS, fontSize:13, lineHeight:1.4, color:"#5C4B00" }} />
