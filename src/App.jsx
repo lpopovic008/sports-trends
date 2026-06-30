@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
-  ComposedChart, Bar, XAxis, YAxis, ReferenceLine,
+  ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
@@ -1729,11 +1729,9 @@ function TagsView({ tags, setResult }) {
                     border:`1px solid ${C.rule}` }}
                     formatter={(v)=>[`${v>0?"+":""}${v}`, "net"]} />
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
-                  <Bar dataKey="net" radius={[2,2,0,0]}>
-                    {chartData.map((d,i)=>(
-                      <Cell key={i} fill={d.net>0?C.over:d.net<0?C.under:C.ruleDark} />
-                    ))}
-                  </Bar>
+                  <Line type="monotone" dataKey="net" stroke={C.blue} strokeWidth={2}
+                    dot={{ r:2.5, fill:C.blue, strokeWidth:0 }}
+                    activeDot={{ r:4 }} isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
