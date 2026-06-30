@@ -55,18 +55,11 @@ const TEAM_NAME = {
   137:"Giants",138:"Cardinals",139:"Rays",140:"Rangers",141:"Blue Jays",142:"Twins",
   143:"Phillies",144:"Braves",145:"White Sox",146:"Marlins",147:"Yankees",158:"Brewers",
 };
-const TEAMS = Object.keys(TEAM_ABBR).map(id=>({ id:Number(id), abbr:TEAM_ABBR[id], name:TEAM_NAME[id] }))
-  .sort((a,b)=>a.name.localeCompare(b.name));
-
 const HIT_STATS = [
   ["hits","Hits"],["totalBases","Total Bases"],["homeRuns","Home Runs"],
   ["rbi","RBIs"],["runs","Runs"],["baseOnBalls","Walks"],
   ["strikeOuts","Strikeouts"],["stolenBases","Stolen Bases"],
   ["doubles","Doubles"],["hits+runs+rbi","Hits+Runs+RBI"],
-];
-const PITCH_STATS = [
-  ["strikeOuts","Strikeouts"],["hits","Hits Allowed"],
-  ["earnedRuns","Earned Runs"],["baseOnBalls","Walks Allowed"],["outs","Outs Recorded"],
 ];
 
 const todayISO = () => {
@@ -644,10 +637,11 @@ function TravelTrends({ tags, setTag, tagStatus }) {
                           if(!g) cells.push(<div key={i} className="ts-cell" style={{ height:54, borderRadius:2,
                             border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
                           else {
-                            const t=gameTrends(d.date,g);
+                            const di = dayGames.indexOf(g);
+                            const t = dayTrends[di];   // reuse; already computed above
                             cells.push(<CalCard key={i} g={g} t={t} tag={tagText(tags[g.gamePk])}
                               onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
-                                idx:dayGames.indexOf(g) })}/>);
+                                idx:di })}/>);
                           }
                         });
                         if(lineIdx>=d.games.length) cells.push(<NowLine key="nl-end"/>);
@@ -1603,8 +1597,10 @@ const RESPONSIVE_CSS = `
 
 /* ════════════════════════ TAGS VIEW ════════════════════════ */
 function TagsView({ tags, setResult }) {
+  const [range, setRange] = useState("all");   // all|month|lastmonth|7d|30d
+
   // build a list of tagged games, newest date first
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     return Object.entries(tags || {})
       .map(([gamePk, entry]) => {
         if (typeof entry === "string") return { gamePk, text:entry, date:"", away:"", home:"", result:null };
@@ -1616,14 +1612,47 @@ function TagsView({ tags, setResult }) {
       .sort((a,b) => (b.date||"").localeCompare(a.date||""));
   }, [tags]);
 
-  if (!rows.length) {
-    return (
-      <div style={{ padding:"40px 8px", fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
-        No tagged games yet. Open any game on the calendar and hit <b>Play</b> to tag it — your
-        tags collect here, newest first.
-      </div>
-    );
-  }
+  // date-range filter
+  const { rows, rangeLabel } = useMemo(() => {
+    const today = new Date();
+    const iso = (d)=>d.toISOString().slice(0,10);
+    let from = null, to = null, label = "All time";
+    if (range === "month") {
+      from = iso(new Date(today.getFullYear(), today.getMonth(), 1));
+      label = "This month";
+    } else if (range === "lastmonth") {
+      from = iso(new Date(today.getFullYear(), today.getMonth()-1, 1));
+      to   = iso(new Date(today.getFullYear(), today.getMonth(), 0));
+      label = "Last month";
+    } else if (range === "7d") {
+      const d=new Date(today); d.setDate(d.getDate()-6); from=iso(d); label="Last 7 days";
+    } else if (range === "30d") {
+      const d=new Date(today); d.setDate(d.getDate()-29); from=iso(d); label="Last 30 days";
+    }
+    const filtered = allRows.filter(r => {
+      if (!r.date) return range === "all";      // undated tags only show in All time
+      if (from && r.date < from) return false;
+      if (to && r.date > to) return false;
+      return true;
+    });
+    return { rows: filtered, rangeLabel: label };
+  }, [allRows, range]);
+
+  const wins = rows.filter(r=>r.result==="W").length;
+  const losses = rows.filter(r=>r.result==="L").length;
+  const graded = wins + losses;
+  const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
+
+  // cumulative net (W = +1, L = -1) over time, oldest → newest, graded only
+  const chartData = useMemo(() => {
+    const graded = rows.filter(r=>r.result && r.date)
+      .slice().sort((a,b)=>a.date.localeCompare(b.date));
+    let net = 0, w = 0, l = 0;
+    return graded.map(r => {
+      if (r.result==="W") { net++; w++; } else { net--; l++; }
+      return { date: r.date.slice(5), net, w, l };
+    });
+  }, [rows]);
 
   const resBtn = (r, val, label, color) => {
     const on = r.result === val;
@@ -1637,37 +1666,91 @@ function TagsView({ tags, setResult }) {
     );
   };
 
-  const wins = rows.filter(r=>r.result==="W").length;
-  const losses = rows.filter(r=>r.result==="L").length;
-  const graded = wins + losses;
-  const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
+  const FILTERS = [["all","All"],["month","This month"],["lastmonth","Last month"],
+    ["7d","7 days"],["30d","30 days"]];
+
+  if (!allRows.length) {
+    return (
+      <div style={{ padding:"40px 8px", fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
+        No tagged games yet. Open any game on the calendar and hit <b>Play</b> to tag it — your
+        plays collect here with a running record and chart.
+      </div>
+    );
+  }
 
   return (
     <div>
-      <Eyebrow n="01">My plays · newest first</Eyebrow>
-
-      {/* W/L record */}
-      <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap",
-        border:`1px solid ${C.ruleDark}`, borderRadius:4, background:C.card,
-        padding:"12px 16px", margin:"14px 0 18px" }}>
-        <div style={{ fontFamily:MONO, fontSize:24, fontWeight:700 }}>
-          <span style={{ color:C.over }}>{wins}</span>
-          <span style={{ color:C.ruleDark }}> – </span>
-          <span style={{ color:C.under }}>{losses}</span>
+      {/* ─────────── RECORD DASHBOARD (visually distinct) ─────────── */}
+      <div style={{ border:`2px solid ${C.ink}`, borderRadius:6, overflow:"hidden",
+        background:C.ink, marginBottom:26 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+          gap:10, padding:"10px 16px", flexWrap:"wrap" }}>
+          <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.18em",
+            textTransform:"uppercase", color:"rgba(255,255,255,0.6)" }}>Track Record</span>
+          {/* filters */}
+          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+            {FILTERS.map(([id,lbl])=>(
+              <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
+                border:`1px solid ${range===id?"#fff":"rgba(255,255,255,0.25)"}`, borderRadius:2,
+                background:range===id?"#fff":"transparent", color:range===id?C.ink:"rgba(255,255,255,0.75)",
+                fontFamily:MONO, fontSize:10, letterSpacing:"0.04em", textTransform:"uppercase",
+                cursor:"pointer" }}>{lbl}</button>))}
+          </div>
         </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
-          <span style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.1em",
-            textTransform:"uppercase", color:C.inkSoft }}>Record</span>
-          <span style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>
-            {pct!=null ? `${pct}% · ${graded} graded` : "none graded yet"}
-            {rows.length>graded ? ` · ${rows.length-graded} untracked` : ""}</span>
+
+        <div style={{ background:C.paper, padding:"16px", display:"flex", gap:20,
+          flexWrap:"wrap", alignItems:"center" }}>
+          <div>
+            <div style={{ fontFamily:MONO, fontSize:38, fontWeight:700, lineHeight:1 }}>
+              <span style={{ color:C.over }}>{wins}</span>
+              <span style={{ color:C.ruleDark }}>–</span>
+              <span style={{ color:C.under }}>{losses}</span>
+            </div>
+            <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
+              {rangeLabel}{pct!=null ? ` · ${pct}% win` : ""}</div>
+            <div style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark, marginTop:1 }}>
+              {graded} graded{rows.length>graded ? ` · ${rows.length-graded} untracked` : ""}</div>
+          </div>
+
+          {/* cumulative net chart */}
+          <div style={{ flex:1, minWidth:200, height:120 }}>
+            {chartData.length < 2 ? (
+              <div style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark,
+                display:"flex", alignItems:"center", height:"100%" }}>
+                Grade at least 2 plays in this range to see the trend.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top:6, right:8, bottom:0, left:-26 }}>
+                  <XAxis dataKey="date" tick={{ fontFamily:MONO, fontSize:8, fill:C.inkSoft }}
+                    axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
+                    axisLine={false} tickLine={false} allowDecimals={false} width={36} />
+                  <Tooltip contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2,
+                    border:`1px solid ${C.rule}` }}
+                    formatter={(v)=>[`${v>0?"+":""}${v}`, "net"]} />
+                  <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
+                  <Bar dataKey="net" radius={[2,2,0,0]}>
+                    {chartData.map((d,i)=>(
+                      <Cell key={i} fill={d.net>0?C.over:d.net<0?C.under:C.ruleDark} />
+                    ))}
+                  </Bar>
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
 
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {/* ─────────── PLAY LIST ─────────── */}
+      <Eyebrow n="01">Plays · newest first{range!=="all" ? ` · ${rangeLabel.toLowerCase()}` : ""}</Eyebrow>
+      {rows.length===0 ? (
+        <div style={{ padding:"18px 4px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
+          No plays in this range.</div>
+      ) : (
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
           const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
-                     : r.result==="L" ? "rgba(215,38,61,0.09)" : C.card;
+                     : r.result==="L" ? "rgba(215,38,61,0.09)" : "#fff";
           const edge = r.result==="W" ? C.over : r.result==="L" ? C.under : C.rule;
           return (
             <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:12,
@@ -1691,6 +1774,7 @@ function TagsView({ tags, setResult }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
