@@ -102,6 +102,84 @@ const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
 
+// shared per-game tag store (global via JSONBin, local cache via localStorage).
+// Returns { tags, tagStatus, setTag, setResult }.
+function useTags() {
+  const [tags, setTags] = useState({});
+  const [tagStatus, setTagStatus] = useState(NOTES_URL ? "loading" : "local");
+  const tagTimer = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    try { const c = window.localStorage.getItem("ts-tags"); if (c!=null) setTags(JSON.parse(c)||{}); } catch {}
+    if (!NOTES_URL) return;
+    (async () => {
+      try {
+        const r = await fetch(NOTES_URL + "/latest",
+          { headers:{ "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY } });
+        const j = await r.json();
+        if (!alive) return;
+        const stored = j?.record?.tags;
+        if (stored && typeof stored === "object") {
+          setTags(stored);
+          try { window.localStorage.setItem("ts-tags", JSON.stringify(stored)); } catch {}
+        }
+        setTagStatus("saved");
+      } catch { if (alive) setTagStatus("error"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const persist = (next) => {
+    try { window.localStorage.setItem("ts-tags", JSON.stringify(next)); } catch {}
+    if (!NOTES_URL) return;
+    setTagStatus("saving");
+    if (tagTimer.current) clearTimeout(tagTimer.current);
+    tagTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(NOTES_URL, { method:"PUT",
+          headers:{ "Content-Type":"application/json",
+            "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY },
+          body:JSON.stringify({ tags:next }) });
+        setTagStatus(r.ok ? "saved" : "error");
+      } catch { setTagStatus("error"); }
+    }, 700);
+  };
+
+  // setTag(game, text): create/update/remove a tag, keeping a self-describing snapshot
+  const setTag = (game, text) => {
+    setTags(prev => {
+      const next = { ...prev };
+      const v = (text||"").trim();
+      if (v) {
+        const existing = (typeof prev[game.gamePk] === "object") ? prev[game.gamePk] : {};
+        next[game.gamePk] = { ...existing, text:v, away:game.awayName, home:game.homeName,
+          awayId:game.awayId, homeId:game.homeId,
+          date:(game.time||"").slice(0,10) || game._date || "" };
+      } else {
+        delete next[game.gamePk];
+      }
+      persist(next);
+      return next;
+    });
+  };
+
+  // setResult(gamePk, "W"|"L"|null): mark or clear a win/loss on an existing tag
+  const setResult = (gamePk, result) => {
+    setTags(prev => {
+      const entry = prev[gamePk];
+      if (!entry) return prev;
+      const obj = typeof entry === "string" ? { text:entry } : { ...entry };
+      if (result) obj.result = result; else delete obj.result;
+      const next = { ...prev, [gamePk]:obj };
+      persist(next);
+      return next;
+    });
+  };
+
+  return { tags, tagStatus, setTag, setResult };
+}
+
 /* streak echo: a team that just snapped a long W or L streak. `results` is
    [{date,res:"W"|"L"}]. Returns the broken streak's length/result plus the
    "predicted" repeat (the result that ended the streak), or null. */
@@ -215,7 +293,7 @@ function SeqBlock({ arr, label, onPick }) {
 }
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
-function TravelTrends() {
+function TravelTrends({ tags, setTag, tagStatus }) {
   const start = todayISO();                    // anchor: today
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
@@ -229,66 +307,6 @@ function TravelTrends() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
-
-  // per-game tags — global via JSONBin when NOTES_URL is set, else per-device
-  // localStorage. tags = { [gamePk]: "play text" }. Debounced save; local copy
-  // is written instantly as an offline cache. Empty string = no tag (removed).
-  const [tags, setTags] = useState({});
-  const [tagStatus, setTagStatus] = useState(NOTES_URL ? "loading" : "local");
-  const tagTimer = useRef(null);
-
-  useEffect(() => {
-    let alive = true;
-    try { const c = window.localStorage.getItem("ts-tags"); if (c!=null) setTags(JSON.parse(c)||{}); } catch {}
-    if (!NOTES_URL) return;
-    (async () => {
-      try {
-        const r = await fetch(NOTES_URL + "/latest",
-          { headers:{ "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY } });
-        const j = await r.json();
-        if (!alive) return;
-        const stored = j?.record?.tags;
-        if (stored && typeof stored === "object") {
-          setTags(stored);
-          try { window.localStorage.setItem("ts-tags", JSON.stringify(stored)); } catch {}
-        }
-        setTagStatus("saved");
-      } catch { if (alive) setTagStatus("error"); }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  // setTag(game, text): stores { text, away, home, date } keyed by gamePk so
-  // each tag remembers its matchup even after the game leaves the window.
-  const setTag = (game, text) => {
-    setTags(prev => {
-      const next = { ...prev };
-      const v = (text||"").trim();
-      if (v) {
-        next[game.gamePk] = { text:v, away:game.awayName, home:game.homeName,
-          awayId:game.awayId, homeId:game.homeId,
-          date:(game.time||"").slice(0,10) || game._date || "" };
-      } else {
-        delete next[game.gamePk];   // empty clears the tag
-      }
-      try { window.localStorage.setItem("ts-tags", JSON.stringify(next)); } catch {}
-      if (NOTES_URL) {
-        setTagStatus("saving");
-        if (tagTimer.current) clearTimeout(tagTimer.current);
-        const payload = next;
-        tagTimer.current = setTimeout(async () => {
-          try {
-            const r = await fetch(NOTES_URL, { method:"PUT",
-              headers:{ "Content-Type":"application/json",
-                "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY },
-              body:JSON.stringify({ tags:payload }) });
-            setTagStatus(r.ok ? "saved" : "error");
-          } catch { setTagStatus("error"); }
-        }, 700);
-      }
-      return next;
-    });
-  };
 
   const load = useCallback(async () => {
     setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
@@ -1582,7 +1600,80 @@ const RESPONSIVE_CSS = `
 * { -webkit-tap-highlight-color: transparent; }
 `;
 
+/* ════════════════════════ TAGS VIEW ════════════════════════ */
+function TagsView({ tags, setResult }) {
+  // build a list of tagged games, newest date first
+  const rows = useMemo(() => {
+    return Object.entries(tags || {})
+      .map(([gamePk, entry]) => {
+        if (typeof entry === "string") return { gamePk, text:entry, date:"", away:"", home:"", result:null };
+        return { gamePk, text:entry.text||"", date:entry.date||"",
+          away:entry.away||"", home:entry.home||"",
+          awayId:entry.awayId, homeId:entry.homeId, result:entry.result||null };
+      })
+      .filter(r => r.text)
+      .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  }, [tags]);
+
+  if (!rows.length) {
+    return (
+      <div style={{ padding:"40px 8px", fontFamily:SANS, fontSize:14, color:C.inkSoft }}>
+        No tagged games yet. Open any game on the calendar and hit <b>Play</b> to tag it — your
+        tags collect here, newest first.
+      </div>
+    );
+  }
+
+  const resBtn = (r, val, label, color) => {
+    const on = r.result === val;
+    return (
+      <button onClick={()=>setResult(r.gamePk, on ? null : val)}
+        title={on ? `Clear ${label}` : `Mark ${label}`}
+        style={{ width:30, height:28, borderRadius:3, cursor:"pointer",
+          border:`1px solid ${on ? color : C.rule}`,
+          background: on ? color : "#fff", color: on ? "#fff" : C.inkSoft,
+          fontFamily:MONO, fontSize:12, fontWeight:700 }}>{label}</button>
+    );
+  };
+
+  return (
+    <div>
+      <Eyebrow n="01">My tagged plays · newest first</Eyebrow>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
+        {rows.map(r => {
+          const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
+                     : r.result==="L" ? "rgba(215,38,61,0.09)" : C.card;
+          const edge = r.result==="W" ? C.over : r.result==="L" ? C.under : C.rule;
+          return (
+            <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:12,
+              border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
+              background:tint, padding:"10px 12px" }}>
+              <div style={{ minWidth:0, flex:1 }}>
+                <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.08em",
+                  textTransform:"uppercase", color:C.inkSoft }}>
+                  {r.date ? prettyDay(r.date) : "—"}
+                  {r.away && r.home && <span style={{ color:C.ruleDark }}>{"  ·  "}
+                    {TEAM_ABBR[r.awayId]||r.away} @ {TEAM_ABBR[r.homeId]||r.home}</span>}
+                </div>
+                <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700, marginTop:2,
+                  color:C.ink, wordBreak:"break-word" }}>{r.text}</div>
+              </div>
+              <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                {resBtn(r, "W", "W", C.over)}
+                {resBtn(r, "L", "L", C.under)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [tab, setTab] = useState("calendar");
+  const { tags, tagStatus, setTag, setResult } = useTags();
+
   useEffect(() => {
     document.title = "The Trend Sheet";
     const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
@@ -1606,9 +1697,20 @@ export default function App() {
           <h1 style={{ margin:"6px 0 0", fontFamily:SANS, fontWeight:800, fontSize:34,
             letterSpacing:"-0.02em", lineHeight:1 }}>The Trend Sheet</h1>
         </header>
-        <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:22 }} />
+        <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:18 }} />
 
-        <TravelTrends/>
+        <div style={{ display:"flex", gap:4, marginBottom:22, flexWrap:"wrap" }}>
+          {[["calendar","CALENDAR"],["tags","MY TAGS"]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
+              border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
+              background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
+              fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
+              cursor:"pointer" }}>{lbl}</button>))}
+        </div>
+
+        {tab==="tags"
+          ? <TagsView tags={tags} setResult={setResult} />
+          : <TravelTrends tags={tags} setTag={setTag} tagStatus={tagStatus} />}
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
