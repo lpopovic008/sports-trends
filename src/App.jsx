@@ -30,7 +30,7 @@ const SEASON = new Date().getFullYear();
 // paste exactly {"text":""} as the contents, Save. Copy the API URL it gives
 // you (looks like https://api.npoint.io/abc123def456) and paste it below.
 // Leave "" to keep notes per-device (localStorage only).
-const NOTES_URL = "";
+const NOTES_URL = "https://api.npoint.io/d8ba05e5320878c8059c";
 
 /* MLB home-park time zones for travel detection */
 const TEAM_TZ = {
