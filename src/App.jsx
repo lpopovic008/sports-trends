@@ -99,6 +99,8 @@ async function mapPool(items, n, fn) {
 }
 const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
+// tags may be an old plain string or the new { text, away, home, date } object
+const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
 
 /* streak echo: a team that just snapped a long W or L streak. `results` is
    [{date,res:"W"|"L"}]. Returns the broken streak's length/result plus the
@@ -256,11 +258,19 @@ function TravelTrends() {
     return () => { alive = false; };
   }, []);
 
-  const setTag = (gamePk, text) => {
+  // setTag(game, text): stores { text, away, home, date } keyed by gamePk so
+  // each tag remembers its matchup even after the game leaves the window.
+  const setTag = (game, text) => {
     setTags(prev => {
       const next = { ...prev };
       const v = (text||"").trim();
-      if (v) next[gamePk] = v; else delete next[gamePk];   // empty clears the tag
+      if (v) {
+        next[game.gamePk] = { text:v, away:game.awayName, home:game.homeName,
+          awayId:game.awayId, homeId:game.homeId,
+          date:(game.time||"").slice(0,10) || game._date || "" };
+      } else {
+        delete next[game.gamePk];   // empty clears the tag
+      }
       try { window.localStorage.setItem("ts-tags", JSON.stringify(next)); } catch {}
       if (NOTES_URL) {
         setTagStatus("saving");
@@ -616,7 +626,7 @@ function TravelTrends() {
                             border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
                           else {
                             const t=gameTrends(d.date,g);
-                            cells.push(<CalCard key={i} g={g} t={t} tag={tags[g.gamePk]}
+                            cells.push(<CalCard key={i} g={g} t={t} tag={tagText(tags[g.gamePk])}
                               onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
                                 idx:dayGames.indexOf(g) })}/>);
                           }
@@ -1323,7 +1333,7 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
   const [tagEditing, setTagEditing] = useState(false);
-  const tagVal = tags?.[g.gamePk] || "";
+  const tagVal = tagText(tags?.[g.gamePk]);
 
   useEffect(() => {
     let alive = true;
@@ -1430,10 +1440,10 @@ function GameModal({ m, tags, setTag, onClose }) {
             display:"flex", gap:8, alignItems:"center" }}>
             <input autoFocus defaultValue={tagVal}
               placeholder="e.g. PLAY · over 8.5 · fade the public"
-              onKeyDown={e=>{ if(e.key==="Enter"){ setTag(g.gamePk, e.target.value); setTagEditing(false); } }}
-              onBlur={e=>{ setTag(g.gamePk, e.target.value); }}
+              onKeyDown={e=>{ if(e.key==="Enter"){ setTag(g, e.target.value); setTagEditing(false); } }}
+              onBlur={e=>{ setTag(g, e.target.value); }}
               style={{ flex:1, ...inputStyle }} />
-            <button onMouseDown={e=>{ e.preventDefault(); setTag(g.gamePk, ""); setTagEditing(false); }}
+            <button onMouseDown={e=>{ e.preventDefault(); setTag(g, ""); setTagEditing(false); }}
               style={{ border:`1px solid ${C.rule}`, background:"#fff", borderRadius:2,
                 fontFamily:MONO, fontSize:11, padding:"6px 10px", cursor:"pointer", color:C.under }}>Remove</button>
           </div>
