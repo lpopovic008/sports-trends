@@ -228,17 +228,16 @@ function TravelTrends() {
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
-  // notes — global via JSONBin when NOTES_URL is set, else per-device
-  // localStorage. Untouched by Refresh. Debounced save; the local copy is
-  // always written instantly as an offline cache.
-  const [notes, setNotes] = useState("");
-  const [noteStatus, setNoteStatus] = useState(NOTES_URL ? "loading" : "local"); // loading|saving|saved|error|local
-  const noteTimer = useRef(null);
+  // per-game tags — global via JSONBin when NOTES_URL is set, else per-device
+  // localStorage. tags = { [gamePk]: "play text" }. Debounced save; local copy
+  // is written instantly as an offline cache. Empty string = no tag (removed).
+  const [tags, setTags] = useState({});
+  const [tagStatus, setTagStatus] = useState(NOTES_URL ? "loading" : "local");
+  const tagTimer = useRef(null);
 
   useEffect(() => {
     let alive = true;
-    // seed instantly from local cache so the box is never empty on a slow network
-    try { const c = window.localStorage.getItem("ts-notes"); if (c!=null) setNotes(c); } catch {}
+    try { const c = window.localStorage.getItem("ts-tags"); if (c!=null) setTags(JSON.parse(c)||{}); } catch {}
     if (!NOTES_URL) return;
     (async () => {
       try {
@@ -246,32 +245,39 @@ function TravelTrends() {
           { headers:{ "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY } });
         const j = await r.json();
         if (!alive) return;
-        const text = j?.record?.text;
-        if (typeof text === "string") {
-          setNotes(text);
-          try { window.localStorage.setItem("ts-notes", text); } catch {}
+        const stored = j?.record?.tags;
+        if (stored && typeof stored === "object") {
+          setTags(stored);
+          try { window.localStorage.setItem("ts-tags", JSON.stringify(stored)); } catch {}
         }
-        setNoteStatus("saved");
-      } catch { if (alive) setNoteStatus("error"); }
+        setTagStatus("saved");
+      } catch { if (alive) setTagStatus("error"); }
     })();
     return () => { alive = false; };
   }, []);
 
-  const saveNotes = (v) => {
-    setNotes(v);
-    try { window.localStorage.setItem("ts-notes", v); } catch {}   // instant local cache
-    if (!NOTES_URL) { setNoteStatus("local"); return; }
-    setNoteStatus("saving");
-    if (noteTimer.current) clearTimeout(noteTimer.current);
-    noteTimer.current = setTimeout(async () => {
-      try {
-        const r = await fetch(NOTES_URL, { method:"PUT",
-          headers:{ "Content-Type":"application/json",
-            "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY },
-          body:JSON.stringify({ text:v }) });
-        setNoteStatus(r.ok ? "saved" : "error");
-      } catch { setNoteStatus("error"); }
-    }, 700);   // write once you pause typing, not every keystroke
+  const setTag = (gamePk, text) => {
+    setTags(prev => {
+      const next = { ...prev };
+      const v = (text||"").trim();
+      if (v) next[gamePk] = v; else delete next[gamePk];   // empty clears the tag
+      try { window.localStorage.setItem("ts-tags", JSON.stringify(next)); } catch {}
+      if (NOTES_URL) {
+        setTagStatus("saving");
+        if (tagTimer.current) clearTimeout(tagTimer.current);
+        const payload = next;
+        tagTimer.current = setTimeout(async () => {
+          try {
+            const r = await fetch(NOTES_URL, { method:"PUT",
+              headers:{ "Content-Type":"application/json",
+                "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY },
+              body:JSON.stringify({ tags:payload }) });
+            setTagStatus(r.ok ? "saved" : "error");
+          } catch { setTagStatus("error"); }
+        }, 700);
+      }
+      return next;
+    });
   };
 
   const load = useCallback(async () => {
@@ -559,41 +565,16 @@ function TravelTrends() {
     <div>
       <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
 
-      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-start", marginBottom:18 }}>
-        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-          <button onClick={load} disabled={busy} style={btn(false)}>
-            {busy ? "Loading…" : "Refresh"}</button>
-          {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-            pulling schedule…</span>}
-        </div>
-
-        {/* sticky-note: persists locally, untouched by Refresh */}
-        <div className="ts-note" style={{ position:"relative", marginLeft:"auto", width:260,
-          background:"#FFF6BF", border:"1px solid #E6D24A",
-          borderRadius:2, padding:"8px 10px 6px",
-          boxShadow:"0 2px 5px rgba(120,100,0,0.18)",
-          transform:"rotate(-0.6deg)" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3, gap:8 }}>
-            <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.14em",
-              textTransform:"uppercase", color:"#9A7B00" }}>
-              Plays
-              <span style={{ marginLeft:6, letterSpacing:0, textTransform:"none", opacity:0.85 }}>
-                {noteStatus==="loading" ? "· syncing…"
-                  : noteStatus==="saving" ? "· saving…"
-                  : noteStatus==="saved" ? "· synced"
-                  : noteStatus==="error" ? "· offline (saved on device)"
-                  : "· this device"}</span>
-            </span>
-            {notes && <button onClick={()=>saveNotes("")} title="Clear notes"
-              style={{ border:"none", background:"transparent", cursor:"pointer",
-                fontFamily:MONO, fontSize:11, color:"#9A7B00", padding:"0 2px" }}>clear ✕</button>}
-          </div>
-          <textarea value={notes} onChange={e=>saveNotes(e.target.value)}
-            placeholder="top plays, ideas, and thoughts"
-            rows={3} style={{ width:"100%", resize:"vertical", minHeight:46,
-              border:"none", outline:"none", background:"transparent",
-              fontFamily:SANS, fontSize:13, lineHeight:1.4, color:"#5C4B00" }} />
-        </div>
+      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
+        <button onClick={load} disabled={busy} style={btn(false)}>
+          {busy ? "Loading…" : "Refresh"}</button>
+        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+          pulling schedule…</span>}
+        {NOTES_URL && (
+          <span style={{ marginLeft:"auto", fontFamily:MONO, fontSize:10, color:C.ruleDark }}>
+            tags {tagStatus==="loading" ? "syncing…" : tagStatus==="saving" ? "saving…"
+              : tagStatus==="saved" ? "synced" : tagStatus==="error" ? "offline" : ""}</span>
+        )}
       </div>
 
       {err && <ErrBox>{err}</ErrBox>}
@@ -635,7 +616,7 @@ function TravelTrends() {
                             border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
                           else {
                             const t=gameTrends(d.date,g);
-                            cells.push(<CalCard key={i} g={g} t={t}
+                            cells.push(<CalCard key={i} g={g} t={t} tag={tags[g.gamePk]}
                               onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
                                 idx:dayGames.indexOf(g) })}/>);
                           }
@@ -651,7 +632,7 @@ function TravelTrends() {
         </div>
       )}
 
-      {modal && <GameModal m={modal} onClose={()=>setModal(null)} />}
+      {modal && <GameModal m={modal} tags={tags} setTag={setTag} onClose={()=>setModal(null)} />}
     </div>
   );
 }
@@ -735,7 +716,7 @@ function NowLine() {
   );
 }
 
-function CalCard({ g, t, onOpen }) {
+function CalCard({ g, t, tag, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
@@ -747,8 +728,15 @@ function CalCard({ g, t, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
-      height:54, padding:"4px 7px", background:bg, overflow:"hidden",
+      height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
+      {tag && (
+        <div title={tag} style={{ position:"absolute", top:-7, left:-5, zIndex:3, maxWidth:"86%",
+          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
+          padding:"1px 5px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.25,
+          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</div>
+      )}
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} teamId={g.awayId} t={t} />
@@ -1320,13 +1308,13 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
   );
 }
 
-function GameModal({ m, onClose }) {
+function GameModal({ m, tags, setTag, onClose }) {
   const { date, games, trends } = m;
   const [idx, setIdx] = useState(m.idx || 0);
   const g = games[idx];
   const t = trends[idx];
   const hasPrev = idx > 0, hasNext = idx < games.length - 1;
-  const go = (delta) => setIdx(i => Math.min(games.length-1, Math.max(0, i+delta)));
+  const go = (delta) => { setTagEditing(false); setIdx(i => Math.min(games.length-1, Math.max(0, i+delta))); };
   const [awayLU, setAwayLU] = useState(null);
   const [homeLU, setHomeLU] = useState(null);
   const [awayP,  setAwayP]  = useState(undefined);   // away SP vs home
@@ -1334,6 +1322,8 @@ function GameModal({ m, onClose }) {
   const [h2h,    setH2H]    = useState(undefined);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
+  const [tagEditing, setTagEditing] = useState(false);
+  const tagVal = tags?.[g.gamePk] || "";
 
   useEffect(() => {
     let alive = true;
@@ -1409,9 +1399,33 @@ function GameModal({ m, onClose }) {
             <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800, letterSpacing:"-0.01em" }}>
               {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
           </div>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-            borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>✕</button>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            <button onClick={()=>setTagEditing(v=>!v)}
+              title={tagVal ? "Edit play tag" : "Tag this game"}
+              style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
+                background:tagVal?"#F2657A":"#fff", color:tagVal?"#fff":C.ink,
+                borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
+                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
+              {tagVal ? "Play ✓" : "Play"}</button>
+            <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+              borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
+          </div>
         </div>
+
+        {/* tag editor */}
+        {tagEditing && (
+          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"#FFF3F4",
+            display:"flex", gap:8, alignItems:"center" }}>
+            <input autoFocus defaultValue={tagVal}
+              placeholder="e.g. PLAY · over 8.5 · fade the public"
+              onKeyDown={e=>{ if(e.key==="Enter"){ setTag(g.gamePk, e.target.value); setTagEditing(false); } }}
+              onBlur={e=>{ setTag(g.gamePk, e.target.value); }}
+              style={{ flex:1, ...inputStyle }} />
+            <button onMouseDown={e=>{ e.preventDefault(); setTag(g.gamePk, ""); setTagEditing(false); }}
+              style={{ border:`1px solid ${C.rule}`, background:"#fff", borderRadius:2,
+                fontFamily:MONO, fontSize:11, padding:"6px 10px", cursor:"pointer", color:C.under }}>Remove</button>
+          </div>
+        )}
 
         {/* ── BOX SCORE BY INNING (finished games, above H2H) ── */}
         {g.isFinal && ls !== null && (
@@ -1529,7 +1543,6 @@ const RESPONSIVE_CSS = `
 .ts-cal-col { min-width:166px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
-.ts-note { box-sizing:border-box; }
 .ts-cell { box-sizing:border-box; }
 @media (max-width:760px){
   .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
@@ -1540,7 +1553,6 @@ const RESPONSIVE_CSS = `
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
   .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:18px 12px 48px; }
-  .ts-note { margin-left:0 !important; width:100% !important; transform:none !important; }
   .ts-nav-arrow { width:34px !important; height:34px !important; left:2px; right:2px;
     opacity:0.92; }
 }
