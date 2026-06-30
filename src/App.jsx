@@ -242,7 +242,8 @@ function TravelTrends() {
     if (!NOTES_URL) return;
     (async () => {
       try {
-        const r = await fetch(NOTES_URL + "/latest", { headers:{ "X-Access-Key":NOTES_KEY } });
+        const r = await fetch(NOTES_URL + "/latest",
+          { headers:{ "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY } });
         const j = await r.json();
         if (!alive) return;
         const text = j?.record?.text;
@@ -265,7 +266,8 @@ function TravelTrends() {
     noteTimer.current = setTimeout(async () => {
       try {
         const r = await fetch(NOTES_URL, { method:"PUT",
-          headers:{ "Content-Type":"application/json", "X-Access-Key":NOTES_KEY },
+          headers:{ "Content-Type":"application/json",
+            "X-Master-Key":NOTES_KEY, "X-Access-Key":NOTES_KEY },
           body:JSON.stringify({ text:v }) });
         setNoteStatus(r.ok ? "saved" : "error");
       } catch { setNoteStatus("error"); }
