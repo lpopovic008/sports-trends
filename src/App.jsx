@@ -25,12 +25,14 @@ const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
 const SEASON = new Date().getFullYear();
 
-// Global notes via npoint.io (free, keyless, anyone-with-link can edit).
-// SETUP (1 min): go to https://www.npoint.io , click "Create JSON Bin",
-// paste exactly {"text":""} as the contents, Save. Copy the API URL it gives
-// you (looks like https://api.npoint.io/abc123def456) and paste it below.
-// Leave "" to keep notes per-device (localStorage only).
-const NOTES_URL = "https://api.npoint.io/d8ba05e5320878c8059c";
+// Global notes via JSONBin.io — free, allows browser reads + writes.
+// SETUP: step 1 — jsonbin.io → sign up → API Keys → copy your Access Key
+//           with Read + Update enabled. step 2 — Create Bin with contents {"text":""},
+//           copy the Bin ID from its URL.
+// Paste both below. Leave NOTES_BIN empty to keep notes per-device only.
+const NOTES_BIN = "6a43cd2bf5f4af5e2947d66d";   // e.g. 65a1b2c3dc74654018abcd12
+const NOTES_KEY = "$2a$10$EzB/eCQ9ZvPSCyKLss3TxO/fUj0dDmaDEvWEphLhD6eQ7ivrryUVG";   // your JSONBin Access Key, sent as X-Access-Key
+const NOTES_URL = NOTES_BIN ? `https://api.jsonbin.io/v3/b/${NOTES_BIN}` : "";
 
 /* MLB home-park time zones for travel detection */
 const TEAM_TZ = {
@@ -226,7 +228,7 @@ function TravelTrends() {
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
-  // notes — global via npoint.io when NOTES_URL is set, else per-device
+  // notes — global via JSONBin when NOTES_URL is set, else per-device
   // localStorage. Untouched by Refresh. Debounced save; the local copy is
   // always written instantly as an offline cache.
   const [notes, setNotes] = useState("");
@@ -240,12 +242,13 @@ function TravelTrends() {
     if (!NOTES_URL) return;
     (async () => {
       try {
-        const r = await fetch(NOTES_URL);
+        const r = await fetch(NOTES_URL + "/latest", { headers:{ "X-Access-Key":NOTES_KEY } });
         const j = await r.json();
         if (!alive) return;
-        if (typeof j.text === "string") {
-          setNotes(j.text);
-          try { window.localStorage.setItem("ts-notes", j.text); } catch {}
+        const text = j?.record?.text;
+        if (typeof text === "string") {
+          setNotes(text);
+          try { window.localStorage.setItem("ts-notes", text); } catch {}
         }
         setNoteStatus("saved");
       } catch { if (alive) setNoteStatus("error"); }
@@ -262,10 +265,11 @@ function TravelTrends() {
     noteTimer.current = setTimeout(async () => {
       try {
         const r = await fetch(NOTES_URL, { method:"PUT",
-          headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ text:v }) });
+          headers:{ "Content-Type":"application/json", "X-Access-Key":NOTES_KEY },
+          body:JSON.stringify({ text:v }) });
         setNoteStatus(r.ok ? "saved" : "error");
       } catch { setNoteStatus("error"); }
-    }, 700);   // PUT once you pause typing, not every keystroke
+    }, 700);   // write once you pause typing, not every keystroke
   };
 
   const load = useCallback(async () => {
