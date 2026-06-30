@@ -219,6 +219,17 @@ function TravelTrends() {
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
+  // personal notes — persisted in the browser, never refreshed/cleared by Refresh
+  const [notes, setNotes] = useState("");
+  useEffect(() => {
+    try { const saved = window.localStorage.getItem("ts-notes"); if (saved!=null) setNotes(saved); }
+    catch {}
+  }, []);
+  const saveNotes = (v) => {
+    setNotes(v);
+    try { window.localStorage.setItem("ts-notes", v); } catch {}
+  };
+
   const load = useCallback(async () => {
     setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
     try {
@@ -504,11 +515,31 @@ function TravelTrends() {
     <div>
       <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
 
-      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
+      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-start", marginBottom:18 }}>
         <button onClick={load} disabled={busy} style={btn(false)}>
           {busy ? "Loading…" : "Refresh"}</button>
-        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, alignSelf:"center" }}>
           pulling schedule, results & pitchers…</span>}
+
+        {/* sticky-note: persists locally, untouched by Refresh */}
+        <div style={{ position:"relative", marginLeft:"auto", width:260, maxWidth:"100%",
+          background:"#FFF6BF", border:"1px solid #E6D24A",
+          borderRadius:2, padding:"8px 10px 6px",
+          boxShadow:"0 2px 5px rgba(120,100,0,0.18)",
+          transform:"rotate(-0.6deg)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+            <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.14em",
+              textTransform:"uppercase", color:"#9A7B00" }}>Notes</span>
+            {notes && <button onClick={()=>saveNotes("")} title="Clear notes"
+              style={{ border:"none", background:"transparent", cursor:"pointer",
+                fontFamily:MONO, fontSize:11, color:"#9A7B00", padding:"0 2px" }}>clear ✕</button>}
+          </div>
+          <textarea value={notes} onChange={e=>saveNotes(e.target.value)}
+            placeholder="Jot picks, reminders, anything… saved automatically."
+            rows={3} style={{ width:"100%", resize:"vertical", minHeight:46,
+              border:"none", outline:"none", background:"transparent",
+              fontFamily:SANS, fontSize:13, lineHeight:1.4, color:"#5C4B00" }} />
+        </div>
       </div>
 
       {err && <ErrBox>{err}</ErrBox>}
