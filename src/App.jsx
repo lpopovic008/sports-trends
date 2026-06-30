@@ -760,11 +760,104 @@ const pLine = (s) => {
   return `${st.inningsPitched} IP · ${st.hits} H · ${st.earnedRuns} ER · ` +
     `${st.baseOnBalls} BB · ${st.strikeOuts} K`;
 };
-function PitcherBlock({ name, vsName, info, bare }) {
+
+// full season game-by-game log for a pitcher (most recent first)
+async function loadPitcherSeason(pid) {
+  if (!pid) return [];
+  try {
+    const r = await fetch(`${API}/people/${pid}/stats?stats=gameLog&group=pitching&season=${SEASON}&gameType=R`);
+    if (!r.ok) return [];
+    const j = await r.json();
+    const splits = j.stats?.[0]?.splits || [];
+    return splits.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  } catch { return []; }
+}
+
+function PitcherSeasonModal({ pid, name, onClose }) {
+  const [log, setLog] = useState(undefined);
+  useEffect(() => {
+    let alive = true;
+    loadPitcherSeason(pid).then(r=>{ if(alive) setLog(r); });
+    return () => { alive = false; };
+  }, [pid]);
+
+  const tot = useMemo(() => {
+    if (!log || !log.length) return null;
+    const sum = (k)=>log.reduce((s,g)=>s+(Number(g.stat[k])||0),0);
+    const ipOuts = log.reduce((s,g)=>{
+      const ip = parseFloat(g.stat.inningsPitched)||0;
+      const whole = Math.floor(ip); const frac = Math.round((ip-whole)*10);
+      return s + whole*3 + frac;
+    }, 0);
+    const ip = `${Math.floor(ipOuts/3)}.${ipOuts%3}`;
+    const er = sum("earnedRuns");
+    const era = ipOuts>0 ? ((er*27)/ipOuts).toFixed(2) : "—";
+    return { gs:log.length, ip, k:sum("strikeOuts"), bb:sum("baseOnBalls"), h:sum("hits"), er, era };
+  }, [log]);
+
+  return (
+    <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
+      justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
+        border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:560, width:"100%",
+        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+          display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+          <div>
+            <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
+              textTransform:"uppercase", color:C.inkSoft }}>{SEASON} game log</div>
+            <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800 }}>{name}</div>
+          </div>
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+            borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
+        </div>
+
+        {tot && (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(70px,1fr))",
+            borderBottom:`1px solid ${C.rule}`, background:C.card }}>
+            {[["GS",tot.gs],["IP",tot.ip],["ERA",tot.era],["K",tot.k],["BB",tot.bb],["H",tot.h]].map(([l,v])=>(
+              <div key={l} style={{ padding:"8px 10px", borderRight:`1px solid ${C.rule}` }}>
+                <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.08em",
+                  textTransform:"uppercase", color:C.inkSoft }}>{l}</div>
+                <div style={{ fontFamily:MONO, fontSize:15, fontWeight:700 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding:"8px 0 14px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
+            gap:8, padding:"4px 16px", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
+            textTransform:"uppercase", color:C.ruleDark }}>
+            <span>Date</span><span>Opp</span><span>Line</span>
+          </div>
+          {log===undefined && <div style={{ padding:"10px 16px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>}
+          {log && log.length===0 && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
+          {log && log.map((s,i)=>(
+            <div key={i} style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
+              gap:8, padding:"5px 16px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.date}</span>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.opponent?.abbreviation||"—"}</span>
+              <span style={{ fontFamily:MONO, fontSize:12.5, color:C.ink }}>{pLine(s)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+function PitcherBlock({ name, pid, vsName, info, bare }) {
+  const [showLog, setShowLog] = useState(false);
   return (
     <div style={ bare ? {} : { borderTop:`1px solid ${C.rule}`, padding:"12px 0" }}>
       <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700 }}>
-        {name || "TBD"}
+        {!name ? "TBD" : pid ? (
+          <button onClick={()=>setShowLog(true)} title={`${name} — ${SEASON} game log`}
+            style={{ font:"inherit", fontWeight:700, color:C.blue, cursor:"pointer",
+              border:"none", background:"transparent", padding:0,
+              textDecoration:"underline", textDecorationColor:C.blue, textUnderlineOffset:2 }}>{name}</button>
+        ) : name}
         <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, fontWeight:400 }}>
           {"  vs "}{vsName}</span>
       </div>
@@ -797,6 +890,7 @@ function PitcherBlock({ name, vsName, info, bare }) {
           )}
         </div>
       )}
+      {showLog && <PitcherSeasonModal pid={pid} name={name} onClose={()=>setShowLog(false)} />}
     </div>
   );
 }
@@ -1078,7 +1172,7 @@ async function loadBatterVs(batterId, pitcherId) {
 
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
 const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
-function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onStat, oppPitcherName, oppPitcherId }) {
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId }) {
   const [view, setView] = useState("last5");      // "last5" | "vssp"
   const [vsData, setVsData] = useState({});       // batterId -> stat | null
   const [vsLoading, setVsLoading] = useState(false);
@@ -1187,7 +1281,9 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onStat
                   color: Number(st.hits)>0?C.over:C.ink }}>{st.hits}</span>
                 <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right",
                   color: Number(st.homeRuns)>0?C.over:C.ink }}>{st.homeRuns}</span>
-                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right", fontWeight:700 }}>{st.avg}</span>
+                <span style={{ fontFamily:MONO, fontSize:12, textAlign:"right", fontWeight:700,
+                  color: (parseFloat(st.avg)||0) < 0.200 ? C.under
+                       : (parseFloat(st.avg)||0) > 0.250 ? C.over : C.ink }}>{st.avg}</span>
               </>
             )}
           </div>
@@ -1203,7 +1299,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherInfo, onStat
         background:"#fff", border:`1px solid ${C.rule}` }}>
         <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
           color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
-        <PitcherBlock name={pitcherName} vsName={oppName} info={pitcherInfo} bare />
+        <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
       </div>
     </div>
   );
@@ -1304,12 +1400,12 @@ function GameModal({ m, onClose }) {
         {/* ── lineups: away left, home right (stack on mobile) ── */}
         <div className="ts-lineups" style={{ gap:0 }}>
           <TeamPanel teamName={g.awayName} oppName={g.homeName}
-            lineup={awayLU} pitcherName={g.awayPname} pitcherInfo={awayP}
+            lineup={awayLU} pitcherName={g.awayPname} pitcherId={g.awayPid} pitcherInfo={awayP}
             oppPitcherName={g.homePname} oppPitcherId={g.homePid}
             onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
             <TeamPanel teamName={g.homeName} oppName={g.awayName}
-              lineup={homeLU} pitcherName={g.homePname} pitcherInfo={homeP}
+              lineup={homeLU} pitcherName={g.homePname} pitcherId={g.homePid} pitcherInfo={homeP}
               oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
               onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           </div>
