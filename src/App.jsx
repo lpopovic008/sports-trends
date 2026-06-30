@@ -516,13 +516,15 @@ function TravelTrends() {
       <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
 
       <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"flex-start", marginBottom:18 }}>
-        <button onClick={load} disabled={busy} style={btn(false)}>
-          {busy ? "Loading…" : "Refresh"}</button>
-        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, alignSelf:"center" }}>
-          pulling schedule, results & pitchers…</span>}
+        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+          <button onClick={load} disabled={busy} style={btn(false)}>
+            {busy ? "Loading…" : "Refresh"}</button>
+          {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
+            pulling schedule…</span>}
+        </div>
 
         {/* sticky-note: persists locally, untouched by Refresh */}
-        <div style={{ position:"relative", marginLeft:"auto", width:260, maxWidth:"100%",
+        <div className="ts-note" style={{ position:"relative", marginLeft:"auto", width:260,
           background:"#FFF6BF", border:"1px solid #E6D24A",
           borderRadius:2, padding:"8px 10px 6px",
           boxShadow:"0 2px 5px rgba(120,100,0,0.18)",
@@ -567,14 +569,15 @@ function TravelTrends() {
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
                   {d.games.length===0
-                    ? <div style={{ fontFamily:SANS, fontSize:12, color:C.ruleDark, padding:"4px" }}>—</div>
+                    ? <div className="ts-cell" style={{ height:54, display:"flex", alignItems:"center",
+                        justifyContent:"center", fontFamily:SANS, fontSize:12, color:C.ruleDark }}>—</div>
                     : (() => {
                         const lineIdx = isToday
                           ? d.games.filter(g=>g && new Date(g.time) <= now).length : -1;
                         const cells = [];
                         d.games.forEach((g,i)=>{
                           if(i===lineIdx) cells.push(<NowLine key="nl"/>);
-                          if(!g) cells.push(<div key={i} style={{ minHeight:50, borderRadius:2,
+                          if(!g) cells.push(<div key={i} className="ts-cell" style={{ height:54, borderRadius:2,
                             border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
                           else {
                             const t=gameTrends(d.date,g);
@@ -664,8 +667,12 @@ const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
+  // sits between two cells without consuming row height: the negative vertical
+  // margins cancel its own 2px plus the flex gap, so rows in today's column
+  // stay aligned with every other column.
   return (
-    <div aria-label="now" style={{ display:"flex", alignItems:"center", margin:"-1px 0", height:2 }}>
+    <div aria-label="now" style={{ display:"flex", alignItems:"center", height:2,
+      margin:"-3px 0", position:"relative", zIndex:1, pointerEvents:"none" }}>
       <span style={{ width:7, height:7, borderRadius:"50%", background:"#E5142B",
         flex:"0 0 auto", marginLeft:-2 }} />
       <span style={{ flex:1, height:2, background:"#E5142B" }} />
@@ -681,11 +688,11 @@ function CalCard({ g, t, onOpen }) {
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   return (
-    <div onClick={onOpen||undefined}
+    <div onClick={onOpen||undefined} className="ts-cell"
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
-      minHeight:50, padding:"4px 7px", background:bg,
+      height:54, padding:"4px 7px", background:bg, overflow:"hidden",
       cursor: onOpen ? "pointer" : "default" }}>
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
@@ -1273,6 +1280,8 @@ const RESPONSIVE_CSS = `
 .ts-cal-col { min-width:166px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
+.ts-note { box-sizing:border-box; }
+.ts-cell { box-sizing:border-box; }
 @media (max-width:760px){
   .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
@@ -1282,6 +1291,7 @@ const RESPONSIVE_CSS = `
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
   .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:18px 12px 48px; }
+  .ts-note { margin-left:0 !important; width:100% !important; transform:none !important; }
 }
 * { -webkit-tap-highlight-color: transparent; }
 `;
