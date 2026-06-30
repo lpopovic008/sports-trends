@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   ComposedChart, Bar, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell,
@@ -24,6 +24,13 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
 const SEASON = new Date().getFullYear();
+
+// Global notes via npoint.io (free, keyless, anyone-with-link can edit).
+// SETUP (1 min): go to https://www.npoint.io , click "Create JSON Bin",
+// paste exactly {"text":""} as the contents, Save. Copy the API URL it gives
+// you (looks like https://api.npoint.io/abc123def456) and paste it below.
+// Leave "" to keep notes per-device (localStorage only).
+const NOTES_URL = "";
 
 /* MLB home-park time zones for travel detection */
 const TEAM_TZ = {
@@ -219,15 +226,46 @@ function TravelTrends() {
   const [err, setErr] = useState("");
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
-  // personal notes — persisted in the browser, never refreshed/cleared by Refresh
+  // notes — global via npoint.io when NOTES_URL is set, else per-device
+  // localStorage. Untouched by Refresh. Debounced save; the local copy is
+  // always written instantly as an offline cache.
   const [notes, setNotes] = useState("");
+  const [noteStatus, setNoteStatus] = useState(NOTES_URL ? "loading" : "local"); // loading|saving|saved|error|local
+  const noteTimer = useRef(null);
+
   useEffect(() => {
-    try { const saved = window.localStorage.getItem("ts-notes"); if (saved!=null) setNotes(saved); }
-    catch {}
+    let alive = true;
+    // seed instantly from local cache so the box is never empty on a slow network
+    try { const c = window.localStorage.getItem("ts-notes"); if (c!=null) setNotes(c); } catch {}
+    if (!NOTES_URL) return;
+    (async () => {
+      try {
+        const r = await fetch(NOTES_URL);
+        const j = await r.json();
+        if (!alive) return;
+        if (typeof j.text === "string") {
+          setNotes(j.text);
+          try { window.localStorage.setItem("ts-notes", j.text); } catch {}
+        }
+        setNoteStatus("saved");
+      } catch { if (alive) setNoteStatus("error"); }
+    })();
+    return () => { alive = false; };
   }, []);
+
   const saveNotes = (v) => {
     setNotes(v);
-    try { window.localStorage.setItem("ts-notes", v); } catch {}
+    try { window.localStorage.setItem("ts-notes", v); } catch {}   // instant local cache
+    if (!NOTES_URL) { setNoteStatus("local"); return; }
+    setNoteStatus("saving");
+    if (noteTimer.current) clearTimeout(noteTimer.current);
+    noteTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(NOTES_URL, { method:"PUT",
+          headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ text:v }) });
+        setNoteStatus(r.ok ? "saved" : "error");
+      } catch { setNoteStatus("error"); }
+    }, 700);   // PUT once you pause typing, not every keystroke
   };
 
   const load = useCallback(async () => {
@@ -529,9 +567,17 @@ function TravelTrends() {
           borderRadius:2, padding:"8px 10px 6px",
           boxShadow:"0 2px 5px rgba(120,100,0,0.18)",
           transform:"rotate(-0.6deg)" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3, gap:8 }}>
             <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.14em",
-              textTransform:"uppercase", color:"#9A7B00" }}>Notes</span>
+              textTransform:"uppercase", color:"#9A7B00" }}>
+              Notes
+              <span style={{ marginLeft:6, letterSpacing:0, textTransform:"none", opacity:0.85 }}>
+                {noteStatus==="loading" ? "· syncing…"
+                  : noteStatus==="saving" ? "· saving…"
+                  : noteStatus==="saved" ? "· synced"
+                  : noteStatus==="error" ? "· offline (saved on device)"
+                  : "· this device"}</span>
+            </span>
             {notes && <button onClick={()=>saveNotes("")} title="Clear notes"
               style={{ border:"none", background:"transparent", cursor:"pointer",
                 fontFamily:MONO, fontSize:11, color:"#9A7B00", padding:"0 2px" }}>clear ✕</button>}
