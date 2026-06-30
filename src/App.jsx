@@ -1389,7 +1389,7 @@ function GameModal({ m, tags, setTag, onClose }) {
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
 
         {/* header */}
-        <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
+        <div className="ts-modal-head" style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
           display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10,
           position:"sticky", top:0, background:C.paper, zIndex:2, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
           <div style={{ minWidth:0 }}>
@@ -1400,6 +1400,18 @@ function GameModal({ m, tags, setTag, onClose }) {
               {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            {games.length>1 && (
+              <span className="ts-nav-inline" style={{ display:"none", gap:4 }}>
+                <button onClick={()=>go(-1)} disabled={!hasPrev} aria-label="Previous game"
+                  style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
+                    background:"#fff", color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                    cursor:hasPrev?"pointer":"default", lineHeight:1 }}>‹</button>
+                <button onClick={()=>go(1)} disabled={!hasNext} aria-label="Next game"
+                  style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
+                    background:"#fff", color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                    cursor:hasNext?"pointer":"default", lineHeight:1 }}>›</button>
+              </span>
+            )}
             <button onClick={()=>setTagEditing(v=>!v)}
               title={tagVal ? "Edit play tag" : "Tag this game"}
               style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
@@ -1553,8 +1565,9 @@ const RESPONSIVE_CSS = `
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
   .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:18px 12px 48px; }
-  .ts-nav-arrow { width:34px !important; height:34px !important; left:2px; right:2px;
-    opacity:0.92; }
+  .ts-nav-arrow { display:none !important; }
+  .ts-nav-inline { display:inline-flex !important; }
+  .ts-modal-head { padding:10px 12px !important; gap:8px !important; }
 }
 * { -webkit-tap-highlight-color: transparent; }
 `;
