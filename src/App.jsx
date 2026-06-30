@@ -626,6 +626,8 @@ function TravelTrends() {
                     : (() => {
                         const lineIdx = isToday
                           ? d.games.filter(g=>g && new Date(g.time) <= now).length : -1;
+                        const dayGames = d.games.filter(Boolean);   // real games this day, in order
+                        const dayTrends = dayGames.map(g=>gameTrends(d.date, g));
                         const cells = [];
                         d.games.forEach((g,i)=>{
                           if(i===lineIdx) cells.push(<NowLine key="nl"/>);
@@ -634,7 +636,8 @@ function TravelTrends() {
                           else {
                             const t=gameTrends(d.date,g);
                             cells.push(<CalCard key={i} g={g} t={t}
-                              onOpen={()=>setModal({date:d.date,g,t})}/>);
+                              onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
+                                idx:dayGames.indexOf(g) })}/>);
                           }
                         });
                         if(lineIdx>=d.games.length) cells.push(<NowLine key="nl-end"/>);
@@ -1136,6 +1139,18 @@ async function loadPitcherVs(pid, oppId, date) {
 }
 
 // season head-to-head summary between two teams
+// full per-inning line score for a finished game
+async function loadLineScore(gamePk) {
+  if (!gamePk) return null;
+  try {
+    const r = await fetch(`${API}/game/${gamePk}/linescore`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.innings || !j.innings.length) return null;
+    return j;
+  } catch { return null; }
+}
+
 async function loadH2H(aId, bId) {
   const r = await fetch(`${API}/schedule?sportId=1&season=${SEASON}&gameType=R&teamId=${aId}&hydrate=linescore`);
   if (!r.ok) throw new Error(`schedule ${r.status}`);
@@ -1306,18 +1321,26 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
 }
 
 function GameModal({ m, onClose }) {
-  const { g, date } = m;
+  const { date, games, trends } = m;
+  const [idx, setIdx] = useState(m.idx || 0);
+  const g = games[idx];
+  const t = trends[idx];
+  const hasPrev = idx > 0, hasNext = idx < games.length - 1;
+  const go = (delta) => setIdx(i => Math.min(games.length-1, Math.max(0, i+delta)));
   const [awayLU, setAwayLU] = useState(null);
   const [homeLU, setHomeLU] = useState(null);
   const [awayP,  setAwayP]  = useState(undefined);   // away SP vs home
   const [homeP,  setHomeP]  = useState(undefined);   // home SP vs away
   const [h2h,    setH2H]    = useState(undefined);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
+  const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      // H2H summary first (top-of-modal overview)
+      // box score by inning (finished games only) — shown above H2H
+      if (g.isFinal) loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
+      // H2H summary (top-of-modal overview)
       try { const s = await loadH2H(g.awayId, g.homeId); if(alive) setH2H(s); }
       catch { if(alive) setH2H(null); }
       // pitchers vs opposing team
@@ -1335,6 +1358,17 @@ function GameModal({ m, onClose }) {
     return () => { alive = false; };
   }, [g, date]);
 
+  // arrow keys navigate between the day's games
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "ArrowLeft") go(-1);
+      else if (e.key === "ArrowRight") go(1);
+      else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [games.length]);
+
   const aAbbr = TEAM_ABBR[g.awayId]||"?", hAbbr = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
 
@@ -1343,6 +1377,23 @@ function GameModal({ m, onClose }) {
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px",
       overflowY:"auto" }}>
+
+      {/* side nav arrows — same day's games only */}
+      {hasPrev && (
+        <button onClick={e=>{ e.stopPropagation(); go(-1); }} aria-label="Previous game"
+          className="ts-nav-arrow" style={{ position:"fixed", left:8, top:"50%", transform:"translateY(-50%)",
+          zIndex:55, width:42, height:42, borderRadius:"50%", border:`1px solid ${C.ink}`,
+          background:C.paper, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
+          boxShadow:"0 4px 14px rgba(0,0,0,0.25)", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+      )}
+      {hasNext && (
+        <button onClick={e=>{ e.stopPropagation(); go(1); }} aria-label="Next game"
+          className="ts-nav-arrow" style={{ position:"fixed", right:8, top:"50%", transform:"translateY(-50%)",
+          zIndex:55, width:42, height:42, borderRadius:"50%", border:`1px solid ${C.ink}`,
+          background:C.paper, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
+          boxShadow:"0 4px 14px rgba(0,0,0,0.25)", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+      )}
+
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
@@ -1353,13 +1404,63 @@ function GameModal({ m, onClose }) {
           position:"sticky", top:0, background:C.paper, zIndex:2, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
           <div style={{ minWidth:0 }}>
             <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
-              textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}</div>
+              textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}
+              {games.length>1 && <span style={{ color:C.ruleDark }}> · game {idx+1}/{games.length}</span>}</div>
             <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800, letterSpacing:"-0.01em" }}>
               {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
           </div>
           <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
             borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>✕</button>
         </div>
+
+        {/* ── BOX SCORE BY INNING (finished games, above H2H) ── */}
+        {g.isFinal && ls !== null && (
+          <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}` }}>
+            <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
+              color:C.inkSoft, marginBottom:6 }}>Final · line score</div>
+            {ls === undefined ? (
+              <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
+            ) : (() => {
+              const innings = ls.innings || [];
+              const tot = ls.teams || {};
+              const cell = { fontFamily:MONO, fontSize:12, textAlign:"center", padding:"3px 0" };
+              const head = { ...cell, fontSize:9, color:C.ruleDark, letterSpacing:"0.04em" };
+              const tcol = "minmax(54px,1fr)";
+              const cols = `${tcol} repeat(${innings.length}, 18px) 10px 22px 22px 22px`;
+              const Row = ({ side, label }) => {
+                const t = tot[side] || {};
+                return (
+                  <div style={{ display:"grid", gridTemplateColumns:cols, gap:3, alignItems:"center" }}>
+                    <span style={{ fontFamily:SANS, fontSize:12.5, fontWeight:700, whiteSpace:"nowrap",
+                      overflow:"hidden", textOverflow:"ellipsis" }}>{label}</span>
+                    {innings.map((inn,i)=>{
+                      const v = inn[side]?.runs;
+                      return <span key={i} style={cell}>{v==null?"-":v}</span>;
+                    })}
+                    <span/>
+                    <span style={{ ...cell, fontWeight:700 }}>{t.runs ?? 0}</span>
+                    <span style={cell}>{t.hits ?? 0}</span>
+                    <span style={cell}>{t.errors ?? 0}</span>
+                  </div>
+                );
+              };
+              return (
+                <div style={{ overflowX:"auto" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:cols, gap:3 }}>
+                    <span/>
+                    {innings.map((inn,i)=><span key={i} style={head}>{inn.num||i+1}</span>)}
+                    <span/>
+                    <span style={{ ...head, fontWeight:700, color:C.inkSoft }}>R</span>
+                    <span style={head}>H</span>
+                    <span style={head}>E</span>
+                  </div>
+                  <Row side="away" label={aAbbr} />
+                  <Row side="home" label={hAbbr} />
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {/* ── H2H OVERVIEW (top) ── */}
         <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}`, background:C.card }}>
@@ -1387,13 +1488,13 @@ function GameModal({ m, onClose }) {
         </div>
 
         {/* trend pills, if any */}
-        {m.t && m.t.any && (
+        {t && t.any && (
           <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"10px 18px 2px" }}>
-            {m.t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
-            {m.t.echo.map((e,i)=><Pill key={i} color={C.echo}>streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
-            {m.t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
-            {m.t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
-            {m.t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
+            {t.echo.map((e,i)=><Pill key={i} color={C.echo}>streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
+            {t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
+            {t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
           </div>
         )}
 
@@ -1440,6 +1541,8 @@ const RESPONSIVE_CSS = `
   .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:18px 12px 48px; }
   .ts-note { margin-left:0 !important; width:100% !important; transform:none !important; }
+  .ts-nav-arrow { width:34px !important; height:34px !important; left:2px; right:2px;
+    opacity:0.92; }
 }
 * { -webkit-tap-highlight-color: transparent; }
 `;
