@@ -852,7 +852,9 @@ function PitcherSeasonModal({ pid, name, onClose }) {
             <div key={i} style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
               gap:8, padding:"5px 16px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.date}</span>
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.opponent?.abbreviation||"—"}</span>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{
+                TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
+                || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
               <span style={{ fontFamily:MONO, fontSize:12.5, color:C.ink }}>{pLine(s)}</span>
             </div>
           ))}
