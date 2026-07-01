@@ -372,15 +372,21 @@ function TravelTrends({ tags, setTag, tagStatus }) {
         const m={}; games.forEach(g=>{ m[g.pair]=g; }); return m;
       });
 
-      const grid   = Array.from({length:numDays}, ()=>[]);    // grid[di][row]=game|null
+      const grid   = Array.from({length:numDays}, ()=>[]);    // grid[di][row]=game|"RESV"|null
       const placed = Array.from({length:numDays}, ()=>({}));  // di -> pair -> true
+      const RESV = "__reserved__";   // blocks a cell (series gap) but renders blank
       const putAt = (di,row,g,shade)=>{
         while(grid[di].length<=row) grid[di].push(null);
         grid[di][row]=g; placed[di][g.pair]=true; g.seriesShade=shade;
       };
+      const reserve = (di,row)=>{     // hold a cell blank if it's currently free
+        while(grid[di].length<=row) grid[di].push(null);
+        if(grid[di][row]==null) grid[di][row]=RESV;
+      };
+      const isFree = (v)=> v===undefined || v===null;   // RESV is NOT free
       const nextFreeFrom = (di,row)=>{
         let r=row<0?0:row;
-        while(grid[di][r]!==undefined && grid[di][r]!==null) r++;
+        while(!isFree(grid[di][r])) r++;
         return r;
       };
 
@@ -398,7 +404,9 @@ function TravelTrends({ tags, setTag, tagStatus }) {
       };
 
       // place a seed game, then lock every matching game (gap-tolerant) into
-      // the SAME row + shade across all columns.
+      // the SAME row + shade across all columns. When a match sits across a
+      // one-day (or longer) off-day gap, RESERVE that row on the in-between
+      // off-days so no other game breaks the series line — the cell stays blank.
       const seed = (di, row, g, shade)=>{
         putAt(di, row, g, shade);
         for(let d=0; d<numDays; d++){
@@ -407,6 +415,11 @@ function TravelTrends({ tags, setTag, tagStatus }) {
           if(match && !placed[d][g.pair] && continuous(g.awayId, g.homeId, di, d)){
             const r = nextFreeFrom(d, row);   // prefer the seed's row
             putAt(d, r, match, shade);
+            // reserve the same row on the off-days between di and d
+            const lo=Math.min(di,d)+1, hi=Math.max(di,d)-1;
+            for(let b=lo; b<=hi; b++){
+              if(!dayByPair[b][g.pair]) reserve(b, r);   // pair is off that day → hold blank
+            }
           }
         }
       };
@@ -429,9 +442,9 @@ function TravelTrends({ tags, setTag, tagStatus }) {
         }
       }
 
-      // ---- trim trailing nulls per column ----
+      // ---- trim trailing nulls per column; RESV cells become blank (null) ----
       const out = DATES.map((d,di)=>{
-        const col = grid[di];
+        const col = grid[di].map(c => c===RESV ? null : c);
         let last=-1; col.forEach((g,i)=>{ if(g) last=i; });
         return { date:d, games: last===-1 ? [] : col.slice(0,last+1) };
       });
@@ -1615,7 +1628,7 @@ function TagsView({ tags, setResult }) {
       .sort((a,b) => {
         const d = (b.date||"").localeCompare(a.date||"");   // newest day first
         if (d !== 0) return d;
-        return (a.time||"").localeCompare(b.time||"");        // earliest first-pitch first
+        return (b.time||"").localeCompare(a.time||"");        // latest first-pitch first
       });
   }, [tags]);
 
