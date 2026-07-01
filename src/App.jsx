@@ -147,7 +147,7 @@ function useTags() {
       if (v) {
         const existing = (typeof prev[game.gamePk] === "object") ? prev[game.gamePk] : {};
         next[game.gamePk] = { ...existing, text:v, away:game.awayName, home:game.homeName,
-          awayId:game.awayId, homeId:game.homeId,
+          awayId:game.awayId, homeId:game.homeId, time:game.time||"",
           date: game.gameDay || (game.time||"").slice(0,10) || "" };
       } else {
         delete next[game.gamePk];
@@ -1593,6 +1593,7 @@ const RESPONSIVE_CSS = `
   .ts-nav-arrow { display:none !important; }
   .ts-nav-inline { display:inline-flex !important; }
   .ts-modal-head { padding:10px 12px !important; gap:8px !important; }
+  .ts-record-chart { flex:1 1 100% !important; min-width:0 !important; width:100%; }
 }
 * { -webkit-tap-highlight-color: transparent; }
 `;
@@ -1601,17 +1602,21 @@ const RESPONSIVE_CSS = `
 function TagsView({ tags, setResult }) {
   const [range, setRange] = useState("all");   // all|month|lastmonth|7d|30d
 
-  // build a list of tagged games, newest date first
+  // build a list of tagged games: newest DAY first, earliest game-time first within a day
   const allRows = useMemo(() => {
     return Object.entries(tags || {})
       .map(([gamePk, entry]) => {
-        if (typeof entry === "string") return { gamePk, text:entry, date:"", away:"", home:"", result:null };
-        return { gamePk, text:entry.text||"", date:entry.date||"",
+        if (typeof entry === "string") return { gamePk, text:entry, date:"", time:"", away:"", home:"", result:null };
+        return { gamePk, text:entry.text||"", date:entry.date||"", time:entry.time||"",
           away:entry.away||"", home:entry.home||"",
           awayId:entry.awayId, homeId:entry.homeId, result:entry.result||null };
       })
       .filter(r => r.text)
-      .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+      .sort((a,b) => {
+        const d = (b.date||"").localeCompare(a.date||"");   // newest day first
+        if (d !== 0) return d;
+        return (a.time||"").localeCompare(b.time||"");        // earliest first-pitch first
+      });
   }, [tags]);
 
   // date-range filter
@@ -1715,18 +1720,19 @@ function TagsView({ tags, setResult }) {
           </div>
 
           {/* cumulative net chart */}
-          <div style={{ flex:1, minWidth:200, height:120 }}>
+          <div className="ts-record-chart" style={{ flex:1, minWidth:220, height:120 }}>
             {chartData.length < 2 ? (
               <div style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark,
                 display:"flex", alignItems:"center", height:"100%" }}>
                 Grade at least 2 plays in this range to see the trend.</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top:6, right:8, bottom:0, left:-26 }}>
+                <ComposedChart data={chartData} margin={{ top:8, right:14, bottom:0, left:0 }}>
                   <XAxis dataKey="date" tick={{ fontFamily:MONO, fontSize:8, fill:C.inkSoft }}
-                    axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
+                    axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd"
+                    minTickGap={20} padding={{ left:6, right:6 }} />
                   <YAxis tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
-                    axisLine={false} tickLine={false} allowDecimals={false} width={36} />
+                    axisLine={false} tickLine={false} allowDecimals={false} width={28} />
                   <Tooltip contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2,
                     border:`1px solid ${C.rule}` }}
                     formatter={(v)=>[`${v>0?"+":""}${v}`, "net"]} />
@@ -1749,9 +1755,35 @@ function TagsView({ tags, setResult }) {
       ) : (
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
+          const graded = r.result==="W" || r.result==="L";
           const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
                      : r.result==="L" ? "rgba(215,38,61,0.09)" : "#fff";
           const edge = r.result==="W" ? C.over : r.result==="L" ? C.under : C.rule;
+
+          if (graded) {
+            // compact one-line row so more plays fit on screen
+            return (
+              <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:10,
+                border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
+                background:tint, padding:"5px 10px" }}>
+                <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700,
+                  color: r.result==="W"?C.over:C.under, flexShrink:0, width:14 }}>{r.result}</span>
+                <span style={{ fontFamily:SANS, fontSize:13, fontWeight:600, color:C.ink,
+                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1, minWidth:0 }}
+                  title={r.text}>{r.text}</span>
+                <span style={{ fontFamily:MONO, fontSize:9.5, color:C.ruleDark, flexShrink:0,
+                  whiteSpace:"nowrap" }}>
+                  {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}
+                  {r.date ? ` · ${calDay(r.date).md}` : ""}</span>
+                <button onClick={()=>setResult(r.gamePk, null)} title="Undo W/L"
+                  style={{ flexShrink:0, width:26, height:24, borderRadius:3, cursor:"pointer",
+                    border:`1px solid ${C.rule}`, background:"#fff", color:C.inkSoft,
+                    fontFamily:MONO, fontSize:13, lineHeight:1, padding:0 }}>↩</button>
+              </div>
+            );
+          }
+
+          // ungraded — full row with W/L buttons
           return (
             <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:12,
               border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
