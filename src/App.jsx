@@ -1426,10 +1426,13 @@ function GameModal({ m, tags, setTag, onClose }) {
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
 
+        {/* sticky region: header + tag editor scroll together */}
+        <div style={{ position:"sticky", top:0, zIndex:3, background:C.paper,
+          borderTopLeftRadius:6, borderTopRightRadius:6 }}>
         {/* header */}
         <div className="ts-modal-head" style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
           display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10,
-          position:"sticky", top:0, background:C.paper, zIndex:2, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
+          background:C.paper, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
           <div style={{ minWidth:0 }}>
             <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
               textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}
@@ -1476,6 +1479,8 @@ function GameModal({ m, tags, setTag, onClose }) {
                 fontFamily:MONO, fontSize:11, padding:"6px 10px", cursor:"pointer", color:C.under }}>Remove</button>
           </div>
         )}
+        </div>
+        {/* end sticky region */}
 
         {/* ── BOX SCORE BY INNING (finished games, above H2H) ── */}
         {g.isFinal && ls !== null && (
@@ -1663,15 +1668,22 @@ function TagsView({ tags, setResult }) {
   const graded = wins + losses;
   const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
 
-  // cumulative net (W = +1, L = -1) over time, oldest → newest, graded only
+  // cumulative net (W = +1, L = -1). Cumulative runs oldest→newest so the
+  // running total is correct, then we reverse for display so the newest play
+  // is on the LEFT — matching the plays list order (newest at top).
   const chartData = useMemo(() => {
-    const graded = rows.filter(r=>r.result && r.date)
-      .slice().sort((a,b)=>a.date.localeCompare(b.date));
-    let net = 0, w = 0, l = 0;
-    return graded.map(r => {
-      if (r.result==="W") { net++; w++; } else { net--; l++; }
-      return { date: r.date.slice(5), net, w, l };
+    const graded = rows.filter(r=>r.result && r.date).slice()
+      .sort((a,b)=>{                                   // oldest → newest
+        const d = (a.date||"").localeCompare(b.date||"");
+        if (d!==0) return d;
+        return (a.time||"").localeCompare(b.time||"");
+      });
+    let net = 0;
+    const chrono = graded.map(r => {
+      net += r.result==="W" ? 1 : -1;
+      return { date: r.date.slice(5), net };
     });
+    return chrono.reverse();                           // newest first (left), like the list
   }, [rows]);
 
   const resBtn = (r, val, label, color) => {
