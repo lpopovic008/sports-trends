@@ -9,7 +9,7 @@ import {
    tabular numerals, hairline rules like a ruled scorecard. Signature:
    a literal highlighter swipe behind every game that matches a trend. */
 const C = {
-  paper:"#ECEEF1", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
+  paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — each evokes the trend */
@@ -18,7 +18,7 @@ const C = {
   bigday:"#FF8C1A",        /* neon amber-orange: 10-run scoreboard explosion */
   late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
   echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
-  travel:"#A78BFA",        /* neon lavender: jet-lagged west→east */
+  travel:"#F215A6",        /* neon magenta: jet-lagged west→east, distinct from violet */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -228,11 +228,6 @@ const inputStyle = {
   boxSizing:"border-box", padding:"9px 11px", border:`1px solid ${C.rule}`,
   borderRadius:2, background:"#fff", fontFamily:SANS, fontSize:14, color:C.ink, outline:"none",
 };
-const btn = (primary) => ({
-  padding:"10px 20px", border: primary ? "none" : `1px solid ${C.ink}`,
-  borderRadius:2, background: primary ? C.ink : "#fff", color: primary ? "#fff" : C.ink,
-  fontFamily:MONO, fontSize:12, letterSpacing:"0.1em", textTransform:"uppercase", cursor:"pointer",
-});
 const ErrBox = ({ children }) => (
   <div style={{ padding:"12px 14px", background:"#FCEBED", border:`1px solid ${C.under}`,
     borderRadius:2, color:C.under, fontFamily:SANS, fontSize:13, marginBottom:16 }}>{children}</div>
@@ -286,7 +281,7 @@ function SeqBlock({ arr, label, onPick }) {
 }
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
-function TravelTrends({ tags, setTag, tagStatus }) {
+function TravelTrends({ tags, setTag, tagStatus, onReady }) {
   const start = todayISO();                    // anchor: today
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
@@ -556,6 +551,22 @@ function TravelTrends({ tags, setTag, tagStatus }) {
     } finally { setBusy(false); }
   }, [start, westThreshold, minStreak]);
   useEffect(() => { load(); }, [load]);   // auto-load on open and when min streak changes
+  useEffect(() => { if(onReady) onReady({ load, busy }); }, [load, busy, onReady]);
+
+  // on mobile, scroll the calendar so today's column is in view on first load
+  const calRef = useRef(null);
+  const todayColRef = useRef(null);
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (scrolledRef.current || !days || !days.length) return;
+    if (window.innerWidth > 760) return;   // desktop shows all 7 columns already
+    const container = calRef.current, el = todayColRef.current;
+    if (container && el) {
+      // center today's column within the horizontal scroller (no page scroll)
+      container.scrollLeft = el.offsetLeft - (container.clientWidth - el.clientWidth) / 2;
+      scrolledRef.current = true;
+    }
+  }, [days]);
 
   /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
@@ -600,17 +611,13 @@ function TravelTrends({ tags, setTag, tagStatus }) {
     <div>
       <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
 
-      <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
-        <button onClick={load} disabled={busy} style={btn(false)}>
-          {busy ? "Loading…" : "Refresh"}</button>
-        {busy && <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-          pulling schedule…</span>}
-        {NOTES_URL && (
+      {NOTES_URL && (
+        <div style={{ display:"flex", marginBottom:14 }}>
           <span style={{ marginLeft:"auto", fontFamily:MONO, fontSize:10, color:C.ruleDark }}>
             tags {tagStatus==="loading" ? "syncing…" : tagStatus==="saving" ? "saving…"
               : tagStatus==="saved" ? "synced" : tagStatus==="error" ? "offline" : ""}</span>
-        )}
-      </div>
+        </div>
+      )}
 
       {err && <ErrBox>{err}</ErrBox>}
 
@@ -619,14 +626,14 @@ function TravelTrends({ tags, setTag, tagStatus }) {
         <div>
           <Eyebrow>Calendar · past games line up with today’s matchup</Eyebrow>
           <Legend />
-          <div className="ts-cal" style={{ gap:5, paddingBottom:4 }}>
+          <div className="ts-cal" ref={calRef} style={{ gap:5, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
               const label = isToday ? "Today"
                 : d.date===addDays(start,-1) ? "Yesterday"
                 : d.date===addDays(start,-2) ? "2 days ago" : calDay(d.date).wd;
               return (
-              <div key={d.date} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
+              <div key={d.date} ref={isToday?todayColRef:null} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
                 overflow:"hidden" }}>
                 <div style={{ padding:"5px 7px", borderBottom:`1px solid ${C.rule}`,
                   background:isToday?C.ink:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
@@ -776,7 +783,7 @@ function CalCard({ g, t, tag, onOpen }) {
       height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
       {tag && (
-        <div title={tag} style={{ position:"absolute", top:-7, left:-5, zIndex:3, maxWidth:"86%",
+        <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
           background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
           padding:"1px 5px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.25,
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
@@ -1845,9 +1852,10 @@ function TagsView({ tags, setResult }) {
 export default function App() {
   const [tab, setTab] = useState("calendar");
   const { tags, tagStatus, setTag, setResult } = useTags();
+  const [cal, setCal] = useState(null);   // { load, busy } from TravelTrends
 
   useEffect(() => {
-    document.title = "The Trend Sheet";
+    document.title = "MLB Trends";
     const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
       `<ellipse cx='18' cy='18' rx='14' ry='10' fill='%23964B00' stroke='%23fff' stroke-width='1.5'/>` +
       `<line x1='10' y1='18' x2='26' y2='18' stroke='%23fff' stroke-width='1.5'/>` +
@@ -1866,23 +1874,33 @@ export default function App() {
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
             textTransform:"uppercase", color:C.inkSoft }}>Research Terminal · MLB live</div>
-          <h1 style={{ margin:"6px 0 0", fontFamily:SANS, fontWeight:800, fontSize:34,
-            letterSpacing:"-0.02em", lineHeight:1 }}>The Trend Sheet</h1>
+          <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between",
+            gap:16, flexWrap:"wrap", marginTop:6 }}>
+            <h1 style={{ margin:0, fontFamily:SANS, fontWeight:800, fontSize:34,
+              letterSpacing:"-0.02em", lineHeight:1 }}>MLB Trends</h1>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
+                <button key={id} onClick={()=>setTab(id)} style={{ padding:"7px 15px",
+                  border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
+                  background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
+                  fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
+                  cursor:"pointer" }}>{lbl}</button>))}
+              {tab==="calendar" && cal && (
+                <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
+                  style={{ padding:"7px 15px", border:`1px solid ${C.ink}`, borderRadius:2,
+                    background:cal.busy?C.rule:C.ink, color:"#fff", fontFamily:MONO, fontSize:12,
+                    letterSpacing:"0.08em", textTransform:"uppercase",
+                    cursor:cal.busy?"default":"pointer" }}>
+                  {cal.busy ? "Loading…" : "Refresh"}</button>
+              )}
+            </div>
+          </div>
         </header>
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:18 }} />
 
-        <div style={{ display:"flex", gap:4, marginBottom:22, flexWrap:"wrap" }}>
-          {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
-            <button key={id} onClick={()=>setTab(id)} style={{ padding:"8px 16px",
-              border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
-              background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
-              fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
-              cursor:"pointer" }}>{lbl}</button>))}
-        </div>
-
         {tab==="tags"
           ? <TagsView tags={tags} setResult={setResult} />
-          : <TravelTrends tags={tags} setTag={setTag} tagStatus={tagStatus} />}
+          : <TravelTrends tags={tags} setTag={setTag} tagStatus={tagStatus} onReady={setCal} />}
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
