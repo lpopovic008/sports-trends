@@ -94,6 +94,7 @@ const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
+const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
 // shared per-game tag store (global via JSONBin, local cache via localStorage).
 // Returns { tags, tagStatus, setTag, setResult }.
@@ -281,7 +282,7 @@ function SeqBlock({ arr, label, onPick }) {
 }
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
-function TravelTrends({ tags, setTag, tagStatus, onReady }) {
+function TravelTrends({ tags, setTag, onReady }) {
   const start = todayISO();                    // anchor: today
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
@@ -294,6 +295,7 @@ function TravelTrends({ tags, setTag, tagStatus, onReady }) {
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [showIndicators, setShowIndicators] = useState(true);
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
   const load = useCallback(async () => {
@@ -609,23 +611,21 @@ function TravelTrends({ tags, setTag, tagStatus, onReady }) {
 
   return (
     <div>
-      <Eyebrow n="03">My trends · 2 days back → 4 days ahead</Eyebrow>
-
-      {NOTES_URL && (
-        <div style={{ display:"flex", marginBottom:14 }}>
-          <span style={{ marginLeft:"auto", fontFamily:MONO, fontSize:10, color:C.ruleDark }}>
-            tags {tagStatus==="loading" ? "syncing…" : tagStatus==="saving" ? "saving…"
-              : tagStatus==="saved" ? "synced" : tagStatus==="error" ? "offline" : ""}</span>
-        </div>
-      )}
-
       {err && <ErrBox>{err}</ErrBox>}
 
       {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
-          <Eyebrow>Calendar · past games line up with today’s matchup</Eyebrow>
-          <Legend />
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            gap:12, flexWrap:"wrap", marginBottom:8 }}>
+            {showIndicators ? <Legend /> : <span />}
+            <button onClick={()=>setShowIndicators(v=>!v)}
+              style={{ flexShrink:0, padding:"5px 12px", border:`1px solid ${C.rule}`, borderRadius:2,
+                background: showIndicators ? "transparent" : C.ink, color: showIndicators ? C.inkSoft : "#fff",
+                fontFamily:MONO, fontSize:10, letterSpacing:"0.06em", textTransform:"uppercase",
+                cursor:"pointer" }}>
+              {showIndicators ? "Hide indicators" : "Show indicators"}</button>
+          </div>
           <div className="ts-cal" ref={calRef} style={{ gap:5, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
@@ -660,6 +660,7 @@ function TravelTrends({ tags, setTag, tagStatus, onReady }) {
                             const di = dayGames.indexOf(g);
                             const t = dayTrends[di];   // reuse; already computed above
                             cells.push(<CalCard key={i} g={g} t={t} tag={tagText(tags[g.gamePk])}
+                              showInd={showIndicators}
                               onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
                                 idx:di })}/>);
                           }
@@ -704,18 +705,18 @@ function Pill({ children, color, title }) {
    order left→right; add new trends here and every card adjusts automatically. */
 const TREND_SLOTS = [
   { key:"rematch", color:C.rematch, label:"Pitcher rematch",
-    desc:"Team has faced this pitcher before this year" },
+    desc:"Team has faced this pitcher this year already" },
   { key:"bigday",  color:C.bigday,  label:"10+ runs",
-    desc:"Team scored 10+ runs the prior day" },
+    desc:"Team scored 10+ runs yesterday" },
   { key:"late",    color:C.late,    label:"Late go-ahead",
-    desc:"Team never led until the 8th inning or later" },
+    desc:"Team never led until the 8th inning or later yesterday" },
   { key:"echo",    color:C.echo,    label:"Streak echo",
-    desc:"Team just snapped a 10+ game win or loss streak" },
+    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel",  color:C.travel,  label:"B2B travel",
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
+function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true, tag=null }) {
   const keys = t.keysFor(teamId);
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
@@ -727,20 +728,26 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
         color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {final && hits!=null ? hits : ""}</span>
-      <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
-        {TREND_SLOTS.map(slot=>{
-          const present = keys.has(slot.key);
-          let color = slot.color;
-          if (slot.key==="rematch" && present)
-            color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
-          return <span key={slot.key} title={present ? slot.label : undefined}
-            style={{ width:13, height:11, borderRadius:2,
-              background: present ? color : "transparent",
-              boxShadow: present
-                ? "none"
-                : `inset 0 0 0 1.5px ${C.inkSoft}`,
-              opacity: present ? 1 : 0.45 }} />;
-        })}
+      <span style={{ display:"flex", gap:2, justifyContent:"flex-end", position:"relative" }}>
+        {tag ? (
+          <span title={tag} style={{ maxWidth:"100%", background:"#F2657A", color:"#fff",
+            border:"1px solid #D7263D", borderRadius:3, padding:"0 5px",
+            fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.3,
+            boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+            textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</span>
+        ) : showInd ? (
+          TREND_SLOTS.map(slot=>{
+            const present = keys.has(slot.key);
+            let color = slot.color;
+            if (slot.key==="rematch" && present)
+              color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
+            return <span key={slot.key} title={present ? slot.label : undefined}
+              style={{ width:13, height:11, borderRadius:2,
+                background: present ? color : "transparent",
+                boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
+                opacity: present ? 1 : 0.45 }} />;
+          })
+        ) : null}
       </span>
     </div>
   );
@@ -768,13 +775,15 @@ function NowLine() {
   );
 }
 
-function CalCard({ g, t, tag, onOpen }) {
+function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
+  const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
+  const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   return (
     <div onClick={onOpen||undefined} className="ts-cell"
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
@@ -782,7 +791,7 @@ function CalCard({ g, t, tag, onOpen }) {
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
       height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
-      {tag && (
+      {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
           background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
           padding:"1px 5px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.25,
@@ -791,18 +800,42 @@ function CalCard({ g, t, tag, onOpen }) {
       )}
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
-      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} teamId={g.awayId} t={t} />
-      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} teamId={g.homeId} t={t} />
+      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final}
+        teamId={g.awayId} t={t} showInd={showInd} tag={tagInMarkers ? tag : null} />
+      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final}
+        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
     </div>
   );
 }
 
 /* ── game detail modal: probable pitchers, every prior matchup vs this team ── */
-const pLine = (s) => {
+// colored stat line for a pitcher start. Thresholds:
+//  IP  ≥6.0 green · <4.0 red      H   ≥5 red · ≤3 green
+//  ER  >3 red · ≤1 green          BB  ≥3 red · ≤1 green
+//  K   ≥5 green · ≤3 red
+function PLine({ s }) {
   const st = s.stat;
-  return `${st.inningsPitched} IP · ${st.hits} H · ${st.earnedRuns} ER · ` +
-    `${st.baseOnBalls} BB · ${st.strikeOuts} K`;
-};
+  const col = (good, bad) => good ? C.over : bad ? C.under : C.ink;
+  const ip = parseFloat(st.inningsPitched) || 0;
+  const h = Number(st.hits)||0, er = Number(st.earnedRuns)||0;
+  const bb = Number(st.baseOnBalls)||0, k = Number(st.strikeOuts)||0;
+  const parts = [
+    [`${st.inningsPitched} IP`, col(ip>=6, ip>0 && ip<4)],
+    [`${st.hits} H`,            col(h<=3, h>=5)],
+    [`${st.earnedRuns} ER`,     col(er<=1, er>3)],
+    [`${st.baseOnBalls} BB`,    col(bb<=1, bb>=3)],
+    [`${st.strikeOuts} K`,      col(k>=5, k<=3)],
+  ];
+  return (
+    <span>
+      {parts.map(([txt,c],i)=>(
+        <span key={i} style={{ color:c }}>
+          {txt}{i<parts.length-1 ? <span style={{ color:C.ruleDark }}> · </span> : null}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 // full season game-by-game log for a pitcher (most recent first)
 async function loadPitcherSeason(pid) {
@@ -884,7 +917,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{
                 TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
                 || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
-              <span style={{ fontFamily:MONO, fontSize:12.5, color:C.ink }}>{pLine(s)}</span>
+              <span style={{ fontFamily:MONO, fontSize:12.5 }}><PLine s={s}/></span>
             </div>
           ))}
         </div>
@@ -928,7 +961,7 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
                   gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:78 }}>{s.date}</span>
-                  <span style={{ fontFamily:MONO, fontSize:13, color:C.ink }}>{pLine(s)}</span>
+                  <span style={{ fontFamily:MONO, fontSize:13 }}><PLine s={s}/></span>
                 </div>
               ))}
             </div>
@@ -1379,6 +1412,62 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [tagEditing, setTagEditing] = useState(false);
   const tagVal = tagText(tags?.[g.gamePk]);
 
+  // export a clean PNG of this game's calendar card (indicators-off look) + tag
+  const exportCard = () => {
+    const scale = 3, W = 300, H = 96;                // logical size, upscaled for crispness
+    const cv = document.createElement("canvas");
+    cv.width = W*scale; cv.height = H*scale;
+    const x = cv.getContext("2d"); x.scale(scale, scale);
+    const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF";
+    const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
+    const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
+    const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+    // card
+    x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);          // paper margin
+    const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
+    x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
+    const rr = 4;
+    x.beginPath();
+    x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
+    x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath(); x.fill(); x.stroke();
+    // time / FINAL, top-right
+    x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+    x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
+    // teams + scores
+    x.textAlign = "left"; x.fillStyle = "#14181F";
+    x.font = "700 15px system-ui, sans-serif";
+    x.fillText(aw, cx+12, cy+34);
+    x.fillText(hm, cx+12, cy+56);
+    if (final) {
+      x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
+      x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
+      x.fillText(String(g.awayScore), cx+cw-14, cy+34);
+      x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
+      x.fillText(String(g.homeScore), cx+cw-14, cy+56);
+    }
+    // angled red tag, top-left, where markers were
+    if (tagVal) {
+      x.save();
+      x.translate(cx+8, cy+2); x.rotate(-2*Math.PI/180);
+      x.font = "700 11px system-ui, sans-serif";
+      const tw = Math.min(x.measureText(tagVal).width + 12, cw-20);
+      x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
+      const th = 17;
+      x.beginPath();
+      x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
+      x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
+      x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
+      x.fillText(tagVal, 6, th/2+1, tw-10);
+      x.restore();
+    }
+    // download
+    const url = cv.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`;
+    a.click();
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1476,6 +1565,11 @@ function GameModal({ m, tags, setTag, onClose }) {
                 borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                 textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
               {tagVal ? "Play ✓" : "Play"}</button>
+            <button onClick={exportCard} title="Export game card as image"
+              aria-label="Export game card"
+              style={{ border:`1px solid ${C.rule}`, background:"#fff", color:C.ink,
+                borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
+                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>Export</button>
             <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
               borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
           </div>
@@ -1576,10 +1670,10 @@ function GameModal({ m, tags, setTag, onClose }) {
         {t && t.any && (
           <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"10px 18px 2px" }}>
             {t.travel && <Pill color={C.travel} title="Played out west yesterday, East today on back-to-back days">B2B travel</Pill>}
-            {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
-            {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later">late go-ahead {ord(c.inning)}</Pill>)}
-            {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher before this year">pitcher rematch</Pill>)}
-            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs the prior day">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak yesterday">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
+            {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
+            {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
           </div>
         )}
 
@@ -1610,6 +1704,7 @@ function GameModal({ m, tags, setTag, onClose }) {
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
+@keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
 .ts-cal-col { min-width:166px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
@@ -1806,13 +1901,15 @@ function TagsView({ tags, setResult }) {
                 background:tint, padding:"5px 10px" }}>
                 <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700,
                   color: r.result==="W"?C.over:C.under, flexShrink:0, width:14 }}>{r.result}</span>
+                <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:700, color:C.inkSoft,
+                  flexShrink:0, whiteSpace:"nowrap" }}>
+                  {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}</span>
                 <span style={{ fontFamily:SANS, fontSize:13, fontWeight:600, color:C.ink,
                   whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1, minWidth:0 }}
                   title={r.text}>{r.text}</span>
                 <span style={{ fontFamily:MONO, fontSize:9.5, color:C.ruleDark, flexShrink:0,
-                  whiteSpace:"nowrap" }}>
-                  {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}
-                  {r.date ? ` · ${calDay(r.date).md}` : ""}</span>
+                  whiteSpace:"nowrap", textAlign:"right" }}>
+                  {r.date ? calDay(r.date).md : ""}{r.time ? ` · ${fmtTime(r.time)}` : ""}</span>
                 <button onClick={()=>setResult(r.gamePk, null)} title="Undo W/L"
                   style={{ flexShrink:0, width:26, height:24, borderRadius:3, cursor:"pointer",
                     border:`1px solid ${C.rule}`, background:"#fff", color:C.inkSoft,
@@ -1827,14 +1924,18 @@ function TagsView({ tags, setResult }) {
               border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
               background:tint, padding:"10px 12px" }}>
               <div style={{ minWidth:0, flex:1 }}>
-                <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.08em",
-                  textTransform:"uppercase", color:C.inkSoft }}>
-                  {r.date ? prettyDay(r.date) : "—"}
-                  {r.away && r.home && <span style={{ color:C.ruleDark }}>{"  ·  "}
-                    {TEAM_ABBR[r.awayId]||r.away} @ {TEAM_ABBR[r.homeId]||r.home}</span>}
-                </div>
+                <div style={{ fontFamily:MONO, fontSize:11, fontWeight:700, letterSpacing:"0.04em",
+                  color:C.inkSoft }}>
+                  {r.away && r.home
+                    ? `${TEAM_ABBR[r.awayId]||r.away} @ ${TEAM_ABBR[r.homeId]||r.home}`
+                    : "—"}</div>
                 <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700, marginTop:2,
                   color:C.ink, wordBreak:"break-word" }}>{r.text}</div>
+              </div>
+              <div style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark, textAlign:"right",
+                flexShrink:0, lineHeight:1.4 }}>
+                <div>{r.date ? calDay(r.date).md : ""}</div>
+                {r.time && <div>{fmtTime(r.time)}</div>}
               </div>
               <div style={{ display:"flex", gap:5, flexShrink:0 }}>
                 {resBtn(r, "W", "W", C.over)}
@@ -1873,11 +1974,34 @@ export default function App() {
       <div style={{ maxWidth:1260, margin:"0 auto" }}>
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
-            textTransform:"uppercase", color:C.inkSoft }}>Research Terminal · MLB live</div>
-          <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between",
+            textTransform:"uppercase", color:C.inkSoft }}>
+            Research Terminal · MLB live
+            {NOTES_URL && <span style={{ color:C.ruleDark }}> · tags {
+              tagStatus==="loading" ? "syncing…" : tagStatus==="saving" ? "saving…"
+              : tagStatus==="saved" ? "synced" : tagStatus==="error" ? "offline" : ""}</span>}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             gap:16, flexWrap:"wrap", marginTop:6 }}>
-            <h1 style={{ margin:0, fontFamily:SANS, fontWeight:800, fontSize:34,
-              letterSpacing:"-0.02em", lineHeight:1 }}>MLB Trends</h1>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <h1 style={{ margin:0, fontFamily:SANS, fontWeight:800, fontSize:34,
+                letterSpacing:"-0.02em", lineHeight:1 }}>MLB Trends</h1>
+              {tab==="calendar" && cal && (
+                <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
+                  aria-label="Refresh" title="Refresh schedule & stats"
+                  style={{ width:34, height:34, borderRadius:"50%", border:`1px solid ${C.ink}`,
+                    background:"#fff", color:C.ink, cursor:cal.busy?"default":"pointer",
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    padding:0 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                    style={{ animation: cal.busy ? "ts-spin 0.8s linear infinite" : "none" }}>
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36" stroke={C.ink} strokeWidth="2"
+                      strokeLinecap="round" fill="none"/>
+                    <path d="M21 3v6h-6" stroke={C.ink} strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  </svg>
+                </button>
+              )}
+            </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
                 <button key={id} onClick={()=>setTab(id)} style={{ padding:"7px 15px",
@@ -1885,14 +2009,6 @@ export default function App() {
                   background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
                   fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
                   cursor:"pointer" }}>{lbl}</button>))}
-              {tab==="calendar" && cal && (
-                <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
-                  style={{ padding:"7px 15px", border:`1px solid ${C.ink}`, borderRadius:2,
-                    background:cal.busy?C.rule:C.ink, color:"#fff", fontFamily:MONO, fontSize:12,
-                    letterSpacing:"0.08em", textTransform:"uppercase",
-                    cursor:cal.busy?"default":"pointer" }}>
-                  {cal.busy ? "Loading…" : "Refresh"}</button>
-              )}
             </div>
           </div>
         </header>
@@ -1900,7 +2016,7 @@ export default function App() {
 
         {tab==="tags"
           ? <TagsView tags={tags} setResult={setResult} />
-          : <TravelTrends tags={tags} setTag={setTag} tagStatus={tagStatus} onReady={setCal} />}
+          : <TravelTrends tags={tags} setTag={setTag} onReady={setCal} />}
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
