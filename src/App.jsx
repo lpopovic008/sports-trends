@@ -618,13 +618,28 @@ function TravelTrends({ tags, setTag, onReady }) {
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             gap:12, flexWrap:"wrap", marginBottom:8 }}>
-            {showIndicators ? <Legend /> : <span />}
+            <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s" }}><Legend /></div>
             <button onClick={()=>setShowIndicators(v=>!v)}
-              style={{ flexShrink:0, padding:"5px 12px", border:`1px solid ${C.rule}`, borderRadius:2,
-                background: showIndicators ? "transparent" : C.ink, color: showIndicators ? C.inkSoft : "#fff",
-                fontFamily:MONO, fontSize:10, letterSpacing:"0.06em", textTransform:"uppercase",
-                cursor:"pointer" }}>
-              {showIndicators ? "Hide indicators" : "Show indicators"}</button>
+              aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
+              title={showIndicators ? "Hide indicators" : "Show indicators"}
+              style={{ flexShrink:0, width:32, height:32, borderRadius:4,
+                border:`1px solid ${showIndicators ? C.rule : C.ink}`,
+                background: showIndicators ? "#fff" : C.ink,
+                color: showIndicators ? C.inkSoft : "#fff", cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+              {showIndicators ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+                  <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              )}
+            </button>
           </div>
           <div className="ts-cal" ref={calRef} style={{ gap:5, paddingBottom:4 }}>
             {days.map(d=>{
@@ -716,7 +731,7 @@ const TREND_SLOTS = [
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true, tag=null }) {
+function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
   const keys = t.keysFor(teamId);
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
@@ -728,26 +743,18 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true, tag=n
         color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {final && hits!=null ? hits : ""}</span>
-      <span style={{ display:"flex", gap:2, justifyContent:"flex-end", position:"relative" }}>
-        {tag ? (
-          <span title={tag} style={{ maxWidth:"100%", background:"#F2657A", color:"#fff",
-            border:"1px solid #D7263D", borderRadius:3, padding:"0 5px",
-            fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.3,
-            boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
-            textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</span>
-        ) : showInd ? (
-          TREND_SLOTS.map(slot=>{
-            const present = keys.has(slot.key);
-            let color = slot.color;
-            if (slot.key==="rematch" && present)
-              color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
-            return <span key={slot.key} title={present ? slot.label : undefined}
-              style={{ width:13, height:11, borderRadius:2,
-                background: present ? color : "transparent",
-                boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
-                opacity: present ? 1 : 0.45 }} />;
-          })
-        ) : null}
+      <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
+        {showInd && TREND_SLOTS.map(slot=>{
+          const present = keys.has(slot.key);
+          let color = slot.color;
+          if (slot.key==="rematch" && present)
+            color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
+          return <span key={slot.key} title={present ? slot.label : undefined}
+            style={{ width:13, height:11, borderRadius:2,
+              background: present ? color : "transparent",
+              boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
+              opacity: present ? 1 : 0.45 }} />;
+        })}
       </span>
     </div>
   );
@@ -798,10 +805,18 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</div>
       )}
+      {tagInMarkers && (
+        <div title={tag} style={{ position:"absolute", right:6, top:"50%", zIndex:3, maxWidth:"64%",
+          transform:"translateY(-50%) rotate(-2deg)",
+          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
+          padding:"1px 6px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.3,
+          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          textOverflow:"ellipsis" }}>{tag}</div>
+      )}
       <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
         {final ? "FINAL" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final}
-        teamId={g.awayId} t={t} showInd={showInd} tag={tagInMarkers ? tag : null} />
+        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
       <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final}
         teamId={g.homeId} t={t} showInd={showInd} tag={null} />
     </div>
@@ -1410,6 +1425,7 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
   const [tagEditing, setTagEditing] = useState(false);
+  const [copied, setCopied] = useState(null);   // ok|dl|err feedback for Export
   const tagVal = tagText(tags?.[g.gamePk]);
 
   // export a clean PNG of this game's calendar card (indicators-off look) + tag
@@ -1445,14 +1461,16 @@ function GameModal({ m, tags, setTag, onClose }) {
       x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
       x.fillText(String(g.homeScore), cx+cw-14, cy+56);
     }
-    // angled red tag, top-left, where markers were
+    // angled red tag, vertically centered on the right (indicators-off look)
     if (tagVal) {
       x.save();
-      x.translate(cx+8, cy+2); x.rotate(-2*Math.PI/180);
       x.font = "700 11px system-ui, sans-serif";
-      const tw = Math.min(x.measureText(tagVal).width + 12, cw-20);
-      x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
       const th = 17;
+      const tw = Math.min(x.measureText(tagVal).width + 12, cw-16);
+      // anchor: right edge, vertical middle of the card
+      x.translate(cx+cw-8-tw, cy+ch/2 - th/2);
+      x.rotate(-2*Math.PI/180);
+      x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
       x.beginPath();
       x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
       x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
@@ -1460,12 +1478,22 @@ function GameModal({ m, tags, setTag, onClose }) {
       x.fillText(tagVal, 6, th/2+1, tw-10);
       x.restore();
     }
-    // download
-    const url = cv.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`;
-    a.click();
+    // copy PNG to clipboard
+    cv.toBlob(async (blob) => {
+      if (!blob) { setCopied("err"); return; }
+      try {
+        await navigator.clipboard.write([ new window.ClipboardItem({ "image/png": blob }) ]);
+        setCopied("ok");
+      } catch {
+        // clipboard image unsupported → fall back to a download so nothing is lost
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`; a.click();
+        URL.revokeObjectURL(url);
+        setCopied("dl");
+      }
+      setTimeout(()=>setCopied(null), 2000);
+    }, "image/png");
   };
 
   useEffect(() => {
@@ -1565,11 +1593,13 @@ function GameModal({ m, tags, setTag, onClose }) {
                 borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                 textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
               {tagVal ? "Play ✓" : "Play"}</button>
-            <button onClick={exportCard} title="Export game card as image"
-              aria-label="Export game card"
-              style={{ border:`1px solid ${C.rule}`, background:"#fff", color:C.ink,
+            <button onClick={exportCard} title="Copy game image to clipboard"
+              aria-label="Copy game image"
+              style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:"#fff",
+                color:copied==="ok"?C.over:C.ink,
                 borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
-                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>Export</button>
+                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>
+              {copied==="ok" ? "Copied ✓" : copied==="dl" ? "Saved ✓" : copied==="err" ? "Failed" : "Copy"}</button>
             <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
               borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
           </div>
@@ -1988,16 +2018,16 @@ export default function App() {
               {tab==="calendar" && cal && (
                 <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
                   aria-label="Refresh" title="Refresh schedule & stats"
-                  style={{ width:34, height:34, borderRadius:"50%", border:`1px solid ${C.ink}`,
-                    background:"#fff", color:C.ink, cursor:cal.busy?"default":"pointer",
+                  style={{ width:30, height:30, borderRadius:5, border:`1px solid ${C.ink}`,
+                    background:C.ink, color:"#fff", cursor:cal.busy?"default":"pointer",
                     display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
                     padding:0 }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                     style={{ animation: cal.busy ? "ts-spin 0.8s linear infinite" : "none" }}>
-                    <path d="M21 12a9 9 0 1 1-2.64-6.36" stroke={C.ink} strokeWidth="2"
-                      strokeLinecap="round" fill="none"/>
-                    <path d="M21 3v6h-6" stroke={C.ink} strokeWidth="2"
-                      strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    <path d="M4 6.5A8 8 0 0 1 19 8" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+                    <path d="M20 3.5V8h-4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M20 17.5A8 8 0 0 1 5 16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+                    <path d="M4 20.5V16h4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
               )}
