@@ -675,11 +675,15 @@ function TravelTrends({ tags, setTag, tagStatus }) {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:8 }}>
+    <div style={{ display:"flex", gap:"8px 18px", flexWrap:"wrap", marginBottom:10 }}>
       {TREND_SLOTS.map(s=>(
-        <span key={s.key} style={{ display:"flex", alignItems:"center", gap:4 }}>
-          <span style={{ width:13, height:9, borderRadius:2, background:s.color }} />
-          <span style={{ fontFamily:MONO, fontSize:9.5, color:C.inkSoft }}>{s.label}</span>
+        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230 }}>
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color,
+            flexShrink:0, marginTop:3 }} />
+          <span style={{ display:"flex", flexDirection:"column", lineHeight:1.25 }}>
+            <span style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:C.ink }}>{s.label}</span>
+            <span style={{ fontFamily:SANS, fontSize:10.5, color:C.inkSoft }}>{s.desc}</span>
+          </span>
         </span>
       ))}
     </div>
@@ -692,11 +696,16 @@ function Pill({ children, color, title }) {
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
 const TREND_SLOTS = [
-  { key:"rematch", color:C.rematch, label:"pitcher rematch" },
-  { key:"bigday",  color:C.bigday,  label:"10+ runs prior day" },
-  { key:"late",    color:C.late,    label:"late go-ahead" },
-  { key:"echo",    color:C.echo,    label:"streak echo" },
-  { key:"travel",  color:C.travel,  label:"W→E back-to-back" },
+  { key:"rematch", color:C.rematch, label:"Pitcher rematch",
+    desc:"Team has faced this pitcher before this year" },
+  { key:"bigday",  color:C.bigday,  label:"10+ runs",
+    desc:"Team scored 10+ runs the prior day" },
+  { key:"late",    color:C.late,    label:"Late go-ahead",
+    desc:"Team never led until the 8th inning or later" },
+  { key:"echo",    color:C.echo,    label:"Streak echo",
+    desc:"Team just snapped a 10+ game win or loss streak" },
+  { key:"travel",  color:C.travel,  label:"B2B travel",
+    desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, teamId, t }) {
@@ -1559,11 +1568,11 @@ function GameModal({ m, tags, setTag, onClose }) {
         {/* trend pills, if any */}
         {t && t.any && (
           <div style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"10px 18px 2px" }}>
-            {t.travel && <Pill color={C.travel}>W→E back-to-back</Pill>}
-            {t.echo.map((e,i)=><Pill key={i} color={C.echo}>streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
-            {t.cb.map((c,i)=><Pill key={i} color={C.late}>late go-ahead {ord(c.inning)}</Pill>)}
-            {t.rematch.map((r,i)=><Pill key={i} color={C.rematch}>pitcher rematch</Pill>)}
-            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday}>{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.travel && <Pill color={C.travel} title="Played out west yesterday, East today on back-to-back days">B2B travel</Pill>}
+            {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
+            {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later">late go-ahead {ord(c.inning)}</Pill>)}
+            {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher before this year">pitcher rematch</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs the prior day">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
           </div>
         )}
 
@@ -1668,9 +1677,7 @@ function TagsView({ tags, setResult }) {
   const graded = wins + losses;
   const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
 
-  // cumulative net (W = +1, L = -1). Cumulative runs oldest→newest so the
-  // running total is correct, then we reverse for display so the newest play
-  // is on the LEFT — matching the plays list order (newest at top).
+  // cumulative net (W = +1, L = -1), oldest → newest left-to-right, graded only
   const chartData = useMemo(() => {
     const graded = rows.filter(r=>r.result && r.date).slice()
       .sort((a,b)=>{                                   // oldest → newest
@@ -1679,11 +1686,10 @@ function TagsView({ tags, setResult }) {
         return (a.time||"").localeCompare(b.time||"");
       });
     let net = 0;
-    const chrono = graded.map(r => {
+    return graded.map(r => {
       net += r.result==="W" ? 1 : -1;
       return { date: r.date.slice(5), net };
     });
-    return chrono.reverse();                           // newest first (left), like the list
   }, [rows]);
 
   const resBtn = (r, val, label, color) => {
