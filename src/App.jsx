@@ -96,38 +96,22 @@ const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw a neon-graffiti style tag on a canvas context, centered at (cx,cy),
-// angled, sized to fit maxW. Emulates a spray-paint look: bright neon fill,
-// outer glow, dark outline, slight tilt. cvScale keeps the glow crisp.
-function drawGraffitiTag(x, text, cx, cy, maxW) {
+// Draw the red play tag on a canvas, angled, vertically centered at (cx,cy),
+// sized to fit maxW. Matches the calendar's indicators-off tag look.
+function drawRedTag(x, text, cx, cy, maxW) {
   if (!text) return;
   x.save();
-  // pick a font size that fits maxW, condensed & heavy for a tag look
-  let size = 17;
-  const setFont = (s)=>{ x.font = `900 ${s}px "Arial Narrow", "Impact", system-ui, sans-serif`; };
-  setFont(size);
-  const up = text.toUpperCase();
-  while (x.measureText(up).width > maxW - 10 && size > 8) { size -= 1; setFont(size); }
-  x.translate(cx, cy);
-  x.rotate(-4 * Math.PI/180);
-  x.textAlign = "center"; x.textBaseline = "middle";
-  // neon glow
-  x.shadowColor = "#FF1F8E"; x.shadowBlur = 12;
-  x.lineJoin = "round";
-  // dark outline (spray edge)
-  x.strokeStyle = "#2A0014"; x.lineWidth = size*0.42;
-  x.strokeText(up, 0, 0);
-  x.shadowBlur = 0;
-  // bright magenta-pink core with a hot highlight
-  const grad = x.createLinearGradient(0, -size/2, 0, size/2);
-  grad.addColorStop(0, "#FF6AD5");
-  grad.addColorStop(0.5, "#F215A6");
-  grad.addColorStop(1, "#C40E82");
-  x.fillStyle = grad;
-  x.fillText(up, 0, 0);
-  // thin white inner highlight stroke
-  x.strokeStyle = "rgba(255,255,255,0.85)"; x.lineWidth = Math.max(0.6, size*0.045);
-  x.strokeText(up, 0, 0);
+  x.font = "700 11px system-ui, sans-serif";
+  const th = 17;
+  const tw = Math.min(x.measureText(text).width + 12, maxW);
+  x.translate(cx - tw/2, cy - th/2);
+  x.rotate(-2 * Math.PI/180);
+  x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
+  x.beginPath();
+  x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
+  x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
+  x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
+  x.fillText(text, 6, th/2+1, tw-10);
   x.restore();
 }
 
@@ -318,7 +302,7 @@ function SeqBlock({ arr, label, onPick }) {
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
 function TravelTrends({ tags, setTag, onReady }) {
-  const start = todayISO();                    // anchor: today
+  const [start, setStart] = useState(todayISO());   // anchor date (default today; overridable)
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
   const [echoes, setEchoes] = useState(null);
@@ -603,8 +587,9 @@ function TravelTrends({ tags, setTag, onReady }) {
       scrolledRef.current = true;
     }
   }, [days]);
+  useEffect(() => { scrolledRef.current = false; }, [start]);   // re-center when anchor changes
 
-  // ── copy today's whole slate as one image, tagged picks in graffiti style ──
+  // ── copy today's whole slate as one image, tagged picks in red tags ──
   const [slateCopied, setSlateCopied] = useState(null);
   const copySlate = () => {
     const today = (days||[]).find(d=>d.date===start);
@@ -653,9 +638,9 @@ function TravelTrends({ tags, setTag, onReady }) {
         x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
         x.fillText(String(g.homeScore), gx+58, gy+48);
       }
-      // graffiti tag centered on the right half of the card
+      // red play tag centered on the right half of the card
       const tv = tagText(tags[g.gamePk]);
-      if (tv) drawGraffitiTag(x, tv, gx + CW*0.62, gy + CH/2, CW*0.66);
+      if (tv) drawRedTag(x, tv, gx + CW*0.62, gy + CH/2, CW*0.66);
     });
     cv.toBlob(async (blob)=>{
       if (!blob) { setSlateCopied("err"); return; }
@@ -720,6 +705,23 @@ function TravelTrends({ tags, setTag, onReady }) {
       {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
+          {/* temporary: manually anchor the calendar to any date */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap",
+            marginBottom:10, padding:"7px 10px", border:`1px dashed ${C.ruleDark}`,
+            borderRadius:3, background:C.card }}>
+            <span style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.08em",
+              textTransform:"uppercase", color:C.inkSoft }}>Anchor date</span>
+            <input type="date" value={start} onChange={e=>{ if(e.target.value) setStart(e.target.value); }}
+              style={{ fontFamily:MONO, fontSize:12, padding:"4px 8px",
+                border:`1px solid ${C.rule}`, borderRadius:2, background:"#fff", color:C.ink }} />
+            {start !== todayISO() && (
+              <button onClick={()=>setStart(todayISO())}
+                style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.06em", textTransform:"uppercase",
+                  padding:"4px 10px", border:`1px solid ${C.rule}`, borderRadius:2,
+                  background:"#fff", color:C.inkSoft, cursor:"pointer" }}>Reset to today</button>
+            )}
+          </div>
+
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             gap:12, flexWrap:"wrap", marginBottom:8 }}>
             <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s" }}><Legend /></div>
@@ -1565,9 +1567,9 @@ function GameModal({ m, tags, setTag, onClose }) {
       x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
       x.fillText(String(g.homeScore), cx+cw-14, cy+56);
     }
-    // tagged play in neon-graffiti style, vertically centered on the right
+    // tagged play as a red tag, vertically centered on the right
     if (tagVal) {
-      drawGraffitiTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.72);
+      drawRedTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.72);
     }
     // copy PNG to clipboard
     cv.toBlob(async (blob) => {
