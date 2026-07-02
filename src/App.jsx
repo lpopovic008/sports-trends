@@ -302,7 +302,7 @@ function SeqBlock({ arr, label, onPick }) {
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
 function TravelTrends({ tags, setTag, onReady }) {
-  const [start, setStart] = useState(todayISO());   // anchor date (default today; overridable)
+  const start = todayISO();                    // anchor: today
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
   const [echoes, setEchoes] = useState(null);
@@ -587,7 +587,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       scrolledRef.current = true;
     }
   }, [days]);
-  useEffect(() => { scrolledRef.current = false; }, [start]);   // re-center when anchor changes
+
 
   // ── copy today's whole slate as one image, tagged picks in red tags ──
   const [slateCopied, setSlateCopied] = useState(null);
@@ -705,23 +705,6 @@ function TravelTrends({ tags, setTag, onReady }) {
       {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
-          {/* temporary: manually anchor the calendar to any date */}
-          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap",
-            marginBottom:10, padding:"7px 10px", border:`1px dashed ${C.ruleDark}`,
-            borderRadius:3, background:C.card }}>
-            <span style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.08em",
-              textTransform:"uppercase", color:C.inkSoft }}>Anchor date</span>
-            <input type="date" value={start} onChange={e=>{ if(e.target.value) setStart(e.target.value); }}
-              style={{ fontFamily:MONO, fontSize:12, padding:"4px 8px",
-                border:`1px solid ${C.rule}`, borderRadius:2, background:"#fff", color:C.ink }} />
-            {start !== todayISO() && (
-              <button onClick={()=>setStart(todayISO())}
-                style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.06em", textTransform:"uppercase",
-                  padding:"4px 10px", border:`1px solid ${C.rule}`, borderRadius:2,
-                  background:"#fff", color:C.inkSoft, cursor:"pointer" }}>Reset to today</button>
-            )}
-          </div>
-
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             gap:12, flexWrap:"wrap", marginBottom:8 }}>
             <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s" }}><Legend /></div>
@@ -1902,18 +1885,23 @@ function TagsView({ tags, setResult }) {
   const graded = wins + losses;
   const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
 
-  // cumulative net (W = +1, L = -1), oldest → newest left-to-right, graded only
+  // cumulative net (W = +1, L = -1). Built from the SAME ordered list as the
+  // plays section: the list is newest-first, so we reverse it to run oldest→
+  // newest for a correct running total, then plot left-to-right. Each point
+  // gets a unique index + matchup so clicking it is unambiguous.
   const chartData = useMemo(() => {
-    const graded = rows.filter(r=>r.result && r.date).slice()
-      .sort((a,b)=>{                                   // oldest → newest
-        const d = (a.date||"").localeCompare(b.date||"");
-        if (d!==0) return d;
-        return (a.time||"").localeCompare(b.time||"");
-      });
+    const chrono = rows.filter(r=>r.result).slice().reverse();  // oldest → newest, list order
     let net = 0;
-    return graded.map(r => {
+    return chrono.map((r,i) => {
       net += r.result==="W" ? 1 : -1;
-      return { date: r.date.slice(5), net };
+      const matchup = r.away && r.home
+        ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : "";
+      return {
+        i: i+1,
+        label: r.date ? r.date.slice(5) : `#${i+1}`,
+        net, result:r.result, matchup,
+        text: r.text.length>22 ? r.text.slice(0,21)+"…" : r.text,
+      };
     });
   }, [rows]);
 
@@ -1984,14 +1972,30 @@ function TagsView({ tags, setResult }) {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top:8, right:14, bottom:0, left:0 }}>
-                  <XAxis dataKey="date" tick={{ fontFamily:MONO, fontSize:8, fill:C.inkSoft }}
-                    axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd"
-                    minTickGap={20} padding={{ left:6, right:6 }} />
+                  <XAxis dataKey="i" type="number" domain={[1, chartData.length]}
+                    tick={{ fontFamily:MONO, fontSize:8, fill:C.inkSoft }}
+                    axisLine={{ stroke:C.rule }} tickLine={false}
+                    allowDecimals={false} minTickGap={16} padding={{ left:6, right:6 }} />
                   <YAxis tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
                     axisLine={false} tickLine={false} allowDecimals={false} width={28} />
-                  <Tooltip contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2,
-                    border:`1px solid ${C.rule}` }}
-                    formatter={(v)=>[`${v>0?"+":""}${v}`, "net"]} />
+                  <Tooltip content={({ active, payload })=>{
+                    if(!active || !payload || !payload.length) return null;
+                    const d = payload[0].payload;
+                    return (
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
+                        padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
+                        <div style={{ color:C.inkSoft }}>#{d.i} · {d.label}
+                          {d.matchup ? ` · ${d.matchup}` : ""}</div>
+                        <div>{d.text}</div>
+                        <div>
+                          <span style={{ color:d.result==="W"?C.over:C.under, fontWeight:700 }}>{d.result}</span>
+                          <span style={{ color:C.ruleDark }}>{"  ·  net "}</span>
+                          <span style={{ fontWeight:700,
+                            color:d.net>0?C.over:d.net<0?C.under:C.ink }}>{d.net>0?"+":""}{d.net}</span>
+                        </div>
+                      </div>
+                    );
+                  }} />
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
                   <Line type="monotone" dataKey="net" stroke={C.blue} strokeWidth={2}
                     dot={{ r:2.5, fill:C.blue, strokeWidth:0 }}
