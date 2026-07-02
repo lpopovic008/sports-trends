@@ -12,19 +12,18 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  /* indicator colors — each evokes the trend */
-  rematch:"#8B5CF6",       /* neon indigo/violet: chess-move pitcher */
-  rematchLight:"#C4B5FD",  /* light neon violet: faced but short outing */
-  bigday:"#FF8C1A",        /* neon amber-orange: 10-run scoreboard explosion */
-  late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
-  echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
-  travel:"#F215A6",        /* neon magenta: jet-lagged west→east, distinct from violet */
-  getaway:"#2EC4FF",       /* azure: packing up, last game before the flight */
-  turn:"#B6FF3B",          /* neon lime: businessman's special, abrupt turnaround */
-  extras:"#D4A017",        /* goldenrod: extra-inning marathon the day before */
-  rest:"#FF6EC7",          /* hot pink: starter pushed up on short rest */
-  pen:"#4D7CFE",           /* cobalt: bullpen leaned on hard, arms cooked */
-  sweep:"#00E676",         /* spring green: walking into a revenge spot */
+  /* indicator colors — grouped pairs share a hue family (deep = primary, light = tint) */
+  rematch:"#8B5CF6",       /* violet: chess-move pitcher — standalone */
+  rematchLight:"#C4B5FD",  /* light violet: faced but short outing */
+  getaway:"#2196F3",       /* blue: packing up, last game before the flight */
+  turn:"#A7D8FF",          /* light blue: businessman's special, abrupt turnaround */
+  bigday:"#FF8C1A",        /* amber-orange: 10-run scoreboard explosion */
+  echo:"#FFC169",          /* light amber: momentum wave */
+  pen:"#D6249B",           /* magenta: bullpen leaned on hard, arms cooked */
+  rest:"#FF9FD8",          /* light pink: starter pushed up on short rest */
+  extras:"#C81E3A",        /* deep red: extra-inning marathon the day before */
+  late:"#FF8FA3",          /* light red: clutch late-night drama */
+  travel:"#06D6E0",        /* teal/cyan: jet-lagged west→east — standalone */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -354,7 +353,6 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [turnMap, setTurnMap] = useState({});        // date -> { teamId -> bool } (day after night)
   const [extras, setExtras] = useState(null);        // [{team,teamId,opp,innings,next}]
   const [pen, setPen] = useState(null);               // [{team,teamId,reliefIP,relievers,next}]
-  const [sweepMap, setSweepMap] = useState({});       // pair -> {winnerId,loserId,len}
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
   const [now, setNow] = useState(()=>new Date());
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
@@ -365,7 +363,7 @@ function TravelTrends({ tags, setTag, onReady }) {
 
   const load = useCallback(async () => {
     setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
-    setGetawayMap({}); setTurnMap({}); setExtras(null); setPen(null); setSweepMap({});
+    setGetawayMap({}); setTurnMap({}); setExtras(null); setPen(null);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
          fetch from 3 days back so the -2 day's travel has a "prev day". */
@@ -563,32 +561,6 @@ function TravelTrends({ tags, setTag, onReady }) {
           }
         });
       });
-
-      /* ── series sweep / revenge: was a team just swept by this exact opponent? ── */
-      const finalsByPair = {};
-      finals.forEach(g=>{
-        const pair = [g.teams.away.team.id, g.teams.home.team.id].sort((a,b)=>a-b).join("-");
-        (finalsByPair[pair] = finalsByPair[pair]||[]).push({
-          date: g.officialDate || g.gameDate.slice(0,10),
-          awayId:g.teams.away.team.id, homeId:g.teams.home.team.id,
-          awayWon: g.teams.away.isWinner===true,
-        });
-      });
-      const sweepByPair = {};
-      Object.entries(finalsByPair).forEach(([pair, list])=>{
-        const sorted = list.slice().sort((a,b)=>a.date.localeCompare(b.date));
-        const block = [sorted[sorted.length-1]];
-        for (let i=sorted.length-2; i>=0; i--){
-          if (sorted[i].date === addDays(block[0].date,-1)) block.unshift(sorted[i]); else break;
-        }
-        if (block.length < 2) return;
-        const winners = block.map(x=>x.awayWon ? x.awayId : x.homeId);
-        if (!winners.every(w=>w===winners[0])) return;
-        const winnerId = winners[0];
-        const loserId = block[0].awayId===winnerId ? block[0].homeId : block[0].awayId;
-        sweepByPair[pair] = { winnerId, loserId, len:block.length };
-      });
-      setSweepMap(sweepByPair);
 
       // (state set together at the end so all markers appear at once, in order)
       const echoList = [];
@@ -829,13 +801,6 @@ function TravelTrends({ tags, setTag, onReady }) {
     const penHere = (pen||[]).filter(p=>p.next && p.next.date===date &&
       (p.teamId===g.homeId || p.teamId===g.awayId));
 
-    const sweepInfo = sweepMap[g.pair];
-    const sweep = [];
-    if (sweepInfo && (sweepInfo.loserId===g.awayId || sweepInfo.loserId===g.homeId)) {
-      const teamId = sweepInfo.loserId;
-      sweep.push({ teamId, team: teamId===g.awayId ? g.awayName : g.homeName, len:sweepInfo.len });
-    }
-
     // per-team trend keys for the duplicated markers
     const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
     const add = (tid, key) => { if (sideKeys[tid]) sideKeys[tid].add(key); };
@@ -849,12 +814,11 @@ function TravelTrends({ tags, setTag, onReady }) {
     turn.forEach(x=>add(x.teamId, "turn"));
     extrasHere.forEach(x=>add(x.teamId, "extras"));
     penHere.forEach(x=>add(x.teamId, "pen"));
-    sweep.forEach(x=>add(x.teamId, "sweep"));
 
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 ||
-      rest.length>0 || getaway.length>0 || turn.length>0 || extrasHere.length>0 || penHere.length>0 || sweep.length>0;
+      rest.length>0 || getaway.length>0 || turn.length>0 || extrasHere.length>0 || penHere.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday,
-      rest, getaway, turn, extras:extrasHere, pen:penHere, sweep, any,
+      rest, getaway, turn, extras:extrasHere, pen:penHere, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null };
   };
@@ -948,9 +912,10 @@ function TravelTrends({ tags, setTag, onReady }) {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", gap:"8px 18px", flexWrap:"wrap", marginBottom:10 }}>
-      {TREND_SLOTS.map(s=>(
-        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230 }}>
+    <div style={{ display:"flex", flexWrap:"wrap", marginBottom:10 }}>
+      {TREND_SLOTS.map((s,i)=>(
+        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230,
+          marginLeft: i===0 ? 0 : (s.newGroup ? 22 : 10), marginBottom:8 }}>
           <span style={{ width:13, height:9, borderRadius:2, background:s.color,
             flexShrink:0, marginTop:3 }} />
           <span style={{ display:"flex", flexDirection:"column", lineHeight:1.25 }}>
@@ -968,29 +933,29 @@ function Pill({ children, color, title }) {
 }
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
+// newGroup:true starts a new visual cluster (extra spacing before it); grouped
+// pairs share a color family and sit tight against each other.
 const TREND_SLOTS = [
-  { key:"rematch", color:C.rematch, label:"Pitcher rematch",
+  { key:"rematch", color:C.rematch, label:"Pitcher rematch", newGroup:true,
     desc:"Team has faced this pitcher this year already" },
-  { key:"bigday",  color:C.bigday,  label:"10+ runs",
-    desc:"Team scored 10+ runs yesterday" },
-  { key:"late",    color:C.late,    label:"Late go-ahead",
-    desc:"Team never led until the 8th inning or later yesterday" },
-  { key:"echo",    color:C.echo,    label:"Streak echo",
-    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
-  { key:"travel",  color:C.travel,  label:"B2B travel",
-    desc:"Team played out west yesterday, plays East today on back-to-back days" },
-  { key:"getaway", color:C.getaway, label:"Getaway day",
+  { key:"getaway", color:C.getaway, label:"Getaway day", newGroup:true,
     desc:"Last game of the series before the team travels to its next city" },
-  { key:"turn",    color:C.turn,    label:"Day after night",
+  { key:"turn",    color:C.turn,    label:"Day after night", newGroup:false,
     desc:"Night game yesterday, day game today — short turnaround" },
-  { key:"extras",  color:C.extras,  label:"Extra innings hangover",
-    desc:"Played extra innings yesterday, taxing the bullpen" },
-  { key:"rest",    color:C.rest,    label:"Short rest",
-    desc:"Starter is going on 4 days' rest or fewer" },
-  { key:"pen",     color:C.pen,     label:"Bullpen fatigue",
+  { key:"bigday",  color:C.bigday,  label:"10+ runs", newGroup:true,
+    desc:"Team scored 10+ runs yesterday" },
+  { key:"echo",    color:C.echo,    label:"Streak echo", newGroup:false,
+    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
+  { key:"pen",     color:C.pen,     label:"Bullpen fatigue", newGroup:true,
     desc:"Bullpen threw heavy innings in the last day" },
-  { key:"sweep",   color:C.sweep,   label:"Revenge spot",
-    desc:"Was swept by this opponent in their last series" },
+  { key:"rest",    color:C.rest,    label:"Short rest", newGroup:false,
+    desc:"Starter is going on 4 days' rest or fewer" },
+  { key:"extras",  color:C.extras,  label:"Extra innings hangover", newGroup:true,
+    desc:"Played extra innings yesterday, taxing the bullpen" },
+  { key:"late",    color:C.late,    label:"Late go-ahead", newGroup:false,
+    desc:"Team never led until the 8th inning or later yesterday" },
+  { key:"travel",  color:C.travel,  label:"B2B travel", newGroup:true,
+    desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
@@ -1006,13 +971,14 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {final && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
-        {showInd && TREND_SLOTS.map(slot=>{
+        {showInd && TREND_SLOTS.map((slot,i)=>{
           const present = keys.has(slot.key);
           let color = slot.color;
           if (slot.key==="rematch" && present)
             color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ width:13, height:11, borderRadius:2,
+              marginLeft: i>0 && slot.newGroup ? 4 : 0,
               background: present ? color : "transparent",
               boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
               opacity: present ? 1 : 0.45 }} />;
@@ -1943,7 +1909,6 @@ function GameModal({ m, tags, setTag, onClose }) {
             {t.extras.map((x,i)=><Pill key={i} color={C.extras} title="Played extra innings yesterday">{x.team.split(" ").slice(-1)[0]} {x.innings}-inning game prior day</Pill>)}
             {t.rest.map((r,i)=><Pill key={i} color={C.rest} title="Starter going on short rest">{r.pitcher.split(" ").slice(-1)[0]} on {r.restDays}d rest</Pill>)}
             {t.pen.map((x,i)=><Pill key={i} color={C.pen} title="Bullpen threw heavy innings yesterday">{x.team.split(" ").slice(-1)[0]} pen: {x.reliefIP}IP/{x.relievers}p prior day</Pill>)}
-            {t.sweep.map((x,i)=><Pill key={i} color={C.sweep} title="Was swept by this opponent in their last series">{x.team.split(" ").slice(-1)[0]} revenge spot</Pill>)}
           </div>
         )}
 
