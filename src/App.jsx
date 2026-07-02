@@ -115,6 +115,32 @@ function drawRedTag(x, text, cx, cy, maxW) {
   x.restore();
 }
 
+// Copy a canvas to the clipboard as PNG. Called synchronously in the click
+// handler and hands ClipboardItem a Promise<Blob> so the browser keeps the
+// user-gesture context (Safari/iOS require this). Falls back to download.
+// setStatus(code): "ok" | "dl" | "err".
+function copyCanvas(cv, filename, setStatus) {
+  const done = (s)=>{ setStatus(s); setTimeout(()=>setStatus(null), 2000); };
+  const blobPromise = new Promise((resolve, reject)=>{
+    cv.toBlob(b => b ? resolve(b) : reject(new Error("no blob")), "image/png");
+  });
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      navigator.clipboard.write([ new window.ClipboardItem({ "image/png": blobPromise }) ])
+        .then(()=>done("ok"))
+        .catch(()=>{ blobPromise.then(b=>downloadBlob(b, filename)).then(()=>done("dl")).catch(()=>done("err")); });
+    } else {
+      blobPromise.then(b=>downloadBlob(b, filename)).then(()=>done("dl")).catch(()=>done("err"));
+    }
+  } catch { blobPromise.then(b=>downloadBlob(b, filename)).then(()=>done("dl")).catch(()=>done("err")); }
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // shared per-game tag store (global via JSONBin, local cache via localStorage).
 // Returns { tags, tagStatus, setTag, setResult }.
 function useTags() {
@@ -593,69 +619,52 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [slateCopied, setSlateCopied] = useState(null);
   const copySlate = () => {
     const today = (days||[]).find(d=>d.date===start);
-    const games = today ? today.games.filter(Boolean) : [];
+    const all = today ? today.games.filter(Boolean) : [];
+    // only games that have a tag
+    const games = all.filter(g => tagText(tags[g.gamePk]));
     if (!games.length) { setSlateCopied("empty"); setTimeout(()=>setSlateCopied(null),2000); return; }
     const scale = 3;
-    const cols = games.length > 6 ? 2 : 1;
-    const rows = Math.ceil(games.length / cols);
-    const CW = 300, CH = 64, GAP = 8, PADX = 14, HEAD = 46, PADB = 14;
-    const W = PADX*2 + cols*CW + (cols-1)*GAP;
-    const H = HEAD + rows*CH + (rows-1)*GAP + PADB;
+    // compact single-column layout, one tight row per tagged pick
+    const CW = 300, RH = 40, GAP = 5, PADX = 12, HEAD = 40, PADB = 12;
+    const W = PADX*2 + CW;
+    const H = HEAD + games.length*RH + (games.length-1)*GAP + PADB;
     const cv = document.createElement("canvas");
     cv.width = W*scale; cv.height = H*scale;
     const x = cv.getContext("2d"); x.scale(scale, scale);
-    // background
     x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
     // header
-    x.fillStyle = "#14181F"; x.font = "800 22px system-ui, sans-serif";
+    x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
     x.textAlign = "left"; x.textBaseline = "alphabetic";
-    x.fillText("MLB Trends", PADX, 30);
-    x.fillStyle = "#525A66"; x.font = "11px ui-monospace, Menlo, monospace";
-    x.fillText(prettyDay(start).toUpperCase() + " · TODAY'S SLATE", PADX, 44);
-    // each game card
+    x.fillText("MLB Trends", PADX, 22);
+    x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
+    x.textAlign = "right";
+    x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
+    // one compact row per tagged pick: TIME · AWAY@HOME · tag
     games.forEach((g,i)=>{
-      const c = i % cols, r = Math.floor(i / cols);
-      const gx = PADX + c*(CW+GAP), gy = HEAD + r*(CH+GAP);
+      const gx = PADX, gy = HEAD + i*(RH+GAP);
       const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF";
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
-      const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-      const rr = 5;
+      const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+      const rr = 4;
       x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
       x.beginPath();
-      x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+CH,rr); x.arcTo(gx+CW,gy+CH,gx,gy+CH,rr);
-      x.arcTo(gx,gy+CH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
-      // time / final
-      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace"; x.textAlign = "right";
-      x.fillText(final?"FINAL":time, gx+CW-8, gy+14);
-      // teams + scores
-      x.textAlign = "left"; x.fillStyle = "#14181F"; x.font = "700 14px system-ui, sans-serif";
-      x.fillText(aw, gx+12, gy+27); x.fillText(hm, gx+12, gy+48);
-      if (final) {
-        x.textAlign = "right"; x.font = "700 14px ui-monospace, Menlo, monospace";
-        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
-        x.fillText(String(g.awayScore), gx+58, gy+27);
-        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
-        x.fillText(String(g.homeScore), gx+58, gy+48);
-      }
-      // red play tag centered on the right half of the card
+      x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
+      x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
+      // left: matchup (+ scores if final)
+      x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
+      x.font = "700 13px system-ui, sans-serif";
+      let matchup = `${aw} @ ${hm}`;
+      if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
+      x.fillText(matchup, gx+10, gy+RH/2 - 6);
+      // small time under matchup
+      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+      x.fillText(time, gx+10, gy+RH/2 + 9);
+      // right: red tag, vertically centered
       const tv = tagText(tags[g.gamePk]);
-      if (tv) drawRedTag(x, tv, gx + CW*0.62, gy + CH/2, CW*0.66);
+      drawRedTag(x, tv, gx + CW*0.72, gy + RH/2, CW*0.5);
     });
-    cv.toBlob(async (blob)=>{
-      if (!blob) { setSlateCopied("err"); return; }
-      try {
-        await navigator.clipboard.write([ new window.ClipboardItem({ "image/png": blob }) ]);
-        setSlateCopied("ok");
-      } catch {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = `mlb-slate-${start}.png`; a.click();
-        URL.revokeObjectURL(url);
-        setSlateCopied("dl");
-      }
-      setTimeout(()=>setSlateCopied(null), 2000);
-    }, "image/png");
+    copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
   };
   useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied }); }, [load, busy, onReady, slateCopied, days, tags]);
 
@@ -1554,22 +1563,7 @@ function GameModal({ m, tags, setTag, onClose }) {
     if (tagVal) {
       drawRedTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.72);
     }
-    // copy PNG to clipboard
-    cv.toBlob(async (blob) => {
-      if (!blob) { setCopied("err"); return; }
-      try {
-        await navigator.clipboard.write([ new window.ClipboardItem({ "image/png": blob }) ]);
-        setCopied("ok");
-      } catch {
-        // clipboard image unsupported → fall back to a download so nothing is lost
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`; a.click();
-        URL.revokeObjectURL(url);
-        setCopied("dl");
-      }
-      setTimeout(()=>setCopied(null), 2000);
-    }, "image/png");
+    copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
   };
 
   useEffect(() => {
