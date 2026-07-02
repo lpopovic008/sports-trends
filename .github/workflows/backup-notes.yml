@@ -1,0 +1,39 @@
+name: Backup Notes Bin
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # daily at 09:00 UTC
+  workflow_dispatch:        # lets you trigger a backup manually from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backup-notes
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      NOTES_BIN: 6a43cd2bf5f4af5e2947d66d
+      NOTES_KEY: $2a$10$EzB/eCQ9ZvPSCyKLss3TxO/fUj0dDmaDEvWEphLhD6eQ7ivrryUVG
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest notes bin
+        run: |
+          mkdir -p backups
+          date="$(date -u +%F)"
+          curl -sS -f "https://api.jsonbin.io/v3/b/${NOTES_BIN}/latest" \
+            -H "X-Access-Key: ${NOTES_KEY}" \
+            -o "backups/notes-${date}.json"
+
+      - name: Commit backup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backups/
+          git diff --staged --quiet && exit 0
+          git commit -m "Backup notes bin ($(date -u +%F))"
+          git push
