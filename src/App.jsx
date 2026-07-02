@@ -19,6 +19,12 @@ const C = {
   late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
   echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
   travel:"#F215A6",        /* neon magenta: jet-lagged west→east, distinct from violet */
+  getaway:"#2EC4FF",       /* azure: packing up, last game before the flight */
+  turn:"#B6FF3B",          /* neon lime: businessman's special, abrupt turnaround */
+  extras:"#D4A017",        /* goldenrod: extra-inning marathon the day before */
+  rest:"#FF6EC7",          /* hot pink: starter pushed up on short rest */
+  pen:"#4D7CFE",           /* cobalt: bullpen leaned on hard, arms cooked */
+  sweep:"#00E676",         /* spring green: walking into a revenge spot */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -42,6 +48,15 @@ const TEAM_TZ = {
   143:"ET",144:"ET",145:"CT",146:"ET",147:"ET",158:"CT",
 };
 const TZ_RANK = { PT:0, MT:1, CT:2, ET:3 };
+/* rough MLB-season (DST) UTC offsets, good enough for day/night classification */
+const TZ_OFFSET = { PT:-7, MT:-6, CT:-5, ET:-4 };
+const localHour = (iso, tz) => {
+  const d = new Date(iso);
+  const h = d.getUTCHours() + d.getUTCMinutes()/60 + (TZ_OFFSET[tz] ?? -5);
+  return ((h % 24) + 24) % 24;
+};
+const isNightLocal = (g) => localHour(g.time, g.venueTz) >= 17;
+const isDayLocal = (g) => localHour(g.time, g.venueTz) < 17;
 const TEAM_ABBR = {
   108:"LAA",109:"ARI",110:"BAL",111:"BOS",112:"CHC",113:"CIN",114:"CLE",115:"COL",
   116:"DET",117:"HOU",118:"KC",119:"LAD",120:"WSH",121:"NYM",133:"ATH",134:"PIT",
@@ -335,6 +350,11 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [comebacks, setComebacks] = useState(null);
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
+  const [getawayMap, setGetawayMap] = useState({});  // date -> { teamId -> bool }
+  const [turnMap, setTurnMap] = useState({});        // date -> { teamId -> bool } (day after night)
+  const [extras, setExtras] = useState(null);        // [{team,teamId,opp,innings,next}]
+  const [pen, setPen] = useState(null);               // [{team,teamId,reliefIP,relievers,next}]
+  const [sweepMap, setSweepMap] = useState({});       // pair -> {winnerId,loserId,len}
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
   const [now, setNow] = useState(()=>new Date());
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
@@ -345,6 +365,7 @@ function TravelTrends({ tags, setTag, onReady }) {
 
   const load = useCallback(async () => {
     setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
+    setGetawayMap({}); setTurnMap({}); setExtras(null); setPen(null); setSweepMap({});
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
          fetch from 3 days back so the -2 day's travel has a "prev day". */
@@ -413,6 +434,31 @@ function TravelTrends({ tags, setTag, onReady }) {
       const dayByPair = perDay.map(games=>{
         const m={}; games.forEach(g=>{ m[g.pair]=g; }); return m;
       });
+
+      // ── getaway day + day-after-night, per team per displayed day ──
+      const getawayByDay = Array.from({length:numDays}, ()=>({}));
+      const turnByDay    = Array.from({length:numDays}, ()=>({}));
+      const gameForTeam = (di, tid) => (di>=0 && di<numDays)
+        ? perDay[di].find(x=>x.homeId===tid || x.awayId===tid) : undefined;
+      for (let di=0; di<numDays; di++) {
+        perDay[di].forEach(g=>{
+          [g.awayId, g.homeId].forEach(tid=>{
+            const oppToday = oppByTeamDay[di][tid];
+            let getaway = false;
+            for (let d=di+1; d<numDays; d++){
+              const opp = oppByTeamDay[d][tid];
+              if (opp!=null) { getaway = opp !== oppToday; break; }
+            }
+            getawayByDay[di][tid] = getaway;
+            const prev = gameForTeam(di-1, tid);
+            turnByDay[di][tid] = !!prev && isNightLocal(prev) && isDayLocal(g);
+          });
+        });
+      }
+      const getawayMap = {}, turnMap = {};
+      DATES.forEach((d,di)=>{ getawayMap[d]=getawayByDay[di]; turnMap[d]=turnByDay[di]; });
+      setGetawayMap(getawayMap);
+      setTurnMap(turnMap);
 
       const grid   = Array.from({length:numDays}, ()=>[]);    // grid[di][row]=game|"RESV"|null
       const placed = Array.from({length:numDays}, ()=>({}));  // di -> pair -> true
@@ -517,6 +563,33 @@ function TravelTrends({ tags, setTag, onReady }) {
           }
         });
       });
+
+      /* ── series sweep / revenge: was a team just swept by this exact opponent? ── */
+      const finalsByPair = {};
+      finals.forEach(g=>{
+        const pair = [g.teams.away.team.id, g.teams.home.team.id].sort((a,b)=>a-b).join("-");
+        (finalsByPair[pair] = finalsByPair[pair]||[]).push({
+          date: g.officialDate || g.gameDate.slice(0,10),
+          awayId:g.teams.away.team.id, homeId:g.teams.home.team.id,
+          awayWon: g.teams.away.isWinner===true,
+        });
+      });
+      const sweepByPair = {};
+      Object.entries(finalsByPair).forEach(([pair, list])=>{
+        const sorted = list.slice().sort((a,b)=>a.date.localeCompare(b.date));
+        const block = [sorted[sorted.length-1]];
+        for (let i=sorted.length-2; i>=0; i--){
+          if (sorted[i].date === addDays(block[0].date,-1)) block.unshift(sorted[i]); else break;
+        }
+        if (block.length < 2) return;
+        const winners = block.map(x=>x.awayWon ? x.awayId : x.homeId);
+        if (!winners.every(w=>w===winners[0])) return;
+        const winnerId = winners[0];
+        const loserId = block[0].awayId===winnerId ? block[0].homeId : block[0].awayId;
+        sweepByPair[pair] = { winnerId, loserId, len:block.length };
+      });
+      setSweepMap(sweepByPair);
+
       // (state set together at the end so all markers appear at once, in order)
       const echoList = [];
       Object.entries(byTeamRes).forEach(([tid, res])=>{
@@ -542,29 +615,66 @@ function TravelTrends({ tags, setTag, onReady }) {
       const yISO = addDays(start,-1);
       const yGames = finals.filter(g =>
         (g.officialDate || g.gameDate.slice(0,10)) === yISO);
-      const cbResults = await mapPool(yGames, 4, async (g) => {
+      // this team's next scheduled game from today forward
+      const findNextGame = (teamId) => {
+        for (let i=0;i<=5;i++){
+          const date = addDays(start,i);
+          const dg = (dayGames[date]||[]).find(x=>x.homeId===teamId || x.awayId===teamId);
+          if (dg) return { date, awayName:dg.awayName, homeName:dg.homeName };
+        }
+        return null;
+      };
+      const ynResults = await mapPool(yGames, 4, async (g) => {
         const winnerSide = g.teams.home.isWinner ? "home" : "away";
+        const win = g.teams[winnerSide], lose = g.teams[winnerSide==="home"?"away":"home"];
+        let cb = null, extras = [];
         try {
           const lr2 = await fetch(`${API}/game/${g.gamePk}/linescore`);
-          if (!lr2.ok) return null;
-          const ls = await lr2.json();
-          const sig = detectLateComeback(ls, winnerSide);
-          if (!sig) return null;
-          const win = g.teams[winnerSide], lose = g.teams[winnerSide==="home"?"away":"home"];
-          // this team's next scheduled game from today forward
-          let next = null;
-          for (let i=0;i<=5 && !next;i++){
-            const date = addDays(start,i);
-            (dayGames[date]||[]).forEach(dg=>{
-              if (!next && (dg.homeId===win.team.id || dg.awayId===win.team.id))
-                next = { date, awayName:dg.awayName, homeName:dg.homeName };
+          if (lr2.ok) {
+            const ls = await lr2.json();
+            const sig = detectLateComeback(ls, winnerSide);
+            if (sig) {
+              const next = findNextGame(win.team.id);
+              if (next) cb = { team:win.team.name, teamId:win.team.id, opp:lose.team.name,
+                score:`${win.score}\u2013${lose.score}`, inning:sig.firstLeadInning, next };
+            }
+            if ((ls.innings||[]).length > 9) {
+              [ [win,lose], [lose,win] ].forEach(([side,opp])=>{
+                const next = findNextGame(side.team.id);
+                if (next) extras.push({ team:side.team.name, teamId:side.team.id,
+                  opp:opp.team.name, innings:ls.innings.length, next });
+              });
+            }
+          }
+        } catch { /* leave cb/extras empty */ }
+        let pen = [];
+        try {
+          const br = await fetch(`${API}/game/${g.gamePk}/boxscore`);
+          if (br.ok) {
+            const bj = await br.json();
+            ["home","away"].forEach(side=>{
+              const team = bj.teams?.[side];
+              const pitcherIds = team?.pitchers || [];
+              if (pitcherIds.length < 2) return;   // no relief work
+              const reliefIP = pitcherIds.slice(1).reduce((s,pid)=>{
+                const ip = parseFloat(team.players?.["ID"+pid]?.stats?.pitching?.inningsPitched) || 0;
+                return s + ip;
+              }, 0);
+              const relievers = pitcherIds.length - 1;
+              if (reliefIP >= 4 || relievers >= 4) {
+                const teamId = team.team.id;
+                const next = findNextGame(teamId);
+                if (next) pen.push({ team:team.team.name, teamId,
+                  reliefIP:Math.round(reliefIP*10)/10, relievers, next });
+              }
             });
           }
-          return { team:win.team.name, teamId:win.team.id, opp:lose.team.name,
-            score:`${win.score}\u2013${lose.score}`, inning:sig.firstLeadInning, next };
-        } catch { return null; }
+        } catch { /* leave pen empty */ }
+        return { cb, extras, pen };
       });
-      const cbList = cbResults.filter(Boolean).sort((a,b)=>b.inning-a.inning);
+      const cbList = ynResults.filter(r=>r.cb).map(r=>r.cb).sort((a,b)=>b.inning-a.inning);
+      const extrasList = ynResults.flatMap(r=>r.extras);
+      const penList = ynResults.flatMap(r=>r.pen);
 
       /* ── pitcher rematch: has each probable already faced today's opponent? ── */
       const pitcherIds = new Set();
@@ -588,11 +698,13 @@ function TravelTrends({ tags, setTag, onReady }) {
           facedMap[pid] = list;     // [{oppId, date, ip}] — all prior facings
         } catch { /* leave unset */ }
       });
-      // all trend markers appear together (rematch · 10-run · late · echo · travel)
+      // all trend markers appear together
       setFaced(facedMap);
       setRunsMap(runsByDate);
       setComebacks(cbList);
       setEchoes(echoList);
+      setExtras(extrasList);
+      setPen(penList);
     } catch (e) {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
     } finally { setBusy(false); }
@@ -692,6 +804,38 @@ function TravelTrends({ tags, setTag, onReady }) {
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
+    // short-rest starter: pitching on 4 days' rest or fewer
+    const rest = [];
+    const checkRest = (pid, pitcher, teamId) => {
+      if (!pid) return;
+      const starts = (faced[pid]||[]).filter(x=>x.date < date);
+      if (!starts.length) return;
+      const last = starts.reduce((a,b)=> a.date>b.date ? a : b);
+      const restDays = Math.round((new Date(date) - new Date(last.date)) / 86400000);
+      if (restDays>0 && restDays<=4) rest.push({ teamId, pitcher, restDays });
+    };
+    checkRest(g.awayPid, g.awayPname, g.awayId);
+    checkRest(g.homePid, g.homePname, g.homeId);
+
+    const getaway = [];
+    if (getawayMap[date]?.[g.awayId]) getaway.push({ teamId:g.awayId, team:g.awayName });
+    if (getawayMap[date]?.[g.homeId]) getaway.push({ teamId:g.homeId, team:g.homeName });
+    const turn = [];
+    if (turnMap[date]?.[g.awayId]) turn.push({ teamId:g.awayId, team:g.awayName });
+    if (turnMap[date]?.[g.homeId]) turn.push({ teamId:g.homeId, team:g.homeName });
+
+    const extrasHere = (extras||[]).filter(e=>e.next && e.next.date===date &&
+      (e.teamId===g.homeId || e.teamId===g.awayId));
+    const penHere = (pen||[]).filter(p=>p.next && p.next.date===date &&
+      (p.teamId===g.homeId || p.teamId===g.awayId));
+
+    const sweepInfo = sweepMap[g.pair];
+    const sweep = [];
+    if (sweepInfo && (sweepInfo.loserId===g.awayId || sweepInfo.loserId===g.homeId)) {
+      const teamId = sweepInfo.loserId;
+      sweep.push({ teamId, team: teamId===g.awayId ? g.awayName : g.homeName, len:sweepInfo.len });
+    }
+
     // per-team trend keys for the duplicated markers
     const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
     const add = (tid, key) => { if (sideKeys[tid]) sideKeys[tid].add(key); };
@@ -700,9 +844,17 @@ function TravelTrends({ tags, setTag, onReady }) {
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
     rematch.forEach(m=>add(m.oppId, "rematch"));   // team facing the pitcher again
+    rest.forEach(r=>add(r.teamId, "rest"));
+    getaway.forEach(x=>add(x.teamId, "getaway"));
+    turn.forEach(x=>add(x.teamId, "turn"));
+    extrasHere.forEach(x=>add(x.teamId, "extras"));
+    penHere.forEach(x=>add(x.teamId, "pen"));
+    sweep.forEach(x=>add(x.teamId, "sweep"));
 
-    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
-    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
+    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 ||
+      rest.length>0 || getaway.length>0 || turn.length>0 || extrasHere.length>0 || penHere.length>0 || sweep.length>0;
+    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday,
+      rest, getaway, turn, extras:extrasHere, pen:penHere, sweep, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null };
   };
@@ -827,6 +979,18 @@ const TREND_SLOTS = [
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel",  color:C.travel,  label:"B2B travel",
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
+  { key:"getaway", color:C.getaway, label:"Getaway day",
+    desc:"Last game of the series before the team travels to its next city" },
+  { key:"turn",    color:C.turn,    label:"Day after night",
+    desc:"Night game yesterday, day game today — short turnaround" },
+  { key:"extras",  color:C.extras,  label:"Extra innings hangover",
+    desc:"Played extra innings yesterday, taxing the bullpen" },
+  { key:"rest",    color:C.rest,    label:"Short rest",
+    desc:"Starter is going on 4 days' rest or fewer" },
+  { key:"pen",     color:C.pen,     label:"Bullpen fatigue",
+    desc:"Bullpen threw heavy innings in the last day" },
+  { key:"sweep",   color:C.sweep,   label:"Revenge spot",
+    desc:"Was swept by this opponent in their last series" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
@@ -1774,6 +1938,12 @@ function GameModal({ m, tags, setTag, onClose }) {
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.getaway.map((x,i)=><Pill key={i} color={C.getaway} title="Last game of the series before traveling to the next city">{x.team.split(" ").slice(-1)[0]} getaway day</Pill>)}
+            {t.turn.map((x,i)=><Pill key={i} color={C.turn} title="Night game yesterday, day game today">{x.team.split(" ").slice(-1)[0]} day after night</Pill>)}
+            {t.extras.map((x,i)=><Pill key={i} color={C.extras} title="Played extra innings yesterday">{x.team.split(" ").slice(-1)[0]} {x.innings}-inning game prior day</Pill>)}
+            {t.rest.map((r,i)=><Pill key={i} color={C.rest} title="Starter going on short rest">{r.pitcher.split(" ").slice(-1)[0]} on {r.restDays}d rest</Pill>)}
+            {t.pen.map((x,i)=><Pill key={i} color={C.pen} title="Bullpen threw heavy innings yesterday">{x.team.split(" ").slice(-1)[0]} pen: {x.reliefIP}IP/{x.relievers}p prior day</Pill>)}
+            {t.sweep.map((x,i)=><Pill key={i} color={C.sweep} title="Was swept by this opponent in their last series">{x.team.split(" ").slice(-1)[0]} revenge spot</Pill>)}
           </div>
         )}
 
