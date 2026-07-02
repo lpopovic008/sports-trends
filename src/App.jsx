@@ -1975,8 +1975,8 @@ function GameModal({ m, tags, setTag, onClose }) {
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:166px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(250px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:250px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:28px 18px 60px; }
 .ts-cell { box-sizing:border-box; }
