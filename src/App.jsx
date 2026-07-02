@@ -96,6 +96,41 @@ const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
+// Draw a neon-graffiti style tag on a canvas context, centered at (cx,cy),
+// angled, sized to fit maxW. Emulates a spray-paint look: bright neon fill,
+// outer glow, dark outline, slight tilt. cvScale keeps the glow crisp.
+function drawGraffitiTag(x, text, cx, cy, maxW) {
+  if (!text) return;
+  x.save();
+  // pick a font size that fits maxW, condensed & heavy for a tag look
+  let size = 17;
+  const setFont = (s)=>{ x.font = `900 ${s}px "Arial Narrow", "Impact", system-ui, sans-serif`; };
+  setFont(size);
+  const up = text.toUpperCase();
+  while (x.measureText(up).width > maxW - 10 && size > 8) { size -= 1; setFont(size); }
+  x.translate(cx, cy);
+  x.rotate(-4 * Math.PI/180);
+  x.textAlign = "center"; x.textBaseline = "middle";
+  // neon glow
+  x.shadowColor = "#FF1F8E"; x.shadowBlur = 12;
+  x.lineJoin = "round";
+  // dark outline (spray edge)
+  x.strokeStyle = "#2A0014"; x.lineWidth = size*0.42;
+  x.strokeText(up, 0, 0);
+  x.shadowBlur = 0;
+  // bright magenta-pink core with a hot highlight
+  const grad = x.createLinearGradient(0, -size/2, 0, size/2);
+  grad.addColorStop(0, "#FF6AD5");
+  grad.addColorStop(0.5, "#F215A6");
+  grad.addColorStop(1, "#C40E82");
+  x.fillStyle = grad;
+  x.fillText(up, 0, 0);
+  // thin white inner highlight stroke
+  x.strokeStyle = "rgba(255,255,255,0.85)"; x.lineWidth = Math.max(0.6, size*0.045);
+  x.strokeText(up, 0, 0);
+  x.restore();
+}
+
 // shared per-game tag store (global via JSONBin, local cache via localStorage).
 // Returns { tags, tagStatus, setTag, setResult }.
 function useTags() {
@@ -553,7 +588,6 @@ function TravelTrends({ tags, setTag, onReady }) {
     } finally { setBusy(false); }
   }, [start, westThreshold, minStreak]);
   useEffect(() => { load(); }, [load]);   // auto-load on open and when min streak changes
-  useEffect(() => { if(onReady) onReady({ load, busy }); }, [load, busy, onReady]);
 
   // on mobile, scroll the calendar so today's column is in view on first load
   const calRef = useRef(null);
@@ -569,6 +603,76 @@ function TravelTrends({ tags, setTag, onReady }) {
       scrolledRef.current = true;
     }
   }, [days]);
+
+  // ── copy today's whole slate as one image, tagged picks in graffiti style ──
+  const [slateCopied, setSlateCopied] = useState(null);
+  const copySlate = () => {
+    const today = (days||[]).find(d=>d.date===start);
+    const games = today ? today.games.filter(Boolean) : [];
+    if (!games.length) { setSlateCopied("empty"); setTimeout(()=>setSlateCopied(null),2000); return; }
+    const scale = 3;
+    const cols = games.length > 6 ? 2 : 1;
+    const rows = Math.ceil(games.length / cols);
+    const CW = 300, CH = 64, GAP = 8, PADX = 14, HEAD = 46, PADB = 14;
+    const W = PADX*2 + cols*CW + (cols-1)*GAP;
+    const H = HEAD + rows*CH + (rows-1)*GAP + PADB;
+    const cv = document.createElement("canvas");
+    cv.width = W*scale; cv.height = H*scale;
+    const x = cv.getContext("2d"); x.scale(scale, scale);
+    // background
+    x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
+    // header
+    x.fillStyle = "#14181F"; x.font = "800 22px system-ui, sans-serif";
+    x.textAlign = "left"; x.textBaseline = "alphabetic";
+    x.fillText("MLB Trends", PADX, 30);
+    x.fillStyle = "#525A66"; x.font = "11px ui-monospace, Menlo, monospace";
+    x.fillText(prettyDay(start).toUpperCase() + " · TODAY'S SLATE", PADX, 44);
+    // each game card
+    games.forEach((g,i)=>{
+      const c = i % cols, r = Math.floor(i / cols);
+      const gx = PADX + c*(CW+GAP), gy = HEAD + r*(CH+GAP);
+      const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF";
+      const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
+      const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
+      const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+      const rr = 5;
+      x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
+      x.beginPath();
+      x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+CH,rr); x.arcTo(gx+CW,gy+CH,gx,gy+CH,rr);
+      x.arcTo(gx,gy+CH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
+      // time / final
+      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace"; x.textAlign = "right";
+      x.fillText(final?"FINAL":time, gx+CW-8, gy+14);
+      // teams + scores
+      x.textAlign = "left"; x.fillStyle = "#14181F"; x.font = "700 14px system-ui, sans-serif";
+      x.fillText(aw, gx+12, gy+27); x.fillText(hm, gx+12, gy+48);
+      if (final) {
+        x.textAlign = "right"; x.font = "700 14px ui-monospace, Menlo, monospace";
+        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
+        x.fillText(String(g.awayScore), gx+58, gy+27);
+        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
+        x.fillText(String(g.homeScore), gx+58, gy+48);
+      }
+      // graffiti tag centered on the right half of the card
+      const tv = tagText(tags[g.gamePk]);
+      if (tv) drawGraffitiTag(x, tv, gx + CW*0.62, gy + CH/2, CW*0.66);
+    });
+    cv.toBlob(async (blob)=>{
+      if (!blob) { setSlateCopied("err"); return; }
+      try {
+        await navigator.clipboard.write([ new window.ClipboardItem({ "image/png": blob }) ]);
+        setSlateCopied("ok");
+      } catch {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `mlb-slate-${start}.png`; a.click();
+        URL.revokeObjectURL(url);
+        setSlateCopied("dl");
+      }
+      setTimeout(()=>setSlateCopied(null), 2000);
+    }, "image/png");
+  };
+  useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied }); }, [load, busy, onReady, slateCopied, days, tags]);
 
   /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
@@ -1461,22 +1565,9 @@ function GameModal({ m, tags, setTag, onClose }) {
       x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
       x.fillText(String(g.homeScore), cx+cw-14, cy+56);
     }
-    // angled red tag, vertically centered on the right (indicators-off look)
+    // tagged play in neon-graffiti style, vertically centered on the right
     if (tagVal) {
-      x.save();
-      x.font = "700 11px system-ui, sans-serif";
-      const th = 17;
-      const tw = Math.min(x.measureText(tagVal).width + 12, cw-16);
-      // anchor: right edge, vertical middle of the card
-      x.translate(cx+cw-8-tw, cy+ch/2 - th/2);
-      x.rotate(-2*Math.PI/180);
-      x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
-      x.beginPath();
-      x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
-      x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
-      x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
-      x.fillText(tagVal, 6, th/2+1, tw-10);
-      x.restore();
+      drawGraffitiTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.72);
     }
     // copy PNG to clipboard
     cv.toBlob(async (blob) => {
@@ -2029,6 +2120,29 @@ export default function App() {
                     <path d="M20 17.5A8 8 0 0 1 5 16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
                     <path d="M4 20.5V16h4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
+                </button>
+              )}
+              {tab==="calendar" && cal && cal.copySlate && (
+                <button onClick={()=>cal.copySlate()}
+                  aria-label="Copy today's slate" title="Copy today's slate with tagged picks"
+                  style={{ width:30, height:30, borderRadius:5,
+                    border:`1px solid ${cal.slateCopied==="ok"?C.over:C.ink}`,
+                    background:cal.slateCopied==="ok"?C.over:"#fff",
+                    color:cal.slateCopied==="ok"?"#fff":C.ink, cursor:"pointer",
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    padding:0 }}>
+                  {cal.slateCopied==="ok" ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <path d="M5 13l4 4L19 7" stroke="#fff" strokeWidth="2.4"
+                        strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <rect x="3" y="7" width="18" height="14" rx="2" stroke={C.ink} strokeWidth="2"/>
+                      <path d="M8 7l1.5-2.5h5L16 7" stroke={C.ink} strokeWidth="2" strokeLinejoin="round"/>
+                      <circle cx="12" cy="14" r="3.2" stroke={C.ink} strokeWidth="2"/>
+                    </svg>
+                  )}
                 </button>
               )}
             </div>
