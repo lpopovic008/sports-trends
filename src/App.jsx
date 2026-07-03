@@ -12,18 +12,19 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  /* indicator colors — grouped pairs share a hue family (deep = primary, light = tint) */
-  rematch:"#8B5CF6",       /* violet: chess-move pitcher — standalone */
+  /* indicator colors — all neon; each group's members sit close in hue,
+     while different groups stay far apart on the wheel */
+  rematch:"#8B5CF6",       /* neon violet — group: pitcher/pen workload */
   rematchLight:"#C4B5FD",  /* light violet: faced but short outing */
-  getaway:"#2196F3",       /* blue: packing up, last game before the flight */
-  turn:"#A7D8FF",          /* light blue: businessman's special, abrupt turnaround */
-  bigday:"#FF8C1A",        /* amber-orange: 10-run scoreboard explosion */
-  echo:"#FFC169",          /* light amber: momentum wave */
-  pen:"#D6249B",           /* magenta: bullpen leaned on hard, arms cooked */
-  rest:"#FF9FD8",          /* light pink: starter pushed up on short rest */
-  extras:"#C81E3A",        /* deep red: extra-inning marathon the day before */
-  late:"#FF8FA3",          /* light red: clutch late-night drama */
-  travel:"#06D6E0",        /* teal/cyan: jet-lagged west→east — standalone */
+  rest:"#A855F7",          /* neon purple — group: pitcher/pen workload */
+  pen:"#C026D3",           /* neon fuchsia-purple — group: pitcher/pen workload */
+  getaway:"#2E9DFF",       /* neon blue — group: schedule turnaround */
+  turn:"#00D4FF",          /* neon cyan-blue — group: schedule turnaround */
+  bigday:"#FF8C1A",        /* neon orange — group: scoring momentum */
+  echo:"#FFB627",          /* neon amber — group: scoring momentum */
+  extras:"#FF3355",        /* neon red — group: fatigue/drama */
+  late:"#FF1F4B",          /* neon crimson — group: fatigue/drama */
+  travel:"#FF2E9E",        /* neon magenta-pink — group: fatigue/drama */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -912,10 +913,9 @@ function TravelTrends({ tags, setTag, onReady }) {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", flexWrap:"wrap", marginBottom:10 }}>
-      {TREND_SLOTS.map((s,i)=>(
-        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230,
-          marginLeft: i===0 ? 0 : (s.newGroup ? 22 : 10), marginBottom:8 }}>
+    <div style={{ display:"flex", gap:"8px 18px", flexWrap:"wrap", marginBottom:10 }}>
+      {TREND_SLOTS.map(s=>(
+        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230 }}>
           <span style={{ width:13, height:9, borderRadius:2, background:s.color,
             flexShrink:0, marginTop:3 }} />
           <span style={{ display:"flex", flexDirection:"column", lineHeight:1.25 }}>
@@ -933,28 +933,27 @@ function Pill({ children, color, title }) {
 }
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
-// newGroup:true starts a new visual cluster (extra spacing before it); grouped
-// pairs share a color family and sit tight against each other.
+// order + color only signal grouping (close hues); no physical indentation
 const TREND_SLOTS = [
-  { key:"rematch", color:C.rematch, label:"Pitcher rematch", newGroup:true,
+  { key:"rematch", color:C.rematch, label:"Pitcher rematch",
     desc:"Team has faced this pitcher this year already" },
-  { key:"getaway", color:C.getaway, label:"Getaway day", newGroup:true,
-    desc:"Last game of the series before the team travels to its next city" },
-  { key:"turn",    color:C.turn,    label:"Day after night", newGroup:false,
-    desc:"Night game yesterday, day game today — short turnaround" },
-  { key:"bigday",  color:C.bigday,  label:"10+ runs", newGroup:true,
-    desc:"Team scored 10+ runs yesterday" },
-  { key:"echo",    color:C.echo,    label:"Streak echo", newGroup:false,
-    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
-  { key:"pen",     color:C.pen,     label:"Bullpen fatigue", newGroup:true,
-    desc:"Bullpen threw heavy innings in the last day" },
-  { key:"rest",    color:C.rest,    label:"Short rest", newGroup:false,
+  { key:"rest",    color:C.rest,    label:"Short rest",
     desc:"Starter is going on 4 days' rest or fewer" },
-  { key:"extras",  color:C.extras,  label:"Extra innings hangover", newGroup:true,
+  { key:"pen",     color:C.pen,     label:"Bullpen fatigue",
+    desc:"Bullpen threw heavy innings in the last day" },
+  { key:"getaway", color:C.getaway, label:"Getaway day",
+    desc:"Last game of the series before the team travels to its next city" },
+  { key:"turn",    color:C.turn,    label:"Day after night",
+    desc:"Night game yesterday, day game today — short turnaround" },
+  { key:"bigday",  color:C.bigday,  label:"10+ runs",
+    desc:"Team scored 10+ runs yesterday" },
+  { key:"echo",    color:C.echo,    label:"Streak echo",
+    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
+  { key:"extras",  color:C.extras,  label:"Extra innings hangover",
     desc:"Played extra innings yesterday, taxing the bullpen" },
-  { key:"late",    color:C.late,    label:"Late go-ahead", newGroup:false,
+  { key:"late",    color:C.late,    label:"Late go-ahead",
     desc:"Team never led until the 8th inning or later yesterday" },
-  { key:"travel",  color:C.travel,  label:"B2B travel", newGroup:true,
+  { key:"travel",  color:C.travel,  label:"B2B travel",
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
@@ -971,14 +970,13 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {final && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
-        {showInd && TREND_SLOTS.map((slot,i)=>{
+        {showInd && TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
           let color = slot.color;
           if (slot.key==="rematch" && present)
             color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ width:13, height:11, borderRadius:2,
-              marginLeft: i>0 && slot.newGroup ? 4 : 0,
               background: present ? color : "transparent",
               boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
               opacity: present ? 1 : 0.45 }} />;
