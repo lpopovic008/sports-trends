@@ -1308,8 +1308,14 @@ async function loadLineup(game, side, date) {
     const bj = await br.json();
     const which = last.teams.home.team.id===teamId ? "home" : "away";
     const t = bj.teams[which];
-    const players = (t.battingOrder||[]).slice(0,9).map((pid,i)=>({
-      id:pid, name:t.players?.["ID"+pid]?.person?.fullName || `#${pid}`, order:i+1 }));
+    // battingOrder on each player is "SO0" (slot, sub#00 = started that slot);
+    // filter to starters only so a mid-game substitution doesn't bump the
+    // original starter out of the projected lineup.
+    const starters = Object.values(t.players||{})
+      .filter(p=>typeof p.battingOrder==="string" && p.battingOrder.endsWith("00"))
+      .sort((a,b)=>a.battingOrder.localeCompare(b.battingOrder));
+    const players = starters.slice(0,9).map((p,i)=>({
+      id:p.person.id, name:p.person.fullName, order:i+1 }));
     return { source:"projected", players };
   } catch { return { source:"none", players:[] }; }
 }
