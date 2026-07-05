@@ -1918,8 +1918,16 @@ function TagsView({ tags, setResult }) {
       };
     });
   }, [rows]);
-  // aim for ~8 visible dots regardless of how many points there are
-  const dotStride = Math.max(1, Math.ceil(chartData.length / 8));
+  // dots only at local highs/lows (direction changes) plus the first/last point
+  const dotIdx = useMemo(() => {
+    const s = new Set();
+    chartData.forEach((d,i)=>{
+      if (i===0 || i===chartData.length-1) { s.add(i); return; }
+      const prev = chartData[i-1].net, next = chartData[i+1].net;
+      if ((d.net>prev && d.net>next) || (d.net<prev && d.net<next)) s.add(i);
+    });
+    return s;
+  }, [chartData]);
 
   const resBtn = (r, val, label, color) => {
     const on = r.result === val;
@@ -2016,8 +2024,7 @@ function TagsView({ tags, setResult }) {
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
                   <Line type="linear" dataKey="net" stroke={C.blue} strokeWidth={2}
                     dot={(p)=>{
-                      const last = p.index === chartData.length-1;
-                      if (p.index % dotStride !== 0 && !last) return <React.Fragment key={p.index} />;
+                      if (!dotIdx.has(p.index)) return <React.Fragment key={p.index} />;
                       return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={C.blue} />;
                     }}
                     activeDot={{ r:4 }} isAnimationActive={false} />
