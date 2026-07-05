@@ -1898,16 +1898,16 @@ function TagsView({ tags, setResult }) {
   const graded = decided + pushes;
   const pct = decided > 0 ? Math.round((wins/decided)*100) : null;
 
-  // cumulative net (W = +1, L = -1, P = no change). Built from the SAME
-  // ordered list as the plays section: the list is newest-first, so we
-  // reverse it to run oldest→newest for a correct running total, then plot
-  // left-to-right. Each point gets a unique index + matchup so clicking it
-  // is unambiguous.
+  // cumulative net (W = +1, L = -1). Pushes don't move the record, so they're
+  // left off the graph entirely. Built from the SAME ordered list as the
+  // plays section: the list is newest-first, so we reverse it to run oldest→
+  // newest for a correct running total, then plot left-to-right. Each point
+  // gets a unique index + matchup so clicking it is unambiguous.
   const chartData = useMemo(() => {
-    const chrono = rows.filter(r=>r.result).slice().reverse();  // oldest → newest, list order
+    const chrono = rows.filter(r=>r.result==="W" || r.result==="L").slice().reverse();
     let net = 0;
     return chrono.map((r,i) => {
-      net += r.result==="W" ? 1 : r.result==="L" ? -1 : 0;
+      net += r.result==="W" ? 1 : -1;
       const matchup = r.away && r.home
         ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : "";
       return {
@@ -1918,6 +1918,8 @@ function TagsView({ tags, setResult }) {
       };
     });
   }, [rows]);
+  // aim for ~8 visible dots regardless of how many points there are
+  const dotStride = Math.max(1, Math.ceil(chartData.length / 8));
 
   const resBtn = (r, val, label, color) => {
     const on = r.result === val;
@@ -1979,7 +1981,7 @@ function TagsView({ tags, setResult }) {
           </div>
 
           {/* cumulative net chart */}
-          <div className="ts-record-chart" style={{ flex:1, minWidth:220, height:120 }}>
+          <div className="ts-record-chart" style={{ flex:1, minWidth:220, height:240 }}>
             {chartData.length < 2 ? (
               <div style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark,
                 display:"flex", alignItems:"center", height:"100%" }}>
@@ -2012,8 +2014,12 @@ function TagsView({ tags, setResult }) {
                     );
                   }} />
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
-                  <Line type="monotone" dataKey="net" stroke={C.blue} strokeWidth={2}
-                    dot={{ r:2.5, fill:C.blue, strokeWidth:0 }}
+                  <Line type="linear" dataKey="net" stroke={C.blue} strokeWidth={2}
+                    dot={(p)=>{
+                      const last = p.index === chartData.length-1;
+                      if (p.index % dotStride !== 0 && !last) return <React.Fragment key={p.index} />;
+                      return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={C.blue} />;
+                    }}
                     activeDot={{ r:4 }} isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
