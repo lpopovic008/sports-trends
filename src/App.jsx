@@ -1980,7 +1980,6 @@ function TagsView({ tags, setResult }) {
               <span style={{ color:C.over }}>{wins}</span>
               <span style={{ color:C.ruleDark }}>–</span>
               <span style={{ color:C.under }}>{losses}</span>
-              {pushes>0 && <span style={{ color:C.blue }}>–{pushes}</span>}
             </div>
             <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
               {rangeLabel}{pct!=null ? ` · ${pct}% win` : ""}</div>
