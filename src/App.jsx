@@ -94,6 +94,12 @@ const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
+// settled-bet tint for a tagged game's exported background: W/L/P -> color, else null
+const RESULT_BG = { W:"rgba(27,127,92,0.20)", L:"rgba(215,38,61,0.18)", P:"rgba(43,76,126,0.18)" };
+const tagResultBg = (entry) => {
+  const result = entry && typeof entry === "object" ? entry.result : null;
+  return result ? RESULT_BG[result] : null;
+};
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
 // Draw the red play tag on a canvas, angled, vertically centered at (cx,cy),
@@ -101,9 +107,9 @@ const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { h
 function drawRedTag(x, text, cx, cy, maxW) {
   if (!text) return;
   x.save();
-  x.font = "700 11px system-ui, sans-serif";
-  const th = 17;
-  const tw = Math.min(x.measureText(text).width + 12, maxW);
+  x.font = "700 13px system-ui, sans-serif";
+  const th = 20;
+  const tw = Math.min(x.measureText(text).width + 14, maxW);
   x.translate(cx - tw/2, cy - th/2);
   x.rotate(-2 * Math.PI/180);
   x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
@@ -111,7 +117,7 @@ function drawRedTag(x, text, cx, cy, maxW) {
   x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
   x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
   x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
-  x.fillText(text, 6, th/2+1, tw-10);
+  x.fillText(text, 7, th/2+1, tw-12);
   x.restore();
 }
 
@@ -367,7 +373,7 @@ function TravelTrends({ tags, setTag, onReady }) {
             awayId:away.id, awayName:away.name, venueTz, time:g.gameDate,
             gameDay: g.officialDate || d.date,
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
-            isFinal, isLive, inning:g.linescore?.currentInning, inningState:g.linescore?.inningState,
+            isFinal, isLive,
             awayScore: g.teams.away.score, homeScore: g.teams.home.score,
             awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
             gamePk:g.gamePk, _raw:g,
@@ -644,7 +650,8 @@ function TravelTrends({ tags, setTag, onReady }) {
     // one compact row per tagged pick: TIME · AWAY@HOME · tag
     games.forEach((g,i)=>{
       const gx = PADX, gy = HEAD + i*(RH+GAP);
-      const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF";
+      const bg = tagResultBg(tags[g.gamePk])
+        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
       const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
@@ -883,14 +890,11 @@ function NowLine() {
   );
 }
 
-const INNING_ABBR = { Top:"Top", Bottom:"Bot", Middle:"Mid", End:"End" };
-
 function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
   const live = g.isLive && !final;
-  const liveLabel = g.inning ? `${INNING_ABBR[g.inningState]||""} ${g.inning}`.trim() : "Live";
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
@@ -920,7 +924,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       )}
       <div style={{ fontFamily:MONO, fontSize:8, textAlign:"right", lineHeight:1.2,
         color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
-        {final ? "FINAL" : live ? liveLabel : time}</div>
+        {final ? "FINAL" : live ? "LIVE" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
         teamId={g.awayId} t={t} showInd={showInd} tag={null} />
       <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
@@ -1557,7 +1561,8 @@ function GameModal({ m, tags, setTag, onClose }) {
     const cv = document.createElement("canvas");
     cv.width = W*scale; cv.height = H*scale;
     const x = cv.getContext("2d"); x.scale(scale, scale);
-    const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF";
+    const bg = tagResultBg(tags?.[g.gamePk])
+      || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
     const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
     const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
     const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
