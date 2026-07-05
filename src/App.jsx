@@ -984,6 +984,13 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     return { gs:log.length, ip, k:sum("strikeOuts"), bb:sum("baseOnBalls"), h:sum("hits"), er, era };
   }, [log]);
 
+  // count starts per opponent so a repeat matchup can be bolded in the log
+  const oppCounts = useMemo(() => {
+    const m = {};
+    (log||[]).forEach(s=>{ const id = s.opponent?.id; if (id!=null) m[id] = (m[id]||0)+1; });
+    return m;
+  }, [log]);
+
   return (
     <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
@@ -1023,16 +1030,20 @@ function PitcherSeasonModal({ pid, name, onClose }) {
           </div>
           {log===undefined && <div style={{ padding:"10px 16px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>}
           {log && log.length===0 && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
-          {log && log.map((s,i)=>(
+          {log && log.map((s,i)=>{
+            const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
+            return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
               gap:8, padding:"5px 16px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.date}</span>
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft,
+                fontWeight: repeatOpp ? 800 : 400 }}>{
                 TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
                 || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
               <span style={{ fontFamily:MONO, fontSize:12.5 }}><PLine s={s}/></span>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
