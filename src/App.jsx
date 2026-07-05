@@ -1893,18 +1893,21 @@ function TagsView({ tags, setResult }) {
 
   const wins = rows.filter(r=>r.result==="W").length;
   const losses = rows.filter(r=>r.result==="L").length;
-  const graded = wins + losses;
-  const pct = graded > 0 ? Math.round((wins/graded)*100) : null;
+  const pushes = rows.filter(r=>r.result==="P").length;
+  const decided = wins + losses;   // pushes don't count toward win% or net
+  const graded = decided + pushes;
+  const pct = decided > 0 ? Math.round((wins/decided)*100) : null;
 
-  // cumulative net (W = +1, L = -1). Built from the SAME ordered list as the
-  // plays section: the list is newest-first, so we reverse it to run oldest→
-  // newest for a correct running total, then plot left-to-right. Each point
-  // gets a unique index + matchup so clicking it is unambiguous.
+  // cumulative net (W = +1, L = -1, P = no change). Built from the SAME
+  // ordered list as the plays section: the list is newest-first, so we
+  // reverse it to run oldest→newest for a correct running total, then plot
+  // left-to-right. Each point gets a unique index + matchup so clicking it
+  // is unambiguous.
   const chartData = useMemo(() => {
     const chrono = rows.filter(r=>r.result).slice().reverse();  // oldest → newest, list order
     let net = 0;
     return chrono.map((r,i) => {
-      net += r.result==="W" ? 1 : -1;
+      net += r.result==="W" ? 1 : r.result==="L" ? -1 : 0;
       const matchup = r.away && r.home
         ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : "";
       return {
@@ -1967,6 +1970,7 @@ function TagsView({ tags, setResult }) {
               <span style={{ color:C.over }}>{wins}</span>
               <span style={{ color:C.ruleDark }}>–</span>
               <span style={{ color:C.under }}>{losses}</span>
+              {pushes>0 && <span style={{ color:C.blue }}>–{pushes}</span>}
             </div>
             <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
               {rangeLabel}{pct!=null ? ` · ${pct}% win` : ""}</div>
@@ -1999,7 +2003,7 @@ function TagsView({ tags, setResult }) {
                           {d.matchup ? ` · ${d.matchup}` : ""}</div>
                         <div>{d.text}</div>
                         <div>
-                          <span style={{ color:d.result==="W"?C.over:C.under, fontWeight:700 }}>{d.result}</span>
+                          <span style={{ color:d.result==="W"?C.over:d.result==="L"?C.under:C.blue, fontWeight:700 }}>{d.result}</span>
                           <span style={{ color:C.ruleDark }}>{"  ·  net "}</span>
                           <span style={{ fontWeight:700,
                             color:d.net>0?C.over:d.net<0?C.under:C.ink }}>{d.net>0?"+":""}{d.net}</span>
@@ -2026,10 +2030,12 @@ function TagsView({ tags, setResult }) {
       ) : (
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
-          const graded = r.result==="W" || r.result==="L";
+          const graded = r.result==="W" || r.result==="L" || r.result==="P";
           const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
-                     : r.result==="L" ? "rgba(215,38,61,0.09)" : "#fff";
-          const edge = r.result==="W" ? C.over : r.result==="L" ? C.under : C.rule;
+                     : r.result==="L" ? "rgba(215,38,61,0.09)"
+                     : r.result==="P" ? "rgba(43,76,126,0.09)" : "#fff";
+          const edge = r.result==="W" ? C.over : r.result==="L" ? C.under
+                     : r.result==="P" ? C.blue : C.rule;
 
           if (graded) {
             // compact one-line row so more plays fit on screen
@@ -2038,7 +2044,7 @@ function TagsView({ tags, setResult }) {
                 border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
                 background:tint, padding:"5px 10px" }}>
                 <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700,
-                  color: r.result==="W"?C.over:C.under, flexShrink:0, width:14 }}>{r.result}</span>
+                  color: r.result==="W"?C.over:r.result==="L"?C.under:C.blue, flexShrink:0, width:14 }}>{r.result}</span>
                 <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:700, color:C.inkSoft,
                   flexShrink:0, whiteSpace:"nowrap" }}>
                   {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}</span>
@@ -2048,7 +2054,7 @@ function TagsView({ tags, setResult }) {
                 <span style={{ fontFamily:MONO, fontSize:9.5, color:C.ruleDark, flexShrink:0,
                   whiteSpace:"nowrap", textAlign:"right" }}>
                   {r.date ? calDay(r.date).md : ""}{r.time ? ` · ${fmtTime(r.time)}` : ""}</span>
-                <button onClick={()=>setResult(r.gamePk, null)} title="Undo W/L"
+                <button onClick={()=>setResult(r.gamePk, null)} title="Undo result"
                   style={{ flexShrink:0, width:26, height:24, borderRadius:3, cursor:"pointer",
                     border:`1px solid ${C.rule}`, background:"#fff", color:C.inkSoft,
                     fontFamily:MONO, fontSize:13, lineHeight:1, padding:0 }}>↩</button>
@@ -2078,6 +2084,7 @@ function TagsView({ tags, setResult }) {
               <div style={{ display:"flex", gap:5, flexShrink:0 }}>
                 {resBtn(r, "W", "W", C.over)}
                 {resBtn(r, "L", "L", C.under)}
+                {resBtn(r, "P", "P", C.blue)}
               </div>
             </div>
           );
