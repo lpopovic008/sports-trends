@@ -362,11 +362,13 @@ function TravelTrends({ tags, setTag, onReady }) {
           const venueTz = TEAM_TZ[home.id] ?? "?";
           const ap = g.teams.away.probablePitcher, hp = g.teams.home.probablePitcher;
           const isFinal = g.status?.abstractGameState==="Final";
+          const isLive = g.status?.abstractGameState==="Live";
           dayGames[d.date].push({ homeId:home.id, homeName:home.name,
             awayId:away.id, awayName:away.name, venueTz, time:g.gameDate,
             gameDay: g.officialDate || d.date,
             awayPid:ap?.id, awayPname:ap?.fullName, homePid:hp?.id, homePname:hp?.fullName,
-            isFinal, awayScore: g.teams.away.score, homeScore: g.teams.home.score,
+            isFinal, isLive, inning:g.linescore?.currentInning, inningState:g.linescore?.inningState,
+            awayScore: g.teams.away.score, homeScore: g.teams.home.score,
             awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
             gamePk:g.gamePk, _raw:g,
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
@@ -829,8 +831,9 @@ const TREND_SLOTS = [
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
+function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
   const keys = t.keysFor(teamId);
+  const showScore = final || live;
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
@@ -838,9 +841,9 @@ function TeamRow({ abbr, score, hits, won, final, teamId, t, showInd=true }) {
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
-        color: final ? (won?C.ink:C.inkSoft) : C.ruleDark }}>{final ? score : ""}</span>
+        color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
-        {final && hits!=null ? hits : ""}</span>
+        {showScore && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {showInd && TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
@@ -880,10 +883,14 @@ function NowLine() {
   );
 }
 
+const INNING_ABBR = { Top:"Top", Bottom:"Bot", Middle:"Mid", End:"End" };
+
 function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
+  const live = g.isLive && !final;
+  const liveLabel = g.inning ? `${INNING_ABBR[g.inningState]||""} ${g.inning}`.trim() : "Live";
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
@@ -911,11 +918,12 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
-      <div style={{ fontFamily:MONO, fontSize:8, color:C.ruleDark, textAlign:"right", lineHeight:1.2 }}>
-        {final ? "FINAL" : time}</div>
-      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final}
+      <div style={{ fontFamily:MONO, fontSize:8, textAlign:"right", lineHeight:1.2,
+        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+        {final ? "FINAL" : live ? liveLabel : time}</div>
+      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
         teamId={g.awayId} t={t} showInd={showInd} tag={null} />
-      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final}
+      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
         teamId={g.homeId} t={t} showInd={showInd} tag={null} />
     </div>
   );
@@ -1905,8 +1913,10 @@ function TagsView({ tags, setResult }) {
   // gets a unique index + matchup so clicking it is unambiguous.
   const chartData = useMemo(() => {
     const chrono = rows.filter(r=>r.result==="W" || r.result==="L").slice().reverse();
+    if (!chrono.length) return [];
     let net = 0;
-    return chrono.map((r,i) => {
+    const origin = { i:0, label:"", net:0, result:null, matchup:"", text:"" };
+    const points = chrono.map((r,i) => {
       net += r.result==="W" ? 1 : -1;
       const matchup = r.away && r.home
         ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : "";
@@ -1917,6 +1927,7 @@ function TagsView({ tags, setResult }) {
         text: r.text.length>22 ? r.text.slice(0,21)+"…" : r.text,
       };
     });
+    return [origin, ...points];
   }, [rows]);
   // dots only at local highs/lows (direction changes) plus the first/last point
   const dotIdx = useMemo(() => {
@@ -1992,11 +2003,11 @@ function TagsView({ tags, setResult }) {
             {chartData.length < 2 ? (
               <div style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark,
                 display:"flex", alignItems:"center", height:"100%" }}>
-                Grade at least 2 plays in this range to see the trend.</div>
+                Grade at least 1 play in this range to see the trend.</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top:8, right:14, bottom:0, left:0 }}>
-                  <XAxis dataKey="i" type="number" domain={[1, chartData.length]}
+                  <XAxis dataKey="i" type="number" domain={[0, chartData.length-1]}
                     tick={{ fontFamily:MONO, fontSize:8, fill:C.inkSoft }}
                     axisLine={{ stroke:C.rule }} tickLine={false}
                     allowDecimals={false} minTickGap={16} padding={{ left:6, right:6 }} />
@@ -2005,6 +2016,12 @@ function TagsView({ tags, setResult }) {
                   <Tooltip content={({ active, payload })=>{
                     if(!active || !payload || !payload.length) return null;
                     const d = payload[0].payload;
+                    if (!d.result) return (
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
+                        padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
+                        <div style={{ color:C.inkSoft }}>Start</div>
+                      </div>
+                    );
                     return (
                       <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
                         padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
