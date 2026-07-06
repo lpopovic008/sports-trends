@@ -12,13 +12,14 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  /* indicator colors — each evokes the trend */
-  rematch:"#8B5CF6",       /* neon indigo/violet: chess-move pitcher */
+  /* indicator colors — a five-color neon graffiti set, ordered so each
+     swatch sits next to its nearest hue on the color wheel */
+  rematch:"#8B5CF6",       /* neon violet: chess-move pitcher */
   rematchLight:"#C4B5FD",  /* light neon violet: faced but short outing */
-  bigday:"#FF8C1A",        /* neon amber-orange: 10-run scoreboard explosion */
-  late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
-  echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
-  travel:"#F215A6",        /* neon magenta: jet-lagged west→east, distinct from violet */
+  travel:"#F4289B",        /* neon pink: jet-lagged west→east */
+  late:"#FF8C1A",          /* neon orange: clutch late-night drama */
+  bigday:"#A0EE26",        /* neon lime: 10-run scoreboard explosion */
+  echo:"#16A2DF",          /* neon blue: momentum wave */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -811,14 +812,15 @@ function TravelTrends({ tags, setTag, onReady }) {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:10 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:10 }}>
       {TREND_SLOTS.map(s=>(
-        <div key={s.key} style={{ display:"flex", alignItems:"center", gap:6, width:"100%" }}>
-          <span style={{ width:13, height:9, borderRadius:2, background:s.color, flexShrink:0 }} />
-          <span style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:C.ink, flexShrink:0,
-            whiteSpace:"nowrap" }}>{s.label}</span>
-          <span style={{ fontFamily:SANS, fontSize:10.5, color:C.inkSoft, flex:"1 1 auto", minWidth:0,
-            whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{s.desc}</span>
+        <div key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, width:"100%" }}>
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color,
+            flexShrink:0, marginTop:3 }} />
+          <span style={{ display:"flex", flexDirection:"column", lineHeight:1.25, minWidth:0 }}>
+            <span style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:C.ink }}>{s.label}</span>
+            <span style={{ fontFamily:SANS, fontSize:10.5, color:C.inkSoft }}>{s.desc}</span>
+          </span>
         </div>
       ))}
     </div>
@@ -833,14 +835,14 @@ function Pill({ children, color, title }) {
 const TREND_SLOTS = [
   { key:"rematch", color:C.rematch, label:"Pitcher rematch",
     desc:"Team has faced this pitcher this year already" },
-  { key:"bigday",  color:C.bigday,  label:"10+ runs",
-    desc:"Team scored 10+ runs yesterday" },
-  { key:"late",    color:C.late,    label:"Late go-ahead",
-    desc:"Team never led until the 8th inning or later yesterday" },
-  { key:"echo",    color:C.echo,    label:"Streak echo",
-    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel",  color:C.travel,  label:"B2B travel",
     desc:"Team played out west yesterday, plays East today on back-to-back days" },
+  { key:"late",    color:C.late,    label:"Late go-ahead",
+    desc:"Team never led until the 8th inning or later yesterday" },
+  { key:"bigday",  color:C.bigday,  label:"10+ runs",
+    desc:"Team scored 10+ runs yesterday" },
+  { key:"echo",    color:C.echo,    label:"Streak echo",
+    desc:"Team just snapped a 10+ game win or loss streak yesterday" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
