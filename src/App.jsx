@@ -14,11 +14,11 @@ const C = {
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — a five-color neon graffiti set, ordered so each
      swatch sits next to its nearest hue on the color wheel */
-  rematch:"#F4289B",       /* neon pink: chess-move pitcher */
-  rematchLight:"#F9A8D4",  /* light neon pink: faced but short outing */
+  rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
+  rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
-  bigday:"#16A2DF",        /* neon blue: 10-run scoreboard explosion */
+  bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#A0EE26",          /* neon lime: momentum wave */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
