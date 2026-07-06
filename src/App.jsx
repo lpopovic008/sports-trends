@@ -102,30 +102,68 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Paint a play tag directly onto the card, angled like a spray-painted tag,
-// no background box. Each letter cycles through the palette, with a dark
-// translucent outline stroke so it stays legible over any background.
 const SPRAY_COLORS = ["#F4289B", "#16A2DF", "#A0EE26"];
+
+// deterministic pseudo-random from a string seed, so a given tag's splatter
+// pattern stays put across re-renders instead of jittering every export
+function seededRandom(seed) {
+  let h = 0;
+  for (let i=0; i<seed.length; i++) h = (h*31 + seed.charCodeAt(i)) >>> 0;
+  return () => { h = (h*1103515245 + 12345) >>> 0; return (h % 10000) / 10000; };
+}
+
+// Black spray-paint badge: paint splatter blots behind bold gradient-filled,
+// black-outlined graffiti lettering, angled like a sprayed tag.
 function drawSprayTag(x, text, cx, cy, maxW, fontSize = 20) {
   if (!text) return;
   x.save();
   x.font = `400 ${fontSize}px 'Graffiti Outline', system-ui, sans-serif`;
-  const full = x.measureText(text).width;
-  const scale = full > maxW ? maxW / full : 1;
-  x.translate(cx, cy);
-  x.rotate(-5 * Math.PI/180);
+  const rawW = x.measureText(text).width;
+  const scale = rawW > maxW - 28 ? (maxW-28) / rawW : 1;
+  const full = rawW * scale;
+
+  const padX = 14, padY = 10;
+  const boxW = Math.min(full + padX*2, maxW);
+  const boxH = fontSize + padY*2;
+  x.translate(cx - boxW/2, cy - boxH/2);
+  x.rotate(-3 * Math.PI/180);
+
+  // black badge background
+  const rr = 6;
+  x.fillStyle = "#0A0A0A";
+  x.beginPath();
+  x.moveTo(rr,0); x.arcTo(boxW,0,boxW,boxH,rr); x.arcTo(boxW,boxH,0,boxH,rr);
+  x.arcTo(0,boxH,0,0,rr); x.arcTo(0,0,boxW,0,rr); x.closePath(); x.fill();
+
+  // spray splatter blots, scattered behind the lettering
+  const rand = seededRandom(text);
+  x.save();
+  x.filter = "blur(1.4px)";
+  for (let i=0; i<7; i++) {
+    const bx = rand()*boxW, by = rand()*boxH, r = 3 + rand()*7;
+    x.globalAlpha = 0.5;
+    x.fillStyle = SPRAY_COLORS[i % SPRAY_COLORS.length];
+    x.beginPath(); x.arc(bx, by, r, 0, Math.PI*2); x.fill();
+  }
+  x.restore();
+
+  // lettering: gradient fill across the word, thick black outline for a
+  // bold, solid, filled-in look (not just an outline)
+  x.translate(boxW/2, boxH/2);
   x.scale(scale, scale);
   x.textAlign = "left"; x.textBaseline = "middle"; x.lineJoin = "round";
-  let cursorX = -full/2, colorIdx = 0;
+  const gradient = x.createLinearGradient(-full/(2*scale), 0, full/(2*scale), 0);
+  gradient.addColorStop(0, SPRAY_COLORS[0]);
+  gradient.addColorStop(0.5, SPRAY_COLORS[1]);
+  gradient.addColorStop(1, SPRAY_COLORS[2]);
+  let cursorX = -rawW/2;
   for (const ch of text) {
     const w = x.measureText(ch).width;
-    if (ch.trim()) {
-      x.lineWidth = 3.5; x.strokeStyle = "rgba(20,24,31,0.55)";
-      x.strokeText(ch, cursorX, 0);
-      x.fillStyle = SPRAY_COLORS[colorIdx % SPRAY_COLORS.length];
-      x.fillText(ch, cursorX, 0);
-      colorIdx++;
-    }
+    x.lineWidth = fontSize * 0.16;
+    x.strokeStyle = "#000";
+    x.strokeText(ch, cursorX, 0);
+    x.fillStyle = gradient;
+    x.fillText(ch, cursorX, 0);
     cursorX += w;
   }
   x.restore();
