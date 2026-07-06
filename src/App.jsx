@@ -14,9 +14,9 @@ const C = {
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — a five-color neon graffiti set, ordered so each
      swatch sits next to its nearest hue on the color wheel */
-  rematch:"#8B5CF6",       /* neon violet: chess-move pitcher */
-  rematchLight:"#C4B5FD",  /* light neon violet: faced but short outing */
-  travel:"#F4289B",        /* neon pink: jet-lagged west→east */
+  rematch:"#F4289B",       /* neon pink: chess-move pitcher */
+  rematchLight:"#F9A8D4",  /* light neon pink: faced but short outing */
+  travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
   bigday:"#A0EE26",        /* neon lime: 10-run scoreboard explosion */
   echo:"#16A2DF",          /* neon blue: momentum wave */
@@ -2184,16 +2184,6 @@ export default function App() {
 
   useEffect(() => {
     document.title = "MLB Trends";
-    const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
-      `<ellipse cx='18' cy='18' rx='14' ry='10' fill='%23964B00' stroke='%23fff' stroke-width='1.5'/>` +
-      `<line x1='10' y1='18' x2='26' y2='18' stroke='%23fff' stroke-width='1.5'/>` +
-      `<line x1='14' y1='12' x2='14' y2='24' stroke='%23fff' stroke-width='1'/>` +
-      `<line x1='18' y1='10' x2='18' y2='26' stroke='%23fff' stroke-width='1'/>` +
-      `<line x1='22' y1='12' x2='22' y2='24' stroke='%23fff' stroke-width='1'/>` +
-      `</svg>`;
-    let link = document.querySelector("link[rel~='icon']");
-    if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
-    link.href = svg;
   }, []);
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
