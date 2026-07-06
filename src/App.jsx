@@ -107,9 +107,9 @@ const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { h
 function drawRedTag(x, text, cx, cy, maxW) {
   if (!text) return;
   x.save();
-  x.font = "700 13px system-ui, sans-serif";
-  const th = 20;
-  const tw = Math.min(x.measureText(text).width + 14, maxW);
+  x.font = "400 16px 'Permanent Marker', system-ui, sans-serif";
+  const th = 23;
+  const tw = Math.min(x.measureText(text).width + 16, maxW);
   x.translate(cx - tw/2, cy - th/2);
   x.rotate(-2 * Math.PI/180);
   x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
@@ -117,7 +117,7 @@ function drawRedTag(x, text, cx, cy, maxW) {
   x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
   x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
   x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
-  x.fillText(text, 7, th/2+1, tw-12);
+  x.fillText(text, 8, th/2+1, tw-14);
   x.restore();
 }
 
@@ -1862,6 +1862,13 @@ function GameModal({ m, tags, setTag, onClose }) {
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
+@font-face {
+  font-family: 'Permanent Marker';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
+}
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
 .ts-cal-col { min-width:166px; }
@@ -2163,6 +2170,8 @@ export default function App() {
   const [cal, setCal] = useState(null);   // { load, busy } from TravelTrends
 
   useEffect(() => {
+    // warm the tag font early so it's ready well before anyone hits export
+    if (document.fonts?.load) document.fonts.load("400 16px 'Permanent Marker'").catch(()=>{});
     document.title = "MLB Trends";
     const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
       `<ellipse cx='18' cy='18' rx='14' ry='10' fill='%23964B00' stroke='%23fff' stroke-width='1.5'/>` +
