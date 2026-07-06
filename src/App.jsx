@@ -835,14 +835,14 @@ function Pill({ children, color, title }) {
 const TREND_SLOTS = [
   { key:"rematch", color:C.rematch, label:"Pitcher rematch",
     desc:"Team has faced this pitcher this year already" },
-  { key:"travel",  color:C.travel,  label:"B2B travel",
-    desc:"Team played out west yesterday, plays East today on back-to-back days" },
-  { key:"late",    color:C.late,    label:"Late go-ahead",
-    desc:"Team never led until the 8th inning or later yesterday" },
   { key:"bigday",  color:C.bigday,  label:"10+ runs",
     desc:"Team scored 10+ runs yesterday" },
+  { key:"late",    color:C.late,    label:"Late go-ahead",
+    desc:"Team never led until the 8th inning or later yesterday" },
   { key:"echo",    color:C.echo,    label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
+  { key:"travel",  color:C.travel,  label:"B2B travel",
+    desc:"West yesterday, East today on back-to-back days" },
 ];
 
 function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
