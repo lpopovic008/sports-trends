@@ -939,9 +939,10 @@ const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 /* on-screen series banding: two dark shades + two lighter shades of gray
    (not hue) so consecutive series read as distinct cells against the
    VS Code editor background, without competing with the syntax-token
-   text colors. Spread wider than a subtle tint so each of the four
-   reads as a clearly different step, not a near-match. */
-const SERIES_BG = ["#141414", "#202020", "#333333", "#464646"];
+   text colors. Evenly spaced (20 apart) and pushed further apart than a
+   subtle tint so each of the four reads as an unmistakably different
+   step at a glance. */
+const SERIES_BG = ["#0e0e0e", "#222222", "#363636", "#4a4a4a"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -1565,8 +1566,8 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
 
       {/* view toggle */}
       <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid ${C.rule}` }}>
-        {tabBtn("last5","Last 5")}
         {tabBtn("vssp", canVs ? `vs ${oppPitcherName.split(" ").slice(-1)[0]}` : "vs SP", canVs)}
+        {tabBtn("last5","Last 5")}
       </div>
 
       <div style={{ padding:"4px 0" }}>
