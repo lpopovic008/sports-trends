@@ -11,7 +11,7 @@ import {
    orange, time = comment green). Series are told apart by a grayscale
    cell background (see SERIES_BG), not by hue. */
 const C = {
-  paper:"#1e1e1e", card:"#252526", ink:"#d4d4d4", inkSoft:"#8a8a8a",
+  paper:"#242424", card:"#2b2b2c", ink:"#d4d4d4", inkSoft:"#8a8a8a",
   rule:"#3c3c3c", ruleDark:"#585858", marker:"#e2c08d", markerDeep:"#b89500",
   over:"#89d185", under:"#f14c4c", blue:"#569cd6",
   accent:"#007acc", accentInk:"#ffffff",   /* VS Code's status-bar/button blue */
@@ -939,8 +939,9 @@ const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 /* on-screen series banding: two dark shades + two lighter shades of gray
    (not hue) so consecutive series read as distinct cells against the
    VS Code editor background, without competing with the syntax-token
-   text colors. */
-const SERIES_BG = ["#1a1a1a", "#222222", "#2c2c2c", "#363636"];
+   text colors. Spread wider than a subtle tint so each of the four
+   reads as a clearly different step, not a near-match. */
+const SERIES_BG = ["#141414", "#202020", "#333333", "#464646"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
