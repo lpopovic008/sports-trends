@@ -712,7 +712,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         x.fillText(time, gx+10, gy+RH/2 + 9);
         // right: red tag, vertically centered
         const tv = tagText(tags[g.gamePk]);
-        drawRedTag(x, tv, gx + CW*0.72, gy + RH/2, CW*0.5);
+        drawRedTag(x, tv, gx + CW*0.73, gy + RH/2, CW*0.56, 22);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -1711,10 +1711,10 @@ function GameModal({ m, tags, setTag, onClose }) {
         x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play as a red tag, vertically centered on the right — bigger
-      // than the daily-slate tag so it fills more of this card
+      // tagged play written big, filling most of the empty space to the
+      // right of the team names/scores
       if (tagVal) {
-        drawRedTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.8, 17);
+        drawRedTag(x, tagVal, cx + cw*0.60, cy + ch/2, cw*0.78, 36);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
