@@ -1643,6 +1643,14 @@ function GameModal({ m, tags, setTag, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [games.length]);
 
+  // lock background scroll while open, so scrolling the modal never
+  // leaks through to the page behind it once you hit the top/bottom
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const aAbbr = TEAM_ABBR[g.awayId]||"?", hAbbr = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
 
@@ -1650,7 +1658,7 @@ function GameModal({ m, tags, setTag, onClose }) {
     <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px",
-      overflowY:"auto" }}>
+      overflowY:"auto", overscrollBehavior:"contain" }}>
 
       {/* side nav arrows — same day's games only */}
       {hasPrev && (
@@ -1677,44 +1685,51 @@ function GameModal({ m, tags, setTag, onClose }) {
           borderTopLeftRadius:6, borderTopRightRadius:6 }}>
         {/* header */}
         <div className="ts-modal-head" style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
-          display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10,
           background:C.paper, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
-          <div style={{ minWidth:0 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
             <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
-              textTransform:"uppercase", color:C.inkSoft }}>{prettyDay(date)} · {time}
+              textTransform:"uppercase", color:C.inkSoft, minWidth:0 }}>{prettyDay(date)} · {time}
               {games.length>1 && <span style={{ color:C.ruleDark }}> · game {idx+1}/{games.length}</span>}</div>
-            <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800, letterSpacing:"-0.01em" }}>
-              {g.awayName} <span style={{ color:C.inkSoft, fontWeight:400 }}>@</span> {g.homeName}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+              {games.length>1 && (
+                <span className="ts-nav-inline" style={{ display:"none", gap:4 }}>
+                  <button onClick={()=>go(-1)} disabled={!hasPrev} aria-label="Previous game"
+                    style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
+                      background:"#fff", color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      cursor:hasPrev?"pointer":"default", lineHeight:1 }}>‹</button>
+                  <button onClick={()=>go(1)} disabled={!hasNext} aria-label="Next game"
+                    style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
+                      background:"#fff", color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      cursor:hasNext?"pointer":"default", lineHeight:1 }}>›</button>
+                </span>
+              )}
+              <button onClick={()=>setTagEditing(v=>!v)}
+                title={tagVal ? "Edit play tag" : "Tag this game"}
+                style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
+                  background:tagVal?"#F2657A":"#fff", color:tagVal?"#fff":C.ink,
+                  borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
+                  textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
+                {tagVal ? "Play ✓" : "Play"}</button>
+              <button onClick={exportCard} title="Copy game image to clipboard"
+                aria-label="Copy game image"
+                style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:"#fff",
+                  color:copied==="ok"?C.over:C.ink,
+                  borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
+                  textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>
+                {copied==="ok" ? "Copied ✓" : copied==="dl" ? "Saved ✓" : copied==="err" ? "Failed" : "Copy"}</button>
+              <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
+                borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
+            </div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-            {games.length>1 && (
-              <span className="ts-nav-inline" style={{ display:"none", gap:4 }}>
-                <button onClick={()=>go(-1)} disabled={!hasPrev} aria-label="Previous game"
-                  style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                    background:"#fff", color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
-                    cursor:hasPrev?"pointer":"default", lineHeight:1 }}>‹</button>
-                <button onClick={()=>go(1)} disabled={!hasNext} aria-label="Next game"
-                  style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                    background:"#fff", color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
-                    cursor:hasNext?"pointer":"default", lineHeight:1 }}>›</button>
-              </span>
-            )}
-            <button onClick={()=>setTagEditing(v=>!v)}
-              title={tagVal ? "Edit play tag" : "Tag this game"}
-              style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
-                background:tagVal?"#F2657A":"#fff", color:tagVal?"#fff":C.ink,
-                borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
-                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
-              {tagVal ? "Play ✓" : "Play"}</button>
-            <button onClick={exportCard} title="Copy game image to clipboard"
-              aria-label="Copy game image"
-              style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:"#fff",
-                color:copied==="ok"?C.over:C.ink,
-                borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
-                textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>
-              {copied==="ok" ? "Copied ✓" : copied==="dl" ? "Saved ✓" : copied==="err" ? "Failed" : "Copy"}</button>
-            <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
-              borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
+          <div style={{ display:"flex", alignItems:"baseline", gap:8, marginTop:4 }}>
+            <span title={g.awayName} style={{ fontFamily:SANS, fontSize:18, fontWeight:800,
+              letterSpacing:"-0.01em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+              minWidth:0, flex:"1 1 auto" }}>{g.awayName}</span>
+            <span style={{ color:C.inkSoft, fontWeight:400, fontFamily:SANS, fontSize:18,
+              flexShrink:0 }}>@</span>
+            <span title={g.homeName} style={{ fontFamily:SANS, fontSize:18, fontWeight:800,
+              letterSpacing:"-0.01em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+              minWidth:0, flex:"1 1 auto", textAlign:"right" }}>{g.homeName}</span>
           </div>
         </div>
 
