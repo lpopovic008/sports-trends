@@ -501,8 +501,10 @@ function TravelTrends({ tags, setTag, onReady }) {
       });
       setDays(out);
 
-      /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ── */
-      const lbFrom = addDays(start,-35), lbTo = addDays(start,-1);
+      /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ──
+         include today so a trend that completes today (game just went final)
+         is picked up on refresh and shows up on the team's next game. */
+      const lbFrom = addDays(start,-35), lbTo = start;
       const lr = await fetch(`${API}/schedule?sportId=1&startDate=${lbFrom}&endDate=${lbTo}&gameType=R`);
       const lj = await lr.json();
       const finals = (lj.dates||[]).flatMap(d=>d.games||[])
@@ -531,10 +533,13 @@ function TravelTrends({ tags, setTag, onReady }) {
       Object.entries(byTeamRes).forEach(([tid, res])=>{
         const sig = detectStreakBreak(res, Number(minStreak)||10);
         if (!sig) return;
-        // find this team's next game from today forward
+        // find this team's next game strictly after the streak-breaking result
+        // (not from a fixed "today" — if that result was today's own game,
+        // searching from today would re-attach the marker to that same game)
+        const lastDate = res[res.length-1].date.slice(0,10);
         let found = null;
-        for (let i=0;i<=5 && !found;i++){
-          const date = addDays(start,i);
+        for (let i=1;i<=5 && !found;i++){
+          const date = addDays(lastDate,i);
           (dayGames[date]||[]).forEach(g=>{
             if (!found && (g.homeId===Number(tid) || g.awayId===Number(tid)))
               found = { date, ...g };
@@ -547,12 +552,17 @@ function TravelTrends({ tags, setTag, onReady }) {
       });
       echoList.sort((a,b)=>a.date.localeCompare(b.date));
 
-      /* ── late go-ahead win: scan yesterday's finals via linescore ── */
+      /* ── late go-ahead win: scan yesterday's (and today's, once final)
+         finals via linescore, so a comeback that completes today shows up
+         on the team's next game as soon as it's refreshed ── */
       const yISO = addDays(start,-1);
-      const yGames = finals.filter(g =>
-        (g.officialDate || g.gameDate.slice(0,10)) === yISO);
+      const yGames = finals.filter(g => {
+        const gd = g.officialDate || g.gameDate.slice(0,10);
+        return gd === yISO || gd === start;
+      });
       const cbResults = await mapPool(yGames, 4, async (g) => {
         const winnerSide = g.teams.home.isWinner ? "home" : "away";
+        const gd = g.officialDate || g.gameDate.slice(0,10);
         try {
           const lr2 = await fetch(`${API}/game/${g.gamePk}/linescore`);
           if (!lr2.ok) return null;
@@ -560,10 +570,12 @@ function TravelTrends({ tags, setTag, onReady }) {
           const sig = detectLateComeback(ls, winnerSide);
           if (!sig) return null;
           const win = g.teams[winnerSide], lose = g.teams[winnerSide==="home"?"away":"home"];
-          // this team's next scheduled game from today forward
+          // this team's next scheduled game strictly after this win (not a
+          // fixed "today" — if this win was today's own game, searching from
+          // today would re-attach the marker to that same game)
           let next = null;
-          for (let i=0;i<=5 && !next;i++){
-            const date = addDays(start,i);
+          for (let i=1;i<=5 && !next;i++){
+            const date = addDays(gd,i);
             (dayGames[date]||[]).forEach(dg=>{
               if (!next && (dg.homeId===win.team.id || dg.awayId===win.team.id))
                 next = { date, awayName:dg.awayName, homeName:dg.homeName };
