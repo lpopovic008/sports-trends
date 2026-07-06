@@ -6,15 +6,17 @@ import {
 
 /* ───────────────────────────── palette ─────────────────────────────
    VS Code Dark+ identity: near-black editor background, panel-gray
-   surfaces, hairline borders. A game's text is colored by its series
-   (see SERIES_TEXT below) rather than a tinted cell background. */
+   surfaces, hairline borders, and syntax-token colors standing in for
+   game data (team = variable blue, score = number green, hits = string
+   orange, time = comment green). Series are told apart by a grayscale
+   cell background (see SERIES_BG), not by hue. */
 const C = {
   paper:"#1e1e1e", card:"#252526", ink:"#d4d4d4", inkSoft:"#8a8a8a",
   rule:"#3c3c3c", ruleDark:"#585858", marker:"#e2c08d", markerDeep:"#b89500",
   over:"#89d185", under:"#f14c4c", blue:"#569cd6",
   accent:"#007acc", accentInk:"#ffffff",   /* VS Code's status-bar/button blue */
-  /* syntax-token colors used in the Plays terminal view */
-  teamText:"#9cdcfe", cmText:"#6a9955",
+  /* syntax-token colors for game data (teams/time/scores/hits) */
+  teamText:"#9cdcfe", numText:"#b5cea8", strText:"#ce9178", cmText:"#6a9955",
   /* integrated-terminal panel for the Plays view */
   term:"#0c0c0c", termBar:"#2d2d2d",
   /* indicator colors — a five-color neon graffiti set, ordered so each
@@ -890,23 +892,23 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true, color=C.ink }) {
+function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
   const keys = t.keysFor(teamId);
   const showScore = final || live;
-  // every game's text shares one color (its series' color) so a series is
-  // told apart at a glance; a loser dims instead of changing color, so
-  // that shared color stays consistent and only opacity/weight carry W/L
+  // syntax-token coloring: team = variable blue, score = number green,
+  // hits = string orange — a loser dims instead of changing color, so
+  // the token colors stay consistent and only opacity/weight carry W/L
   const lost = final && !won;
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
-      <span style={{ fontFamily:MONO, fontSize:13, color,
+      <span style={{ fontFamily:MONO, fontSize:13, color:C.teamText,
         fontWeight: final ? (won?800:400) : 600,
         opacity: lost ? 0.55 : 1 }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
-        color: showScore ? color : C.ruleDark,
+        color: showScore ? C.numText : C.ruleDark,
         opacity: lost ? 0.55 : 1 }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color,
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.strText,
         opacity: lost ? 0.6 : 0.9 }}>
         {showScore && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
@@ -934,11 +936,11 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true,
    2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
 const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
-/* on-screen series coloring: every game in the same series (same two
-   teams, consecutive days) reads as one color — team, score, and hits
-   all share it — like VS Code's bracket-pair colorization telling
-   nesting levels apart by hue instead of background. */
-const SERIES_TEXT = ["#dcdcaa", "#4ec9b0", "#c586c0", "#9cdcfe"];
+/* on-screen series banding: two dark shades + two lighter shades of gray
+   (not hue) so consecutive series read as distinct cells against the
+   VS Code editor background, without competing with the syntax-token
+   text colors. */
+const SERIES_BG = ["#1a1a1a", "#222222", "#2c2c2c", "#363636"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -962,8 +964,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const live = g.isLive && !final;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const bg = C.card;   // flat panel background — series is told apart by text color, not cell shading
-  const seriesColor = g.seriesShade!=null ? SERIES_TEXT[g.seriesShade] : C.ink;
+  const bg = g.seriesShade!=null ? SERIES_BG[g.seriesShade] : C.card;
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   return (
@@ -990,15 +991,15 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       )}
       <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
         display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : seriesColor, fontWeight: live ? 700 : 400,
-        fontStyle: live ? "normal" : "italic", opacity: live ? 1 : 0.85 }}>
+        color: live ? "#E5142B" : C.cmText, fontWeight: live ? 700 : 400,
+        fontStyle: live ? "normal" : "italic" }}>
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-        teamId={g.awayId} t={t} showInd={showInd} tag={null} color={seriesColor} />
+        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
       <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-        teamId={g.homeId} t={t} showInd={showInd} tag={null} color={seriesColor} />
+        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
     </div>
   );
 }
