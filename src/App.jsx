@@ -5,23 +5,20 @@ import {
 } from "recharts";
 
 /* ───────────────────────────── palette ─────────────────────────────
-   Box-score / stat-sheet identity, now a dark terminal: near-black paper,
-   off-white ink, hairline rules like a ruled scorecard on black stock.
-   Signature: a literal highlighter swipe behind every game that matches
-   a trend, and a neon three-color accent set (pink/blue/lime) standing
-   in for primary actions, links, and results. */
+   Box-score / stat-sheet identity. Cool newsprint paper, ink-black
+   tabular numerals, hairline rules like a ruled scorecard. Signature:
+   a literal highlighter swipe behind every game that matches a trend. */
 const C = {
-  paper:"#0A0B0F", card:"#15161D", panel:"#000000", ink:"#EDEEF3", inkSoft:"#8B92A3",
-  rule:"#262832", ruleDark:"#3A3D4C", marker:"#A0EE26", markerDeep:"#7FC71C",
-  over:"#2ED573", under:"#FF4D6D", blue:"#16A2DF",
-  accent:"#16A2DF", accentInk:"#071019",
+  paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
+  rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
+  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — each evokes the trend */
   rematch:"#8B5CF6",       /* neon indigo/violet: chess-move pitcher */
   rematchLight:"#C4B5FD",  /* light neon violet: faced but short outing */
   bigday:"#FF8C1A",        /* neon amber-orange: 10-run scoreboard explosion */
   late:"#FF1F4B",          /* neon crimson: clutch late-night drama */
   echo:"#06D6E0",          /* neon teal/cyan: momentum wave */
-  travel:"#F4289B",        /* neon pink: jet-lagged west→east, distinct from violet */
+  travel:"#F215A6",        /* neon magenta: jet-lagged west→east, distinct from violet */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -98,7 +95,7 @@ const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
 // settled-bet tint for a tagged game's exported background: W/L/P -> color, else null
-const RESULT_BG = { W:"rgba(46,213,115,0.30)", L:"rgba(255,77,109,0.28)", P:"rgba(22,162,223,0.30)" };
+const RESULT_BG = { W:"rgba(27,127,92,0.20)", L:"rgba(215,38,61,0.18)", P:"rgba(43,76,126,0.18)" };
 const tagResultBg = (entry) => {
   const result = entry && typeof entry === "object" ? entry.result : null;
   return result ? RESULT_BG[result] : null;
@@ -281,10 +278,10 @@ const Field = ({ label, children }) => (
 );
 const inputStyle = {
   boxSizing:"border-box", padding:"9px 11px", border:`1px solid ${C.rule}`,
-  borderRadius:2, background:C.card, fontFamily:SANS, fontSize:14, color:C.ink, outline:"none",
+  borderRadius:2, background:"#fff", fontFamily:SANS, fontSize:14, color:C.ink, outline:"none",
 };
 const ErrBox = ({ children }) => (
-  <div style={{ padding:"12px 14px", background:"rgba(255,77,109,0.12)", border:`1px solid ${C.under}`,
+  <div style={{ padding:"12px 14px", background:"#FCEBED", border:`1px solid ${C.under}`,
     borderRadius:2, color:C.under, fontFamily:SANS, fontSize:13, marginBottom:16 }}>{children}</div>
 );
 const Tag = ({ children, tone }) => (
@@ -643,35 +640,35 @@ function TravelTrends({ tags, setTag, onReady }) {
       const cv = document.createElement("canvas");
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
-      x.fillStyle = C.paper; x.fillRect(0,0,W,H);
+      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
       // header
-      x.fillStyle = C.ink; x.font = "800 17px system-ui, sans-serif";
+      x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
       x.textAlign = "left"; x.textBaseline = "alphabetic";
       x.fillText("MLB Trends", PADX, 22);
-      x.fillStyle = C.inkSoft; x.font = "10px ui-monospace, Menlo, monospace";
+      x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
       // one compact row per tagged pick: TIME · AWAY@HOME · tag
       games.forEach((g,i)=>{
         const gx = PADX, gy = HEAD + i*(RH+GAP);
         const bg = tagResultBg(tags[g.gamePk])
-          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.card);
+          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
         const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
         const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
         const rr = 4;
-        x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
+        x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
         x.beginPath();
         x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
         x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
         // left: matchup (+ scores if final)
-        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = C.ink;
+        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
         x.font = "700 13px system-ui, sans-serif";
         let matchup = `${aw} @ ${hm}`;
         if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
         x.fillText(matchup, gx+10, gy+RH/2 - 6);
         // small time under matchup
-        x.fillStyle = C.inkSoft; x.font = "9px ui-monospace, Menlo, monospace";
+        x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
         x.fillText(time, gx+10, gy+RH/2 + 9);
         // right: red tag, vertically centered
         const tv = tagText(tags[g.gamePk]);
@@ -738,9 +735,9 @@ function TravelTrends({ tags, setTag, onReady }) {
               aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
               title={showIndicators ? "Hide indicators" : "Show indicators"}
               style={{ flexShrink:0, width:32, height:32, borderRadius:4,
-                border:`1px solid ${showIndicators ? C.rule : C.accent}`,
-                background: showIndicators ? C.card : C.accent,
-                color: showIndicators ? C.inkSoft : C.accentInk, cursor:"pointer",
+                border:`1px solid ${showIndicators ? C.rule : C.ink}`,
+                background: showIndicators ? "#fff" : C.ink,
+                color: showIndicators ? C.inkSoft : "#fff", cursor:"pointer",
                 display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
               {showIndicators ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -763,14 +760,14 @@ function TravelTrends({ tags, setTag, onReady }) {
                 : d.date===addDays(start,-1) ? "Yesterday"
                 : d.date===addDays(start,-2) ? "2 days ago" : calDay(d.date).wd;
               return (
-              <div key={d.date} ref={isToday?todayColRef:null} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.accent:C.rule}`, borderRadius:3,
+              <div key={d.date} ref={isToday?todayColRef:null} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
                 overflow:"hidden" }}>
                 <div style={{ padding:"5px 7px", borderBottom:`1px solid ${C.rule}`,
-                  background:isToday?C.accent:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
+                  background:isToday?C.ink:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
                   <span style={{ fontFamily:SANS, fontSize:14, fontWeight:700,
-                    color:isToday?C.accentInk:C.ink }}>{calDay(d.date).md}</span>
+                    color:isToday?"#fff":C.ink }}>{calDay(d.date).md}</span>
                   <span style={{ fontFamily:MONO, fontSize:8.5, letterSpacing:"0.08em",
-                    textTransform:"uppercase", color:isToday?"rgba(7,16,25,0.72)":C.inkSoft }}>{label}</span>
+                    textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.7)":C.inkSoft }}>{label}</span>
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
                   {d.games.length===0
@@ -877,11 +874,11 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 }
 
 /* series shading — two pairs, two waves:
-   wave 0 (current/past series):  dark gray  ↔  card black
-   wave 1 (future series):        navy-tinted dark  ↔  lighter dark gray  */
-/* 0=dark-gray (leftovers even), 1=card-black (leftovers odd),
-   2=navy-tinted (today-series even), 3=lighter-dark (today-series odd) */
-const SERIES_SHADE = ["#1A1C24", "#15161D", "#182234", "#20222C"];
+   wave 0 (current/past series):  light gray  ↔  white
+   wave 1 (future series):        soft navy   ↔  darker gray  */
+/* 0=light-gray (leftovers even), 1=white (leftovers odd),
+   2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -905,7 +902,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const live = g.isLive && !final;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.card;
+  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   return (
@@ -1018,7 +1015,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.card,
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:560, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
         <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
@@ -1028,7 +1025,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
               textTransform:"uppercase", color:C.inkSoft }}>{SEASON} game log</div>
             <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800 }}>{name}</div>
           </div>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
             borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
         </div>
 
@@ -1057,7 +1054,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
             const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
-              gap:8, padding:"5px 16px", borderTop:`1px solid ${C.rule}`, alignItems:"baseline" }}>
+              gap:8, padding:"5px 16px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.date}</span>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft,
                 fontWeight: repeatOpp ? 800 : 400 }}>{
@@ -1106,7 +1103,7 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {info.vs.map((s,i)=>(
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                  gap:10, alignItems:"baseline", borderBottom:`1px solid ${C.rule}`, paddingBottom:4 }}>
+                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:78 }}>{s.date}</span>
                   <span style={{ fontFamily:MONO, fontSize:13 }}><PLine s={s}/></span>
                 </div>
@@ -1218,7 +1215,7 @@ function PropAnalyzer({ injected = null }) {
           <option value="15">Last 15</option><option value="20">Last 20</option>
           <option value="month">This month</option><option value="season">Season</option></select></Field>
         <button onClick={()=>analyzeLive()} disabled={busy} style={{ padding:"8px 16px",
-          border:`1px solid ${busy?C.rule:C.accent}`, borderRadius:2, background:busy?C.rule:C.accent, color:C.accentInk,
+          border:`1px solid ${C.ink}`, borderRadius:2, background:busy?C.rule:C.ink, color:"#fff",
           fontFamily:MONO, fontSize:12, letterSpacing:"0.06em", textTransform:"uppercase",
           cursor:busy?"default":"pointer" }}>{busy?"…":"Analyze"}</button>
       </div>
@@ -1257,9 +1254,8 @@ function PropAnalyzer({ injected = null }) {
                 <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
                   axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill:"rgba(255,255,255,0.06)" }}
-                  contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}`,
-                    background:C.card, color:C.ink }} />
+                <Tooltip cursor={{ fill:"rgba(0,0,0,0.04)" }}
+                  contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}` }} />
                 <Bar dataKey="value" radius={[2,2,0,0]}>
                   {analysis.recent.map((g,i)=>(
                     <Cell key={i} fill={g.value>analysis.L ? C.over : C.under} />
@@ -1281,13 +1277,13 @@ function PropModal({ injected, onClose }) {
     <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.card,
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:600, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
         <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
           display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
           <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>Prop Lookup</span>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
             borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
         </div>
         <div style={{ padding:"14px 18px 20px" }}>
@@ -1441,7 +1437,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
     <button onClick={()=>enabled&&setView(id)} disabled={!enabled}
       style={{ flex:1, padding:"5px 8px", border:"none", cursor:enabled?"pointer":"not-allowed",
         fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em", textTransform:"uppercase",
-        background: view===id ? C.accent : "transparent", color: view===id ? C.accentInk : (enabled?C.inkSoft:C.rule),
+        background: view===id ? C.ink : "transparent", color: view===id ? "#fff" : (enabled?C.inkSoft:C.rule),
         borderRadius:2 }}>{label}</button>
   );
 
@@ -1456,7 +1452,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
       </div>
 
       {/* view toggle */}
-      <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid ${C.rule}` }}>
+      <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid #EEF0F2` }}>
         {tabBtn("last5","Last 5")}
         {tabBtn("vssp", canVs ? `vs ${oppPitcherName.split(" ").slice(-1)[0]}` : "vs SP", canVs)}
       </div>
@@ -1491,7 +1487,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           if (view==="last5") {
             return (
             <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
-              padding:"3px 10px", alignItems:"center", borderTop:`1px solid ${C.rule}` }}>
+              padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
               <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
                 overflow:"hidden", textOverflow:"ellipsis",
@@ -1508,7 +1504,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           const st = vsData[p.id];
           return (
           <div key={p.id} style={{ display:"grid", gridTemplateColumns:HV_COLS, gap:6,
-            padding:"3px 10px", alignItems:"center", borderTop:`1px solid ${C.rule}` }}>
+            padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
             <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
               overflow:"hidden", textOverflow:"ellipsis" }} title={p.name}>{p.name}</span>
@@ -1540,7 +1536,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
 
       {/* starting pitcher — visually separated from the hitters */}
       <div style={{ margin:"6px 10px 12px", padding:"10px 12px", borderRadius:3,
-        background:C.card, border:`1px solid ${C.rule}` }}>
+        background:"#fff", border:`1px solid ${C.rule}` }}>
         <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
           color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
         <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
@@ -1575,31 +1571,31 @@ function GameModal({ m, tags, setTag, onClose }) {
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
       const bg = tagResultBg(tags?.[g.gamePk])
-        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.card);
+        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
       const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
       // card
-      x.fillStyle = C.paper; x.fillRect(0,0,W,H);          // paper margin
+      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);          // paper margin
       const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
-      x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
+      x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
       const rr = 4;
       x.beginPath();
       x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
       x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath(); x.fill(); x.stroke();
       // time / FINAL, top-right
-      x.fillStyle = C.inkSoft; x.font = "9px ui-monospace, Menlo, monospace";
+      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
       x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
       // teams + scores
-      x.textAlign = "left"; x.fillStyle = C.ink;
+      x.textAlign = "left"; x.fillStyle = "#14181F";
       x.font = "700 15px system-ui, sans-serif";
       x.fillText(aw, cx+12, cy+34);
       x.fillText(hm, cx+12, cy+56);
       if (final) {
         x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
-        x.fillStyle = g.awayScore>g.homeScore ? C.ink : C.inkSoft;
+        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
         x.fillText(String(g.awayScore), cx+cw-14, cy+34);
-        x.fillStyle = g.homeScore>g.awayScore ? C.ink : C.inkSoft;
+        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
       // tagged play as a red tag, vertically centered on the right
@@ -1669,27 +1665,27 @@ function GameModal({ m, tags, setTag, onClose }) {
         <button onClick={e=>{ e.stopPropagation(); go(-1); }} aria-label="Previous game"
           className="ts-nav-arrow" style={{ position:"fixed", left:8, top:"50%", transform:"translateY(-50%)",
           zIndex:55, width:42, height:42, borderRadius:"50%", border:`1px solid ${C.ink}`,
-          background:C.card, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
+          background:C.paper, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
           boxShadow:"0 4px 14px rgba(0,0,0,0.25)", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
       )}
       {hasNext && (
         <button onClick={e=>{ e.stopPropagation(); go(1); }} aria-label="Next game"
           className="ts-nav-arrow" style={{ position:"fixed", right:8, top:"50%", transform:"translateY(-50%)",
           zIndex:55, width:42, height:42, borderRadius:"50%", border:`1px solid ${C.ink}`,
-          background:C.card, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
+          background:C.paper, color:C.ink, fontFamily:MONO, fontSize:18, cursor:"pointer",
           boxShadow:"0 4px 14px rgba(0,0,0,0.25)", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
       )}
 
-      <div onClick={e=>e.stopPropagation()} style={{ background:C.card,
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
 
         {/* sticky region: header + tag editor scroll together */}
-        <div style={{ position:"sticky", top:0, zIndex:3, background:C.card,
+        <div style={{ position:"sticky", top:0, zIndex:3, background:C.paper,
           borderTopLeftRadius:6, borderTopRightRadius:6 }}>
         {/* header */}
         <div className="ts-modal-head" style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
-          background:C.card, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
+          background:C.paper, borderTopLeftRadius:6, borderTopRightRadius:6 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
             <div style={{ fontFamily:MONO, fontSize:10, letterSpacing:"0.14em",
               textTransform:"uppercase", color:C.inkSoft, minWidth:0 }}>{prettyDay(date)} · {time}
@@ -1699,29 +1695,29 @@ function GameModal({ m, tags, setTag, onClose }) {
                 <span className="ts-nav-inline" style={{ display:"none", gap:4 }}>
                   <button onClick={()=>go(-1)} disabled={!hasPrev} aria-label="Previous game"
                     style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                      background:C.card, color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      background:"#fff", color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
                       cursor:hasPrev?"pointer":"default", lineHeight:1 }}>‹</button>
                   <button onClick={()=>go(1)} disabled={!hasNext} aria-label="Next game"
                     style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                      background:C.card, color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      background:"#fff", color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
                       cursor:hasNext?"pointer":"default", lineHeight:1 }}>›</button>
                 </span>
               )}
               <button onClick={()=>setTagEditing(v=>!v)}
                 title={tagVal ? "Edit play tag" : "Tag this game"}
                 style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
-                  background:tagVal?"#F2657A":C.card, color:tagVal?"#fff":C.ink,
+                  background:tagVal?"#F2657A":"#fff", color:tagVal?"#fff":C.ink,
                   borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                   textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
                 {tagVal ? "Play ✓" : "Play"}</button>
               <button onClick={exportCard} title="Copy game image to clipboard"
                 aria-label="Copy game image"
-                style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:C.card,
+                style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:"#fff",
                   color:copied==="ok"?C.over:C.ink,
                   borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                   textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>
                 {copied==="ok" ? "Copied ✓" : copied==="dl" ? "Saved ✓" : copied==="err" ? "Failed" : "Copy"}</button>
-              <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+              <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
                 borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
             </div>
           </div>
@@ -1739,7 +1735,7 @@ function GameModal({ m, tags, setTag, onClose }) {
 
         {/* tag editor */}
         {tagEditing && (
-          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"rgba(255,77,109,0.08)",
+          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"#FFF3F4",
             display:"flex", gap:8, alignItems:"center" }}>
             <input autoFocus defaultValue={tagVal}
               placeholder="e.g. PLAY · over 8.5 · fade the public"
@@ -1747,7 +1743,7 @@ function GameModal({ m, tags, setTag, onClose }) {
               onBlur={e=>{ setTag(g, e.target.value); }}
               style={{ flex:1, ...inputStyle }} />
             <button onMouseDown={e=>{ e.preventDefault(); setTag(g, ""); setTagEditing(false); }}
-              style={{ border:`1px solid ${C.rule}`, background:C.card, borderRadius:2,
+              style={{ border:`1px solid ${C.rule}`, background:"#fff", borderRadius:2,
                 fontFamily:MONO, fontSize:11, padding:"6px 10px", cursor:"pointer", color:C.under }}>Remove</button>
           </div>
         )}
@@ -1879,8 +1875,8 @@ const RESPONSIVE_CSS = `
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
-  .ts-lineup-col + .ts-lineup-col { border-top:1px solid ${C.rule}; }
-  .ts-h2h-divider { border-left:none !important; border-top:1px solid ${C.rule}; }
+  .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
+  .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:calc(18px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
     calc(48px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
   .ts-nav-arrow { display:none !important; }
@@ -1986,7 +1982,7 @@ function TagsView({ tags, setResult }) {
         title={on ? `Clear ${label}` : `Mark ${label}`}
         style={{ width:30, height:28, borderRadius:3, cursor:"pointer",
           border:`1px solid ${on ? color : C.rule}`,
-          background: on ? color : C.card, color: on ? "#fff" : C.inkSoft,
+          background: on ? color : "#fff", color: on ? "#fff" : C.inkSoft,
           fontFamily:MONO, fontSize:12, fontWeight:700 }}>{label}</button>
     );
   };
@@ -2006,8 +2002,8 @@ function TagsView({ tags, setResult }) {
   return (
     <div>
       {/* ─────────── RECORD DASHBOARD (visually distinct) ─────────── */}
-      <div style={{ border:`2px solid ${C.accent}`, borderRadius:6, overflow:"hidden",
-        background:C.panel, marginBottom:26 }}>
+      <div style={{ border:`2px solid ${C.ink}`, borderRadius:6, overflow:"hidden",
+        background:C.ink, marginBottom:26 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
           gap:10, padding:"10px 16px", flexWrap:"wrap" }}>
           <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.18em",
@@ -2016,14 +2012,14 @@ function TagsView({ tags, setResult }) {
           <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
             {FILTERS.map(([id,lbl])=>(
               <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
-                border:`1px solid ${range===id?C.accent:"rgba(255,255,255,0.25)"}`, borderRadius:2,
-                background:range===id?C.accent:"transparent", color:range===id?C.accentInk:"rgba(255,255,255,0.75)",
+                border:`1px solid ${range===id?"#fff":"rgba(255,255,255,0.25)"}`, borderRadius:2,
+                background:range===id?"#fff":"transparent", color:range===id?C.ink:"rgba(255,255,255,0.75)",
                 fontFamily:MONO, fontSize:10, letterSpacing:"0.04em", textTransform:"uppercase",
                 cursor:"pointer" }}>{lbl}</button>))}
           </div>
         </div>
 
-        <div style={{ background:C.card, padding:"16px", display:"flex", gap:20,
+        <div style={{ background:C.paper, padding:"16px", display:"flex", gap:20,
           flexWrap:"wrap", alignItems:"center" }}>
           <div>
             <div style={{ fontFamily:MONO, fontSize:38, fontWeight:700, lineHeight:1 }}>
@@ -2056,13 +2052,13 @@ function TagsView({ tags, setResult }) {
                     if(!active || !payload || !payload.length) return null;
                     const d = payload[0].payload;
                     if (!d.result) return (
-                      <div style={{ background:C.card, border:`1px solid ${C.rule}`, borderRadius:3,
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
                         padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
                         <div style={{ color:C.inkSoft }}>Start</div>
                       </div>
                     );
                     return (
-                      <div style={{ background:C.card, border:`1px solid ${C.rule}`, borderRadius:3,
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
                         padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
                         <div style={{ color:C.inkSoft }}>#{d.i} · {d.label}
                           {d.matchup ? ` · ${d.matchup}` : ""}</div>
@@ -2099,9 +2095,9 @@ function TagsView({ tags, setResult }) {
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
           const graded = r.result==="W" || r.result==="L" || r.result==="P";
-          const tint = r.result==="W" ? "rgba(46,213,115,0.14)"
-                     : r.result==="L" ? "rgba(255,77,109,0.13)"
-                     : r.result==="P" ? "rgba(22,162,223,0.14)" : C.card;
+          const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
+                     : r.result==="L" ? "rgba(215,38,61,0.09)"
+                     : r.result==="P" ? "rgba(43,76,126,0.09)" : "#fff";
           const edge = r.result==="W" ? C.over : r.result==="L" ? C.under
                      : r.result==="P" ? C.blue : C.rule;
 
@@ -2124,7 +2120,7 @@ function TagsView({ tags, setResult }) {
                   {r.date ? calDay(r.date).md : ""}{r.time ? ` · ${fmtTime(r.time)}` : ""}</span>
                 <button onClick={()=>setResult(r.gamePk, null)} title="Undo result"
                   style={{ flexShrink:0, width:26, height:24, borderRadius:3, cursor:"pointer",
-                    border:`1px solid ${C.rule}`, background:C.card, color:C.inkSoft,
+                    border:`1px solid ${C.rule}`, background:"#fff", color:C.inkSoft,
                     fontFamily:MONO, fontSize:13, lineHeight:1, padding:0 }}>↩</button>
               </div>
             );
@@ -2201,16 +2197,16 @@ export default function App() {
               {tab==="calendar" && cal && (
                 <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
                   aria-label="Refresh" title="Refresh schedule & stats"
-                  style={{ width:30, height:30, borderRadius:5, border:`1px solid ${C.accent}`,
-                    background:C.accent, color:C.accentInk, cursor:cal.busy?"default":"pointer",
+                  style={{ width:30, height:30, borderRadius:5, border:`1px solid ${C.ink}`,
+                    background:C.ink, color:"#fff", cursor:cal.busy?"default":"pointer",
                     display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
                     padding:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                     style={{ animation: cal.busy ? "ts-spin 0.8s linear infinite" : "none" }}>
-                    <path d="M4 6.5A8 8 0 0 1 19 8" stroke={C.accentInk} strokeWidth="2.2" strokeLinecap="round"/>
-                    <path d="M20 3.5V8h-4.5" stroke={C.accentInk} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M20 17.5A8 8 0 0 1 5 16" stroke={C.accentInk} strokeWidth="2.2" strokeLinecap="round"/>
-                    <path d="M4 20.5V16h4.5" stroke={C.accentInk} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M4 6.5A8 8 0 0 1 19 8" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+                    <path d="M20 3.5V8h-4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M20 17.5A8 8 0 0 1 5 16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+                    <path d="M4 20.5V16h4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
               )}
@@ -2222,9 +2218,9 @@ export default function App() {
                     : "Copy today's slate with tagged picks"}
                   style={{ width:30, height:30, borderRadius:5,
                     border:`1px solid ${cal.slateCopied==="ok"?C.over
-                      : (cal.slateCopied==="empty"||cal.slateCopied==="err") ? C.under : C.rule}`,
+                      : (cal.slateCopied==="empty"||cal.slateCopied==="err") ? C.under : C.ink}`,
                     background:cal.slateCopied==="ok"?C.over
-                      : (cal.slateCopied==="empty"||cal.slateCopied==="err") ? C.under : C.card,
+                      : (cal.slateCopied==="empty"||cal.slateCopied==="err") ? C.under : "#fff",
                     color:cal.slateCopied==="ok"||cal.slateCopied==="empty"||cal.slateCopied==="err" ? "#fff" : C.ink,
                     cursor:"pointer",
                     display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
@@ -2251,8 +2247,8 @@ export default function App() {
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
                 <button key={id} onClick={()=>setTab(id)} style={{ padding:"7px 15px",
-                  border:`1px solid ${tab===id?C.accent:C.rule}`, borderRadius:2,
-                  background:tab===id?C.accent:"transparent", color:tab===id?C.accentInk:C.inkSoft,
+                  border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
+                  background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
                   fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
                   cursor:"pointer" }}>{lbl}</button>))}
             </div>
