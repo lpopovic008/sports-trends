@@ -937,11 +937,11 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* on-screen series banding: indices 0/1 are series that don't touch
-   today (light gray, since they're the ones most likely to blur
-   together across the week) and indices 2/3 are today's slate and any
-   other days sharing that same series (a darker pair, so today's
-   games stay visually grounded against the lighter surrounding days). */
-const SERIES_BG = ["#858585", "#999999", "#333333", "#474747"];
+   today — told apart by hue (very dark blue / very dark red) instead
+   of gray, since they're the ones most likely to blur together across
+   the week. Indices 2/3 are today's slate and any other days sharing
+   that same series, back to the VS Code grayscale pair. */
+const SERIES_BG = ["#0f1f33", "#331414", "#363636", "#4a4a4a"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
