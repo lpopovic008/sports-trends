@@ -1940,11 +1940,11 @@ function GameModal({ m, tags, setTag, onClose }) {
                   <span style={{ color:C.ruleDark, width:38, flexShrink:0 }}>{calDay(mg.date).md}</span>
                   <span style={{ flex:1, textAlign:"right", fontWeight: mg.aScore>mg.bScore?700:400,
                     color: mg.aScore>mg.bScore?C.over:C.inkSoft }}>
-                    {aAbbr} {mg.aScore} <span style={{color:C.ruleDark, fontWeight:400}}>({mg.aHits}H)</span></span>
+                    {aAbbr} {mg.aScore}<span style={{color:C.ruleDark, fontWeight:400}}>({mg.aHits})</span></span>
                   <span style={{ color:C.ruleDark }}>–</span>
                   <span style={{ flex:1, fontWeight: mg.bScore>mg.aScore?700:400,
                     color: mg.bScore>mg.aScore?C.over:C.inkSoft }}>
-                    {mg.bScore} {hAbbr} <span style={{color:C.ruleDark, fontWeight:400}}>({mg.bHits}H)</span></span>
+                    {mg.bScore}<span style={{color:C.ruleDark, fontWeight:400}}>({mg.bHits})</span> {hAbbr}</span>
                 </div>
               ))}
             </div>
