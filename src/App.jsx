@@ -102,22 +102,32 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw the red play tag on a canvas, angled, vertically centered at (cx,cy),
-// sized to fit maxW. Matches the calendar's indicators-off tag look.
-function drawRedTag(x, text, cx, cy, maxW) {
+// Paint a play tag directly onto the card, angled like a spray-painted tag,
+// no background box. Each letter cycles through the palette, with a dark
+// translucent outline stroke so it stays legible over any background.
+const SPRAY_COLORS = ["#F4289B", "#16A2DF", "#A0EE26"];
+function drawSprayTag(x, text, cx, cy, maxW, fontSize = 20) {
   if (!text) return;
   x.save();
-  x.font = "400 18px 'Graffiti Outline', system-ui, sans-serif";
-  const th = 26;
-  const tw = Math.min(x.measureText(text).width + 18, maxW);
-  x.translate(cx - tw/2, cy - th/2);
-  x.rotate(-2 * Math.PI/180);
-  x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
-  x.beginPath();
-  x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
-  x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
-  x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
-  x.fillText(text, 8, th/2+1, tw-14);
+  x.font = `400 ${fontSize}px 'Graffiti Outline', system-ui, sans-serif`;
+  const full = x.measureText(text).width;
+  const scale = full > maxW ? maxW / full : 1;
+  x.translate(cx, cy);
+  x.rotate(-5 * Math.PI/180);
+  x.scale(scale, scale);
+  x.textAlign = "left"; x.textBaseline = "middle"; x.lineJoin = "round";
+  let cursorX = -full/2, colorIdx = 0;
+  for (const ch of text) {
+    const w = x.measureText(ch).width;
+    if (ch.trim()) {
+      x.lineWidth = 3.5; x.strokeStyle = "rgba(20,24,31,0.55)";
+      x.strokeText(ch, cursorX, 0);
+      x.fillStyle = SPRAY_COLORS[colorIdx % SPRAY_COLORS.length];
+      x.fillText(ch, cursorX, 0);
+      colorIdx++;
+    }
+    cursorX += w;
+  }
   x.restore();
 }
 
@@ -670,9 +680,9 @@ function TravelTrends({ tags, setTag, onReady }) {
         // small time under matchup
         x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
         x.fillText(time, gx+10, gy+RH/2 + 9);
-        // right: red tag, vertically centered
+        // right: play tag, sprayed on at an angle
         const tv = tagText(tags[g.gamePk]);
-        drawRedTag(x, tv, gx + CW*0.72, gy + RH/2, CW*0.5);
+        drawSprayTag(x, tv, gx + CW*0.74, gy + RH/2, CW*0.52, 15);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -1598,9 +1608,9 @@ function GameModal({ m, tags, setTag, onClose }) {
         x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play as a red tag, vertically centered on the right
+      // tagged play sprayed on at an angle, vertically centered on the right
       if (tagVal) {
-        drawRedTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.72);
+        drawSprayTag(x, tagVal, cx + cw*0.62, cy + ch/2, cw*0.8, 22);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
