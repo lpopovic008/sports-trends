@@ -1467,19 +1467,22 @@ async function loadH2H(aId, bId) {
   const games = (j.dates||[]).flatMap(d=>d.games||[])
     .filter(g=>g.teams.home.team.id===bId || g.teams.away.team.id===bId)
     .sort((x,y)=>x.gameDate.localeCompare(y.gameDate));
-  let aw=0,bw=0,ar=0,br=0,ah=0,bh=0,upcoming=0;
+  let aw=0,bw=0,upcoming=0;
+  const meetings = [];
   games.forEach(g=>{
     const aHome = g.teams.home.team.id===aId;
     const aSide = aHome?"home":"away", bSide = aHome?"away":"home";
     const aS=g.teams[aSide].score, bS=g.teams[bSide].score;
     const aHits=g.linescore?.teams?.[aSide]?.hits, bHits=g.linescore?.teams?.[bSide]?.hits;
     if (g.status?.abstractGameState==="Final" && aS!=null && bS!=null) {
-      ar+=aS; br+=bS; ah+=aHits||0; bh+=bHits||0;
       if (aS>bS) aw++; else if (bS>aS) bw++;
+      meetings.push({ date: g.officialDate || g.gameDate.slice(0,10),
+        aScore:aS, bScore:bS, aHits:aHits||0, bHits:bHits||0 });
     } else upcoming++;
   });
+  meetings.reverse();   // most recent meeting first
   const played = aw+bw;
-  return { aw,bw,ar,br,ah,bh,upcoming,played };
+  return { aw,bw,upcoming,played,meetings };
 }
 
 // a batter's career line vs a specific pitcher (single split row of stats)
@@ -1665,6 +1668,7 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [awayP,  setAwayP]  = useState(undefined);   // away SP vs home
   const [homeP,  setHomeP]  = useState(undefined);   // home SP vs away
   const [h2h,    setH2H]    = useState(undefined);
+  const [h2hOpen, setH2hOpen] = useState(false);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
   const [tagEditing, setTagEditing] = useState(false);
@@ -1899,27 +1903,50 @@ function GameModal({ m, tags, setTag, onClose }) {
           </div>
         )}
 
-        {/* ── H2H OVERVIEW (top) ── */}
+        {/* ── H2H OVERVIEW (top) — tap to expand the past meetings ── */}
         <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}`, background:C.card }}>
-          <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
-            color:C.inkSoft, marginBottom:6 }}>Season head-to-head</div>
-          {h2h===undefined ? (
-            <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
-          ) : !h2h || h2h.played===0 ? (
-            <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
-              No completed meetings yet this season{h2h&&h2h.upcoming>0?` · ${h2h.upcoming} scheduled`:""}.</div>
-          ) : (
-            <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
-              <div style={{ fontFamily:MONO, fontSize:20, fontWeight:700 }}>
-                <span style={{ color: h2h.aw>h2h.bw?C.over:C.ink }}>{aAbbr} {h2h.aw}</span>
-                <span style={{ color:C.ruleDark }}> – </span>
-                <span style={{ color: h2h.bw>h2h.aw?C.over:C.ink }}>{h2h.bw} {hAbbr}</span>
+          <div onClick={()=> h2h && h2h.played>0 && setH2hOpen(v=>!v)}
+            style={{ cursor: h2h && h2h.played>0 ? "pointer" : "default" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+              <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
+                color:C.inkSoft, marginBottom:6 }}>Season head-to-head</div>
+              {h2h && h2h.played>0 && (
+                <span style={{ fontFamily:MONO, fontSize:10, color:C.inkSoft, marginBottom:6,
+                  transform: h2hOpen?"rotate(180deg)":"none", transition:"transform 0.15s" }}>▾</span>
+              )}
+            </div>
+            {h2h===undefined ? (
+              <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
+            ) : !h2h || h2h.played===0 ? (
+              <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
+                No completed meetings yet this season{h2h&&h2h.upcoming>0?` · ${h2h.upcoming} scheduled`:""}.</div>
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+                <div style={{ fontFamily:MONO, fontSize:20, fontWeight:700 }}>
+                  <span style={{ color: h2h.aw>h2h.bw?C.over:C.ink }}>{aAbbr} {h2h.aw}</span>
+                  <span style={{ color:C.ruleDark }}> – </span>
+                  <span style={{ color: h2h.bw>h2h.aw?C.over:C.ink }}>{h2h.bw} {hAbbr}</span>
+                </div>
+                {h2h.upcoming>0 && <span style={{ fontFamily:MONO, fontSize:10.5, color:C.ruleDark }}>{h2h.upcoming} more scheduled</span>}
               </div>
-              <div style={{ display:"flex", gap:14, fontFamily:MONO, fontSize:11, color:C.inkSoft }}>
-                <span>{aAbbr} {h2h.ar}R · {h2h.ah}H <span style={{color:C.ruleDark}}>({(h2h.ar/h2h.played).toFixed(1)}/g)</span></span>
-                <span>{hAbbr} {h2h.br}R · {h2h.bh}H <span style={{color:C.ruleDark}}>({(h2h.br/h2h.played).toFixed(1)}/g)</span></span>
-              </div>
-              {h2h.upcoming>0 && <span style={{ fontFamily:MONO, fontSize:10.5, color:C.ruleDark }}>{h2h.upcoming} more scheduled</span>}
+            )}
+          </div>
+          {h2hOpen && h2h && h2h.played>0 && (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${C.rule}`,
+              display:"flex", flexDirection:"column", gap:6 }}>
+              {h2h.meetings.map((mg,i)=>(
+                <div key={i} style={{ display:"flex", alignItems:"baseline", gap:10,
+                  fontFamily:MONO, fontSize:11.5 }}>
+                  <span style={{ color:C.ruleDark, width:38, flexShrink:0 }}>{calDay(mg.date).md}</span>
+                  <span style={{ flex:1, textAlign:"right", fontWeight: mg.aScore>mg.bScore?700:400,
+                    color: mg.aScore>mg.bScore?C.over:C.inkSoft }}>
+                    {aAbbr} {mg.aScore} <span style={{color:C.ruleDark, fontWeight:400}}>({mg.aHits}H)</span></span>
+                  <span style={{ color:C.ruleDark }}>–</span>
+                  <span style={{ flex:1, fontWeight: mg.bScore>mg.aScore?700:400,
+                    color: mg.bScore>mg.aScore?C.over:C.inkSoft }}>
+                    {mg.bScore} {hAbbr} <span style={{color:C.ruleDark, fontWeight:400}}>({mg.bHits}H)</span></span>
+                </div>
+              ))}
             </div>
           )}
         </div>
