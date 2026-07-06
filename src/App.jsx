@@ -1892,6 +1892,10 @@ function GameModal({ m, tags, setTag, onClose }) {
 
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
+/* kill the browser's default body margin so the app reaches every edge
+   of the viewport instead of leaving a rim of the page's default white */
+html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:none; }
+#root { min-height:100vh; }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
 .ts-cal-col { min-width:166px; }
