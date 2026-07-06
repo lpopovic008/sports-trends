@@ -18,8 +18,8 @@ const C = {
   rematchLight:"#F9A8D4",  /* light neon pink: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
-  bigday:"#A0EE26",        /* neon lime: 10-run scoreboard explosion */
-  echo:"#16A2DF",          /* neon blue: momentum wave */
+  bigday:"#16A2DF",        /* neon blue: 10-run scoreboard explosion */
+  echo:"#A0EE26",          /* neon lime: momentum wave */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
