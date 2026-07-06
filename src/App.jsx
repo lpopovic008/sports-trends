@@ -111,6 +111,7 @@ function pitcherSeasonAverages(splits) {
     avgOuts: outs/splits.length,
     h9: sum("hits")*27/outs,
     bb9: sum("baseOnBalls")*27/outs,
+    k9: sum("strikeOuts")*27/outs,
     era: sum("earnedRuns")*27/outs,
   };
 }
@@ -989,7 +990,12 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
 //      this many outs · fewer green · more red
 //  ER  black within 1.00 of season ERA (this game's ER as an ERA) · lower green · higher red
 //  BB  black within 1.0 walk of the rate their season BB/9 predicts · fewer green · more red
-//  K   ≥5 green · ≤3 red (unchanged)
+//  K   black within 2 of the rate their season K/9 predicts · more green · fewer red
+//
+// laid out as a fixed 5-column grid (not flowing text) so every stat sits
+// in the same horizontal position on every row — a double-digit value
+// never shifts the columns after it — and stretches to fill the row.
+const PLINE_COLS = "minmax(0,1.15fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.85fr)";
 function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
   const ref = useRef(null);
   const [fontSize, setFontSize] = useState(maxSize);
@@ -999,7 +1005,8 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
     const fit = () => {
       let size = maxSize;
       el.style.fontSize = size + "px";
-      while (el.scrollWidth > el.clientWidth && size > minSize) {
+      const overflowing = () => Array.from(el.children).some(c => c.scrollWidth > c.clientWidth + 0.5);
+      while (overflowing() && size > minSize) {
         size -= 0.5;
         el.style.fontSize = size + "px";
       }
@@ -1026,22 +1033,24 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
   const erCol = (gameERA!=null && season)
     ? col(gameERA<=season.era-1, gameERA>=season.era+1)
     : col(er<=1, er>3);
+  const expK = season ? season.k9 * outs/27 : null;
+  const kCol = expK!=null ? col(k>=expK+2, k<=expK-2) : col(k>=5, k<=3);
 
-  const parts = [
+  const cells = [
     [`${st.inningsPitched} IP`, ipCol],
     [`${st.hits} H`,            hCol],
     [`${st.earnedRuns} ER`,     erCol],
     [`${st.baseOnBalls} BB`,    bbCol],
-    [`${st.strikeOuts} K`,      col(k>=5, k<=3)],
+    [`${st.strikeOuts} K`,      kCol],
   ];
   return (
-    <span ref={ref} style={{ display:"block", whiteSpace:"nowrap", overflow:"hidden", fontSize }}>
-      {parts.map(([txt,c],i)=>(
-        <span key={i} style={{ color:c }}>
-          {txt}{i<parts.length-1 ? <span style={{ color:C.ruleDark, margin:"0 2px" }}>·</span> : null}
-        </span>
+    <div ref={ref} style={{ display:"grid", gridTemplateColumns:PLINE_COLS,
+      width:"100%", fontSize }}>
+      {cells.map(([txt,c],i)=>(
+        <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
+          borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
       ))}
-    </span>
+    </div>
   );
 }
 
