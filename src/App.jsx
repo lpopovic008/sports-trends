@@ -107,9 +107,9 @@ const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { h
 function drawRedTag(x, text, cx, cy, maxW) {
   if (!text) return;
   x.save();
-  x.font = "400 16px 'Permanent Marker', system-ui, sans-serif";
-  const th = 23;
-  const tw = Math.min(x.measureText(text).width + 16, maxW);
+  x.font = "400 18px 'Graffiti Outline', system-ui, sans-serif";
+  const th = 26;
+  const tw = Math.min(x.measureText(text).width + 18, maxW);
   x.translate(cx - tw/2, cy - th/2);
   x.rotate(-2 * Math.PI/180);
   x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
@@ -1863,11 +1863,11 @@ function GameModal({ m, tags, setTag, onClose }) {
 /* ════════════════════════════ shell ════════════════════════════ */
 const RESPONSIVE_CSS = `
 @font-face {
-  font-family: 'Permanent Marker';
+  font-family: 'Graffiti Outline';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
+  src: url('${import.meta.env.BASE_URL}fonts/Graffiti-Outline.ttf') format('truetype');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
@@ -2173,7 +2173,7 @@ export default function App() {
 
   useEffect(() => {
     // warm the tag font early so it's ready well before anyone hits export
-    if (document.fonts?.load) document.fonts.load("400 16px 'Permanent Marker'").catch(()=>{});
+    if (document.fonts?.load) document.fonts.load("400 18px 'Graffiti Outline'").catch(()=>{});
     document.title = "MLB Trends";
     const svg = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'>` +
       `<ellipse cx='18' cy='18' rx='14' ry='10' fill='%23964B00' stroke='%23fff' stroke-width='1.5'/>` +
