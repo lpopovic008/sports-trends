@@ -128,22 +128,21 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw the red play tag on a canvas, angled, vertically centered at (cx,cy),
-// sized to fit maxW. Matches the calendar's indicators-off tag look.
-function drawRedTag(x, text, cx, cy, maxW, fontSize = 13) {
+// Draw the play call as red marker handwriting directly on the game — no
+// background box — angled like it was scrawled on, vertically centered
+// at (cx,cy) and shrunk to fit maxW if needed.
+function drawRedTag(x, text, cx, cy, maxW, fontSize = 15) {
   if (!text) return;
   x.save();
   x.font = `400 ${fontSize}px ${MARKER}`;
-  const th = fontSize + 7;
-  const tw = Math.min(x.measureText(text).width + 14, maxW);
-  x.translate(cx - tw/2, cy - th/2);
-  x.rotate(-2 * Math.PI/180);
-  x.fillStyle = "#F2657A"; x.strokeStyle = "#D7263D"; x.lineWidth = 1;
-  x.beginPath();
-  x.moveTo(2,0); x.arcTo(tw,0,tw,th,3); x.arcTo(tw,th,0,th,3);
-  x.arcTo(0,th,0,0,3); x.arcTo(0,0,tw,0,3); x.closePath(); x.fill(); x.stroke();
-  x.fillStyle = "#fff"; x.textAlign = "left"; x.textBaseline = "middle";
-  x.fillText(text, 7, th/2+1, tw-12);
+  const rawW = x.measureText(text).width;
+  const scale = rawW > maxW ? maxW / rawW : 1;
+  x.translate(cx, cy);
+  x.rotate(-4 * Math.PI/180);
+  x.scale(scale, scale);
+  x.fillStyle = "#D7263D";
+  x.textAlign = "center"; x.textBaseline = "middle";
+  x.fillText(text, 0, 0);
   x.restore();
 }
 
@@ -683,9 +682,9 @@ function TravelTrends({ tags, setTag, onReady }) {
       const x = cv.getContext("2d"); x.scale(scale, scale);
       x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
       // header
-      x.fillStyle = "#14181F"; x.font = `400 22px ${MARKER}`;
+      x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
       x.textAlign = "left"; x.textBaseline = "alphabetic";
-      x.fillText("MLB", PADX, 24);
+      x.fillText("MLB", PADX, 22);
       x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
@@ -704,7 +703,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
         // left: matchup (+ scores if final)
         x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
-        x.font = `400 15px ${MARKER}`;
+        x.font = "700 13px system-ui, sans-serif";
         let matchup = `${aw} @ ${hm}`;
         if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
         x.fillText(matchup, gx+10, gy+RH/2 - 6);
@@ -1702,15 +1701,15 @@ function GameModal({ m, tags, setTag, onClose }) {
       x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
       // teams + scores
       x.textAlign = "left"; x.fillStyle = "#14181F";
-      x.font = `400 18px ${MARKER}`;
-      x.fillText(aw, cx+12, cy+35);
-      x.fillText(hm, cx+12, cy+57);
+      x.font = "700 15px system-ui, sans-serif";
+      x.fillText(aw, cx+12, cy+34);
+      x.fillText(hm, cx+12, cy+56);
       if (final) {
-        x.textAlign = "right"; x.font = `400 18px ${MARKER}`;
+        x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
         x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
-        x.fillText(String(g.awayScore), cx+cw-14, cy+35);
+        x.fillText(String(g.awayScore), cx+cw-14, cy+34);
         x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
-        x.fillText(String(g.homeScore), cx+cw-14, cy+57);
+        x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
       // tagged play as a red tag, vertically centered on the right — bigger
       // than the daily-slate tag so it fills more of this card
