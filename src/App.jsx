@@ -92,6 +92,28 @@ async function mapPool(items, n, fn) {
   await Promise.all(workers); return res;
 }
 const isNet = (m) => /Failed to fetch|NetworkError/i.test(m);
+// MLB innings-pitched is reported in tenths standing for thirds ("6.1" =
+// 6 innings + 1 out, "6.2" = +2 outs) — convert to a plain out count so
+// workloads can be compared precisely instead of as a fake decimal.
+const ipToOuts = (ip) => {
+  const v = parseFloat(ip) || 0;
+  const whole = Math.floor(v), frac = Math.round((v-whole)*10);
+  return whole*3 + frac;
+};
+// season-average workload/rate context used to color an individual start:
+// average outs per start, hits/walks per 9 innings, and ERA.
+function pitcherSeasonAverages(splits) {
+  if (!splits || !splits.length) return null;
+  const sum = (k) => splits.reduce((s,g)=>s+(Number(g.stat?.[k])||0),0);
+  const outs = splits.reduce((s,g)=>s+ipToOuts(g.stat?.inningsPitched), 0);
+  if (!outs) return null;
+  return {
+    avgOuts: outs/splits.length,
+    h9: sum("hits")*27/outs,
+    bb9: sum("baseOnBalls")*27/outs,
+    era: sum("earnedRuns")*27/outs,
+  };
+}
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
@@ -959,28 +981,64 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
 }
 
 /* ── game detail modal: probable pitchers, every prior matchup vs this team ── */
-// colored stat line for a pitcher start. Thresholds:
-//  IP  ≥6.0 green · <4.0 red      H   ≥5 red · ≤3 green
-//  ER  >3 red · ≤1 green          BB  ≥3 red · ≤1 green
-//  K   ≥5 green · ≤3 red
-function PLine({ s }) {
+// colored stat line for a pitcher start, relative to this pitcher's own
+// season averages (falls back to flat thresholds until a season average
+// is available):
+//  IP  black within 2 outs of their average outing · shorter red · longer green
+//  H   black within 1.5 hits of the rate their season H/9 predicts for
+//      this many outs · fewer green · more red
+//  ER  black within 1.00 of season ERA (this game's ER as an ERA) · lower green · higher red
+//  BB  black within 1.0 walk of the rate their season BB/9 predicts · fewer green · more red
+//  K   ≥5 green · ≤3 red (unchanged)
+function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
+  const ref = useRef(null);
+  const [fontSize, setFontSize] = useState(maxSize);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = maxSize;
+      el.style.fontSize = size + "px";
+      while (el.scrollWidth > el.clientWidth && size > minSize) {
+        size -= 0.5;
+        el.style.fontSize = size + "px";
+      }
+      setFontSize(size);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [s, season, maxSize, minSize]);
   const st = s.stat;
   const col = (good, bad) => good ? C.over : bad ? C.under : C.ink;
-  const ip = parseFloat(st.inningsPitched) || 0;
+  const outs = ipToOuts(st.inningsPitched);
   const h = Number(st.hits)||0, er = Number(st.earnedRuns)||0;
   const bb = Number(st.baseOnBalls)||0, k = Number(st.strikeOuts)||0;
+
+  const ipCol = season
+    ? col(outs > season.avgOuts+2, outs < season.avgOuts-2)
+    : col(outs>=18, outs>0 && outs<12);
+  const expH = season ? season.h9 * outs/27 : null;
+  const hCol = expH!=null ? col(h<=expH-1.5, h>=expH+1.5) : col(h<=3, h>=5);
+  const expBB = season ? season.bb9 * outs/27 : null;
+  const bbCol = expBB!=null ? col(bb<=expBB-1, bb>=expBB+1) : col(bb<=1, bb>=3);
+  const gameERA = outs>0 ? er*27/outs : null;
+  const erCol = (gameERA!=null && season)
+    ? col(gameERA<=season.era-1, gameERA>=season.era+1)
+    : col(er<=1, er>3);
+
   const parts = [
-    [`${st.inningsPitched} IP`, col(ip>=6, ip>0 && ip<4)],
-    [`${st.hits} H`,            col(h<=3, h>=5)],
-    [`${st.earnedRuns} ER`,     col(er<=1, er>3)],
-    [`${st.baseOnBalls} BB`,    col(bb<=1, bb>=3)],
+    [`${st.inningsPitched} IP`, ipCol],
+    [`${st.hits} H`,            hCol],
+    [`${st.earnedRuns} ER`,     erCol],
+    [`${st.baseOnBalls} BB`,    bbCol],
     [`${st.strikeOuts} K`,      col(k>=5, k<=3)],
   ];
   return (
-    <span>
+    <span ref={ref} style={{ display:"block", whiteSpace:"nowrap", overflow:"hidden", fontSize }}>
       {parts.map(([txt,c],i)=>(
         <span key={i} style={{ color:c }}>
-          {txt}{i<parts.length-1 ? <span style={{ color:C.ruleDark }}> · </span> : null}
+          {txt}{i<parts.length-1 ? <span style={{ color:C.ruleDark, margin:"0 2px" }}>·</span> : null}
         </span>
       ))}
     </span>
@@ -1010,16 +1068,14 @@ function PitcherSeasonModal({ pid, name, onClose }) {
   const tot = useMemo(() => {
     if (!log || !log.length) return null;
     const sum = (k)=>log.reduce((s,g)=>s+(Number(g.stat[k])||0),0);
-    const ipOuts = log.reduce((s,g)=>{
-      const ip = parseFloat(g.stat.inningsPitched)||0;
-      const whole = Math.floor(ip); const frac = Math.round((ip-whole)*10);
-      return s + whole*3 + frac;
-    }, 0);
+    const ipOuts = log.reduce((s,g)=>s+ipToOuts(g.stat.inningsPitched), 0);
     const ip = `${Math.floor(ipOuts/3)}.${ipOuts%3}`;
     const er = sum("earnedRuns");
     const era = ipOuts>0 ? ((er*27)/ipOuts).toFixed(2) : "—";
     return { gs:log.length, ip, k:sum("strikeOuts"), bb:sum("baseOnBalls"), h:sum("hits"), er, era };
   }, [log]);
+  // season averages for coloring each start's line relative to this pitcher's own pace
+  const seasonAvg = useMemo(() => pitcherSeasonAverages(log), [log]);
 
   // count starts per opponent so a repeat matchup can be bolded in the log
   const oppCounts = useMemo(() => {
@@ -1060,8 +1116,8 @@ function PitcherSeasonModal({ pid, name, onClose }) {
         )}
 
         <div style={{ padding:"8px 0 14px" }}>
-          <div style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
-            gap:8, padding:"4px 16px", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
+          <div style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
+            gap:6, padding:"4px 12px", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
             textTransform:"uppercase", color:C.ruleDark }}>
             <span>Date</span><span>Opp</span><span>Line</span>
           </div>
@@ -1070,14 +1126,14 @@ function PitcherSeasonModal({ pid, name, onClose }) {
           {log && log.map((s,i)=>{
             const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
             return (
-            <div key={i} style={{ display:"grid", gridTemplateColumns:"78px 40px 1fr",
-              gap:8, padding:"5px 16px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{s.date}</span>
+            <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
+              gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
+              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{calDay(s.date).md}</span>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft,
                 fontWeight: repeatOpp ? 800 : 400 }}>{
                 TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
                 || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
-              <span style={{ fontFamily:MONO, fontSize:12.5 }}><PLine s={s}/></span>
+              <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} /></span>
             </div>
             );
           })}
@@ -1121,8 +1177,9 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
               {info.vs.map((s,i)=>(
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
                   gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
-                  <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:78 }}>{s.date}</span>
-                  <span style={{ fontFamily:MONO, fontSize:13 }}><PLine s={s}/></span>
+                  <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:34, flexShrink:0 }}>{calDay(s.date).md}</span>
+                  <span style={{ fontFamily:MONO, flex:"1 1 auto", minWidth:0 }}>
+                    <PLine s={s} season={info.season} maxSize={13} /></span>
                 </div>
               ))}
             </div>
@@ -1376,7 +1433,8 @@ async function loadPitcherVs(pid, oppId, date) {
     if (!r.ok) return null;
     const j = await r.json();
     const splits = (j.stats?.[0]?.splits||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
-    return { vs: splits.filter(s=>s.opponent?.id===oppId && s.date < date) };
+    const prior = splits.filter(s=>s.date < date);
+    return { vs: prior.filter(s=>s.opponent?.id===oppId), season: pitcherSeasonAverages(prior) };
   } catch { return null; }
 }
 
