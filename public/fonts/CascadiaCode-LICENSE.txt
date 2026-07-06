@@ -1,0 +1,9 @@
+Cascadia Code
+Copyright (c) 2019-2024 Microsoft Corporation
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+Full license text: https://scripts.sil.org/OFL
+
+Source: https://github.com/microsoft/cascadia-code
+Distributed here as a self-hosted woff2 subset for use in this app's UI,
+per the OFL's terms for bundling/embedding.
