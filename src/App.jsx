@@ -657,7 +657,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       // header
       x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
       x.textAlign = "left"; x.textBaseline = "alphabetic";
-      x.fillText("MLB Trends", PADX, 22);
+      x.fillText("MLB", PADX, 22);
       x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
