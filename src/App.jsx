@@ -2199,7 +2199,7 @@ export default function App() {
   const [cal, setCal] = useState(null);   // { load, busy } from TravelTrends
 
   useEffect(() => {
-    document.title = "MLB Trends";
+    document.title = "MLB";
   }, []);
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
@@ -2208,7 +2208,7 @@ export default function App() {
         <header style={{ borderBottom:`2px solid ${C.ink}`, paddingBottom:14, marginBottom:6 }}>
           <div style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.22em",
             textTransform:"uppercase", color:C.inkSoft }}>
-            Research Terminal · MLB live
+            Terminal · MLB live
             {NOTES_URL && <span style={{ color:C.ruleDark }}> · tags {
               tagStatus==="loading" ? "syncing…" : tagStatus==="saving" ? "saving…"
               : tagStatus==="saved" ? "synced" : tagStatus==="error" ? "offline" : ""}</span>}
@@ -2217,7 +2217,7 @@ export default function App() {
             gap:16, flexWrap:"wrap", marginTop:6 }}>
             <div style={{ display:"flex", alignItems:"center", gap:12 }}>
               <h1 style={{ margin:0, fontFamily:SANS, fontWeight:800, fontSize:34,
-                letterSpacing:"-0.02em", lineHeight:1 }}>MLB Trends</h1>
+                letterSpacing:"-0.02em", lineHeight:1 }}>MLB</h1>
               {tab==="calendar" && cal && (
                 <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
                   aria-label="Refresh" title="Refresh schedule & stats"
