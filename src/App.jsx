@@ -277,9 +277,12 @@ const Field = ({ label, children }) => (
     {children}
   </label>
 );
+// iOS Safari zooms the page in on focus for any input/select with a
+// computed font-size under 16px — keep it at 16 so focusing a field
+// (the tag editor, the prop-analyzer fields) never triggers that zoom.
 const inputStyle = {
   boxSizing:"border-box", padding:"9px 11px", border:`1px solid ${C.rule}`,
-  borderRadius:2, background:"#fff", fontFamily:SANS, fontSize:14, color:C.ink, outline:"none",
+  borderRadius:2, background:"#fff", fontFamily:SANS, fontSize:16, color:C.ink, outline:"none",
 };
 const ErrBox = ({ children }) => (
   <div style={{ padding:"12px 14px", background:"#FCEBED", border:`1px solid ${C.under}`,
