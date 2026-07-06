@@ -922,8 +922,11 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
-      <div style={{ fontFamily:MONO, fontSize:8, textAlign:"right", lineHeight:1.2,
+      <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
+        display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
         color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+        {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+          flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
         teamId={g.awayId} t={t} showInd={showInd} tag={null} />
