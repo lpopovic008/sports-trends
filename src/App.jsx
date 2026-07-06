@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import React, { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell,
@@ -730,7 +730,8 @@ function TravelTrends({ tags, setTag, onReady }) {
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
             gap:12, flexWrap:"wrap", marginBottom:8 }}>
-            <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s" }}><Legend /></div>
+            <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s",
+              flex:"1 1 260px", minWidth:0 }}><Legend /></div>
             <button onClick={()=>setShowIndicators(v=>!v)}
               aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
               title={showIndicators ? "Hide indicators" : "Show indicators"}
@@ -810,16 +811,15 @@ function TravelTrends({ tags, setTag, onReady }) {
 
 function Legend() {
   return (
-    <div style={{ display:"flex", gap:"8px 18px", flexWrap:"wrap", marginBottom:10 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:10 }}>
       {TREND_SLOTS.map(s=>(
-        <span key={s.key} style={{ display:"flex", alignItems:"flex-start", gap:6, maxWidth:230 }}>
-          <span style={{ width:13, height:9, borderRadius:2, background:s.color,
-            flexShrink:0, marginTop:3 }} />
-          <span style={{ display:"flex", flexDirection:"column", lineHeight:1.25 }}>
-            <span style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:C.ink }}>{s.label}</span>
-            <span style={{ fontFamily:SANS, fontSize:10.5, color:C.inkSoft }}>{s.desc}</span>
-          </span>
-        </span>
+        <div key={s.key} style={{ display:"flex", alignItems:"center", gap:6, width:"100%" }}>
+          <span style={{ width:13, height:9, borderRadius:2, background:s.color, flexShrink:0 }} />
+          <span style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:C.ink, flexShrink:0,
+            whiteSpace:"nowrap" }}>{s.label}</span>
+          <span style={{ fontFamily:SANS, fontSize:10.5, color:C.inkSoft, flex:"1 1 auto", minWidth:0,
+            whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{s.desc}</span>
+        </div>
       ))}
     </div>
   );
@@ -1545,6 +1545,30 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
   );
 }
 
+// single-line text that shrinks its font-size to fit the container's width
+// instead of wrapping or ellipsis-truncating.
+function FitTitle({ text, maxSize = 18, minSize = 12, style }) {
+  const ref = useRef(null);
+  const [fontSize, setFontSize] = useState(maxSize);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = maxSize;
+      el.style.fontSize = size + "px";
+      while (el.scrollWidth > el.clientWidth && size > minSize) {
+        size -= 1;
+        el.style.fontSize = size + "px";
+      }
+      setFontSize(size);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [text, maxSize, minSize]);
+  return <div ref={ref} style={{ whiteSpace:"nowrap", overflow:"hidden", fontSize, ...style }}>{text}</div>;
+}
+
 function GameModal({ m, tags, setTag, onClose }) {
   const { date, games, trends } = m;
   const [idx, setIdx] = useState(m.idx || 0);
@@ -1721,16 +1745,8 @@ function GameModal({ m, tags, setTag, onClose }) {
                 borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
             </div>
           </div>
-          <div style={{ display:"flex", alignItems:"baseline", gap:8, marginTop:4 }}>
-            <span title={g.awayName} style={{ fontFamily:SANS, fontSize:18, fontWeight:800,
-              letterSpacing:"-0.01em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
-              minWidth:0, flex:"1 1 auto" }}>{g.awayName}</span>
-            <span style={{ color:C.inkSoft, fontWeight:400, fontFamily:SANS, fontSize:18,
-              flexShrink:0 }}>@</span>
-            <span title={g.homeName} style={{ fontFamily:SANS, fontSize:18, fontWeight:800,
-              letterSpacing:"-0.01em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
-              minWidth:0, flex:"1 1 auto", textAlign:"right" }}>{g.homeName}</span>
-          </div>
+          <FitTitle text={`${g.awayName} @ ${g.homeName}`} maxSize={18} minSize={12}
+            style={{ fontFamily:SANS, fontWeight:800, letterSpacing:"-0.01em", marginTop:4 }} />
         </div>
 
         {/* tag editor */}
@@ -1877,8 +1893,8 @@ const RESPONSIVE_CSS = `
   .ts-lineup-col { border-right:none !important; }
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
   .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
-  .ts-app { padding:calc(18px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
-    calc(48px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
+  .ts-app { padding:calc(14px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right))
+    calc(36px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left)); }
   .ts-nav-arrow { display:none !important; }
   .ts-nav-inline { display:inline-flex !important; }
   .ts-modal-head { padding:10px 12px !important; gap:8px !important; }
