@@ -33,8 +33,6 @@ const C = {
 };
 const MONO = "'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-// self-hosted black-marker display font used only for the exported picture text
-const MARKER = "'Permanent Marker', system-ui, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
 const SEASON = new Date().getFullYear();
 
@@ -138,21 +136,30 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw the play call as red marker handwriting directly on the game — no
-// background box — angled like it was scrawled on, vertically centered
-// at (cx,cy) and shrunk to fit maxW if needed.
-function drawRedTag(x, text, cx, cy, maxW, fontSize = 15) {
+// Draw the play call as a flat VS Code-style tag chip — same look as the
+// on-screen calendar badge (theme red fill, white mono text, no rotation),
+// centered at (cx,cy) and shrunk to fit maxW if needed.
+function drawTagBadge(x, text, cx, cy, maxW, fontSize = 13) {
   if (!text) return;
   x.save();
-  x.font = `400 ${fontSize}px ${MARKER}`;
-  const rawW = x.measureText(text).width;
-  const scale = rawW > maxW ? maxW / rawW : 1;
-  x.translate(cx, cy);
-  x.rotate(-4 * Math.PI/180);
-  x.scale(scale, scale);
-  x.fillStyle = "#D7263D";
+  const padX = 7, padY = 4;
+  let size = fontSize;
+  x.font = `700 ${size}px ${MONO}`;
+  let w = x.measureText(text).width + padX*2;
+  while (w > maxW && size > 8) {
+    size -= 0.5;
+    x.font = `700 ${size}px ${MONO}`;
+    w = x.measureText(text).width + padX*2;
+  }
+  const h = size + padY*2, rx = cx - w/2, ry = cy - h/2, rr = 3;
+  x.beginPath();
+  x.moveTo(rx+rr, ry); x.arcTo(rx+w, ry, rx+w, ry+h, rr); x.arcTo(rx+w, ry+h, rx, ry+h, rr);
+  x.arcTo(rx, ry+h, rx, ry, rr); x.arcTo(rx, ry, rx+w, ry, rr); x.closePath();
+  x.fillStyle = C.under; x.fill();
+  x.strokeStyle = "#8a1a22"; x.lineWidth = 1; x.stroke();
+  x.fillStyle = "#fff";
   x.textAlign = "center"; x.textBaseline = "middle";
-  x.fillText(text, 0, 0);
+  x.fillText(text, cx, cy+0.5);
   x.restore();
 }
 
@@ -690,39 +697,39 @@ function TravelTrends({ tags, setTag, onReady }) {
       const cv = document.createElement("canvas");
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
-      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
+      x.fillStyle = C.paper; x.fillRect(0,0,W,H);
       // header
-      x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
+      x.fillStyle = C.ink; x.font = `800 17px ${SANS}`;
       x.textAlign = "left"; x.textBaseline = "alphabetic";
       x.fillText("MLB", PADX, 22);
-      x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
+      x.fillStyle = C.inkSoft; x.font = `10px ${MONO}`;
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
       // one compact row per tagged pick: TIME · AWAY@HOME · tag
       games.forEach((g,i)=>{
         const gx = PADX, gy = HEAD + i*(RH+GAP);
         const bg = tagResultBg(tags[g.gamePk])
-          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
+          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.paper);
         const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
         const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
         const rr = 4;
-        x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
+        x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
         x.beginPath();
         x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
         x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
         // left: matchup (+ scores if final)
-        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
-        x.font = "700 13px system-ui, sans-serif";
+        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = C.ink;
+        x.font = `700 13px ${SANS}`;
         let matchup = `${aw} @ ${hm}`;
         if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
         x.fillText(matchup, gx+10, gy+RH/2 - 6);
         // small time under matchup
-        x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+        x.fillStyle = C.inkSoft; x.font = `9px ${MONO}`;
         x.fillText(time, gx+10, gy+RH/2 + 9);
-        // right: red tag, vertically centered
+        // right: tag chip, vertically centered
         const tv = tagText(tags[g.gamePk]);
-        drawRedTag(x, tv, gx + CW*0.73, gy + RH/2, CW*0.56, 22);
+        drawTagBadge(x, tv, gx + CW*0.78, gy + RH/2, CW*0.42, 12);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -931,13 +938,13 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true,
   );
 }
 
-/* series shading — used only by the exported picture (its own light
-   newsprint-scorecard look, separate from the on-screen VS Code theme).
-   wave 0 (current/past series):  light gray  ↔  white
-   wave 1 (future series):        soft navy   ↔  darker gray  */
-/* 0=light-gray (leftovers even), 1=white (leftovers odd),
-   2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
+/* series shading for the exported picture — matches the on-screen VS
+   Code Light+ palette: neutral gray/white for series that don't touch
+   today, a light accent-blue tint (echoing the calendar's "today"
+   column header) for today's slate. */
+/* 0=card gray (leftovers even), 1=paper white (leftovers odd),
+   2=accent-blue tint (today-series even), 3=deeper accent tint (today-series odd) */
+const SERIES_SHADE = ["#f3f3f3", "#ffffff", "#dbeeff", "#c7e4fa"];
 
 /* on-screen series banding: indices 0/1 are series that don't touch
    today (base/alt row of a light gray pair, matching the VS Code
@@ -1720,37 +1727,37 @@ function GameModal({ m, tags, setTag, onClose }) {
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
       const bg = tagResultBg(tags?.[g.gamePk])
-        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
+        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.paper);
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
       const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
       // card
-      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);          // paper margin
+      x.fillStyle = C.paper; x.fillRect(0,0,W,H);          // paper margin
       const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
-      x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
+      x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
       const rr = 4;
       x.beginPath();
       x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
       x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath(); x.fill(); x.stroke();
       // time / FINAL, top-right
-      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+      x.fillStyle = C.inkSoft; x.font = `9px ${MONO}`;
       x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
       // teams + scores
-      x.textAlign = "left"; x.fillStyle = "#14181F";
-      x.font = "700 15px system-ui, sans-serif";
+      x.textAlign = "left"; x.fillStyle = C.ink;
+      x.font = `700 15px ${SANS}`;
       x.fillText(aw, cx+12, cy+34);
       x.fillText(hm, cx+12, cy+56);
       if (final) {
-        x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
-        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
+        x.textAlign = "right"; x.font = `700 15px ${MONO}`;
+        x.fillStyle = g.awayScore>g.homeScore ? C.ink : C.inkSoft;
         x.fillText(String(g.awayScore), cx+cw-14, cy+34);
-        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
+        x.fillStyle = g.homeScore>g.awayScore ? C.ink : C.inkSoft;
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play written big, filling most of the empty space to the
-      // right of the team names/scores
+      // tagged play chip, filling most of the empty space to the right
+      // of the team names/scores
       if (tagVal) {
-        drawRedTag(x, tagVal, cx + cw*0.60, cy + ch/2, cw*0.78, 36);
+        drawTagBadge(x, tagVal, cx + cw*0.68, cy + ch/2, cw*0.55, 14);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
@@ -2031,13 +2038,6 @@ const RESPONSIVE_CSS = `
    of the viewport instead of leaving a rim of the page's default white */
 html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:none; }
 #root { min-height:100vh; }
-@font-face {
-  font-family: 'Permanent Marker';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
-}
 @font-face {
   font-family: 'Cascadia Code';
   font-style: normal;
@@ -2357,9 +2357,8 @@ export default function App() {
 
   useEffect(() => {
     document.title = "MLB";
-    // warm the export marker font, and the UI's own monospace font, early
+    // warm the UI's monospace font early
     if (document.fonts?.load) {
-      document.fonts.load("400 20px 'Permanent Marker'").catch(()=>{});
       document.fonts.load("400 14px 'Cascadia Code'").catch(()=>{});
     }
   }, []);
