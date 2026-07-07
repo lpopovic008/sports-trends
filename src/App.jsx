@@ -895,7 +895,9 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
   const keys = t.keysFor(teamId);
   const showScore = final || live;
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
+    <div style={{ display:"grid",
+      gridTemplateColumns: live ? "24px 14px 16px 32px 1fr" : "24px 14px 16px 1fr",
+      alignItems:"center", gap:2 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
@@ -904,6 +906,10 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
         color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
+      {/* reserves room for the live-status widget, which is drawn once by
+          the parent CalCard as an absolutely-positioned overlay spanning
+          both rows, rather than duplicated per row */}
+      {live && <span />}
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {showInd && TREND_SLOTS.map(slot=>{
           const present = keys.has(slot.key);
@@ -995,7 +1001,6 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
       height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
-      display:"flex", alignItems:"center", gap:5,
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
@@ -1012,20 +1017,25 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
-          display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-          color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
-          {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
-            flexShrink:0 }} />}
-          {final ? "FINAL" : live ? "LIVE" : time}</div>
-        <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-          teamId={g.awayId} t={t} showInd={showInd} tag={null} />
-        <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-          teamId={g.homeId} t={t} showInd={showInd} tag={null} />
-      </div>
-      {live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
-        onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />}
+      <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
+        display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
+        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+        {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+          flexShrink:0 }} />}
+        {final ? "FINAL" : live ? "LIVE" : time}</div>
+      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
+        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
+      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
+        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
+      {/* live status overlays the reserved spacer column (between hits and
+          indicators) that both TeamRows leave empty, spanning their full
+          height instead of being duplicated per row */}
+      {live && (
+        <div style={{ position:"absolute", left:60, top:0, bottom:0 }}>
+          <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
+            onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />
+        </div>
+      )}
     </div>
   );
 }
