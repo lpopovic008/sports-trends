@@ -1085,16 +1085,36 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
   const ipCol = season
     ? col(outs > season.avgOuts+2, outs < season.avgOuts-2)
     : col(outs>=18, outs>0 && outs<12);
-  const expH = season ? season.h9 * outs/27 : null;
-  const hCol = expH!=null ? col(h<=expH-1.5, h>=expH+1.5) : col(h<=3, h>=5);
-  const expBB = season ? season.bb9 * outs/27 : null;
-  const bbCol = expBB!=null ? col(bb<=expBB-1, bb>=expBB+1) : col(bb<=1, bb>=3);
-  const gameERA = outs>0 ? er*27/outs : null;
-  const erCol = (gameERA!=null && season)
-    ? col(gameERA<=season.era-1, gameERA>=season.era+1)
-    : col(er<=1, er>3);
-  const expK = season ? season.k9 * outs/27 : null;
-  const kCol = expK!=null ? col(k>=expK+2, k<=expK-2) : col(k>=5, k<=3);
+
+  // H/ER/BB/K: below a 2.0-inning outing (6 outs) the rate stats are too
+  // noisy to judge against fixed benchmarks, so short outings still color
+  // relative to the pitcher's own season pace (or the flat fallback, if no
+  // season data exists yet). Longer outings use fixed per-9 benchmarks —
+  // league-average-ish rates read as "bad" here since the goal is calling
+  // out starts that were actually good, not just average.
+  const SHORT_OUTING_OUTS = 6;   // 2.0 innings
+  const longOuting = outs > SHORT_OUTING_OUTS;
+  const rate9 = (n) => outs>0 ? n*27/outs : null;
+
+  let hCol, bbCol, erCol, kCol;
+  if (season && longOuting) {
+    const h9 = rate9(h), bb9 = rate9(bb), era = rate9(er), k9 = rate9(k);
+    hCol  = col(h9<=7.0, h9>=9.0);
+    bbCol = col(bb9<=2.0, bb9>=4.0);
+    erCol = col(era<=3.0, era>=4.0);
+    kCol  = col(k9>=9.0, k9<=6.0);
+  } else {
+    const expH = season ? season.h9 * outs/27 : null;
+    hCol = expH!=null ? col(h<=expH-1.5, h>=expH+1.5) : col(h<=3, h>=5);
+    const expBB = season ? season.bb9 * outs/27 : null;
+    bbCol = expBB!=null ? col(bb<=expBB-1, bb>=expBB+1) : col(bb<=1, bb>=3);
+    const gameERA = outs>0 ? er*27/outs : null;
+    erCol = (gameERA!=null && season)
+      ? col(gameERA<=season.era-1, gameERA>=season.era+1)
+      : col(er<=1, er>3);
+    const expK = season ? season.k9 * outs/27 : null;
+    kCol = expK!=null ? col(k>=expK+2, k<=expK-2) : col(k>=5, k<=3);
+  }
 
   const cells = [
     [`${st.inningsPitched} IP`, ipCol],
