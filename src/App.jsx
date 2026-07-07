@@ -5,25 +5,15 @@ import {
 } from "recharts";
 
 /* ───────────────────────────── palette ─────────────────────────────
-   VS Code Light+ identity: white editor background, light panel-gray
-   surfaces, hairline borders, and syntax-token colors standing in for
-   game data (team = variable blue, score = number green, hits = string
-   red, time = comment green). Today's slate is the one exception — it
-   keeps the old VS Code Dark+ look (see DARK_TOKENS and SERIES_BG)
-   since that's a deliberate "spotlight" on today's games. */
+   Box-score / stat-sheet identity. Cool newsprint paper, ink-black
+   tabular numerals, hairline rules like a ruled scorecard. Signature:
+   a literal highlighter swipe behind every game that matches a trend. */
 const C = {
-  paper:"#ffffff", card:"#f3f3f3", ink:"#1e1e1e", inkSoft:"#6e6e6e",
-  rule:"#e0e0e0", ruleDark:"#b3b3b3", marker:"#e2c08d", markerDeep:"#b89500",
-  over:"#1a7f37", under:"#cf222e", blue:"#0451a5",
-  accent:"#007acc", accentInk:"#ffffff",   /* VS Code's status-bar/button blue */
-  /* syntax-token colors for game data (teams/time/scores/hits) */
-  teamText:"#001080", numText:"#098658", strText:"#a31515", cmText:"#008000",
-  /* integrated-terminal panel for the Plays view — stays dark regardless
-     of app theme, like a real terminal */
-  term:"#0c0c0c", termBar:"#2d2d2d",
+  paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
+  rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
+  over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   /* indicator colors — a five-color neon graffiti set, ordered so each
-     swatch sits next to its nearest hue on the color wheel — unchanged
-     by the VS Code retheme */
+     swatch sits next to its nearest hue on the color wheel */
   rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
@@ -31,8 +21,10 @@ const C = {
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#A0EE26",          /* neon lime: momentum wave */
 };
-const MONO = "'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+// self-hosted black-marker display font used only for the exported picture text
+const MARKER = "'Permanent Marker', system-ui, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
 const SEASON = new Date().getFullYear();
 
@@ -136,30 +128,21 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw the play call as a flat VS Code-style tag chip — same look as the
-// on-screen calendar badge (theme red fill, white mono text, no rotation),
-// centered at (cx,cy) and shrunk to fit maxW if needed.
-function drawTagBadge(x, text, cx, cy, maxW, fontSize = 13) {
+// Draw the play call as red marker handwriting directly on the game — no
+// background box — angled like it was scrawled on, vertically centered
+// at (cx,cy) and shrunk to fit maxW if needed.
+function drawRedTag(x, text, cx, cy, maxW, fontSize = 15) {
   if (!text) return;
   x.save();
-  const padX = 7, padY = 4;
-  let size = fontSize;
-  x.font = `700 ${size}px ${MONO}`;
-  let w = x.measureText(text).width + padX*2;
-  while (w > maxW && size > 8) {
-    size -= 0.5;
-    x.font = `700 ${size}px ${MONO}`;
-    w = x.measureText(text).width + padX*2;
-  }
-  const h = size + padY*2, rx = cx - w/2, ry = cy - h/2, rr = 3;
-  x.beginPath();
-  x.moveTo(rx+rr, ry); x.arcTo(rx+w, ry, rx+w, ry+h, rr); x.arcTo(rx+w, ry+h, rx, ry+h, rr);
-  x.arcTo(rx, ry+h, rx, ry, rr); x.arcTo(rx, ry, rx+w, ry, rr); x.closePath();
-  x.fillStyle = C.under; x.fill();
-  x.strokeStyle = "#8a1a22"; x.lineWidth = 1; x.stroke();
-  x.fillStyle = "#fff";
+  x.font = `400 ${fontSize}px ${MARKER}`;
+  const rawW = x.measureText(text).width;
+  const scale = rawW > maxW ? maxW / rawW : 1;
+  x.translate(cx, cy);
+  x.rotate(-4 * Math.PI/180);
+  x.scale(scale, scale);
+  x.fillStyle = "#D7263D";
   x.textAlign = "center"; x.textBaseline = "middle";
-  x.fillText(text, cx, cy+0.5);
+  x.fillText(text, 0, 0);
   x.restore();
 }
 
@@ -323,10 +306,10 @@ const Field = ({ label, children }) => (
 // (the tag editor, the prop-analyzer fields) never triggers that zoom.
 const inputStyle = {
   boxSizing:"border-box", padding:"9px 11px", border:`1px solid ${C.rule}`,
-  borderRadius:2, background:C.card, fontFamily:SANS, fontSize:16, color:C.ink, outline:"none",
+  borderRadius:2, background:"#fff", fontFamily:SANS, fontSize:16, color:C.ink, outline:"none",
 };
 const ErrBox = ({ children }) => (
-  <div style={{ padding:"12px 14px", background:"rgba(207,34,46,0.10)", border:`1px solid ${C.under}`,
+  <div style={{ padding:"12px 14px", background:"#FCEBED", border:`1px solid ${C.under}`,
     borderRadius:2, color:C.under, fontFamily:SANS, fontSize:13, marginBottom:16 }}>{children}</div>
 );
 const Tag = ({ children, tone }) => (
@@ -697,39 +680,39 @@ function TravelTrends({ tags, setTag, onReady }) {
       const cv = document.createElement("canvas");
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
-      x.fillStyle = C.paper; x.fillRect(0,0,W,H);
+      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
       // header
-      x.fillStyle = C.ink; x.font = `800 17px ${SANS}`;
+      x.fillStyle = "#14181F"; x.font = "800 17px system-ui, sans-serif";
       x.textAlign = "left"; x.textBaseline = "alphabetic";
       x.fillText("MLB", PADX, 22);
-      x.fillStyle = C.inkSoft; x.font = `10px ${MONO}`;
+      x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
       // one compact row per tagged pick: TIME · AWAY@HOME · tag
       games.forEach((g,i)=>{
         const gx = PADX, gy = HEAD + i*(RH+GAP);
         const bg = tagResultBg(tags[g.gamePk])
-          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.paper);
+          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
         const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
         const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
         const rr = 4;
-        x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
+        x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
         x.beginPath();
         x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
         x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
         // left: matchup (+ scores if final)
-        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = C.ink;
-        x.font = `700 13px ${SANS}`;
+        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
+        x.font = "700 13px system-ui, sans-serif";
         let matchup = `${aw} @ ${hm}`;
         if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
         x.fillText(matchup, gx+10, gy+RH/2 - 6);
         // small time under matchup
-        x.fillStyle = C.inkSoft; x.font = `9px ${MONO}`;
+        x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
         x.fillText(time, gx+10, gy+RH/2 + 9);
-        // right: tag chip, vertically centered
+        // right: red tag, vertically centered
         const tv = tagText(tags[g.gamePk]);
-        drawTagBadge(x, tv, gx + CW*0.78, gy + RH/2, CW*0.42, 12);
+        drawRedTag(x, tv, gx + CW*0.73, gy + RH/2, CW*0.56, 22);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -793,9 +776,9 @@ function TravelTrends({ tags, setTag, onReady }) {
               aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
               title={showIndicators ? "Hide indicators" : "Show indicators"}
               style={{ flexShrink:0, width:32, height:32, borderRadius:4,
-                border:`1px solid ${showIndicators ? C.rule : C.accent}`,
-                background: showIndicators ? C.card : C.accent,
-                color: showIndicators ? C.inkSoft : C.accentInk, cursor:"pointer",
+                border:`1px solid ${showIndicators ? C.rule : C.ink}`,
+                background: showIndicators ? "#fff" : C.ink,
+                color: showIndicators ? C.inkSoft : "#fff", cursor:"pointer",
                 display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
               {showIndicators ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -818,14 +801,14 @@ function TravelTrends({ tags, setTag, onReady }) {
                 : d.date===addDays(start,-1) ? "Yesterday"
                 : d.date===addDays(start,-2) ? "2 days ago" : calDay(d.date).wd;
               return (
-              <div key={d.date} ref={isToday?todayColRef:null} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.accent:C.rule}`, borderRadius:3,
+              <div key={d.date} ref={isToday?todayColRef:null} className="ts-cal-col" style={{ border:`1px solid ${isToday?C.ink:C.rule}`, borderRadius:3,
                 overflow:"hidden" }}>
                 <div style={{ padding:"5px 7px", borderBottom:`1px solid ${C.rule}`,
-                  background:isToday?C.accent:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
+                  background:isToday?C.ink:C.card, display:"flex", alignItems:"baseline", gap:5 }}>
                   <span style={{ fontFamily:SANS, fontSize:14, fontWeight:700,
-                    color:isToday?C.accentInk:C.ink }}>{calDay(d.date).md}</span>
+                    color:isToday?"#fff":C.ink }}>{calDay(d.date).md}</span>
                   <span style={{ fontFamily:MONO, fontSize:8.5, letterSpacing:"0.08em",
-                    textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.75)":C.inkSoft }}>{label}</span>
+                    textTransform:"uppercase", color:isToday?"rgba(255,255,255,0.7)":C.inkSoft }}>{label}</span>
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
                   {d.games.length===0
@@ -901,25 +884,18 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true, dark=false }) {
+function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
   const keys = t.keysFor(teamId);
   const showScore = final || live;
-  // syntax-token coloring: team = variable blue, score = number green,
-  // hits = string red — a loser dims instead of changing color, so
-  // the token colors stay consistent and only opacity/weight carry W/L
-  const lost = final && !won;
-  const tk = dark ? DARK_TOKENS : C;
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
-      <span style={{ fontFamily:MONO, fontSize:13, color:tk.teamText,
+      <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
-        opacity: lost ? 0.55 : 1 }}>{abbr}</span>
+        color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
-        color: showScore ? tk.numText : C.ruleDark,
-        opacity: lost ? 0.55 : 1 }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:tk.strText,
-        opacity: lost ? 0.6 : 0.9 }}>
+        color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
         {showInd && TREND_SLOTS.map(slot=>{
@@ -938,26 +914,12 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true,
   );
 }
 
-/* series shading for the exported picture — matches the on-screen VS
-   Code Light+ palette: neutral gray/white for series that don't touch
-   today, a light accent-blue tint (echoing the calendar's "today"
-   column header) for today's slate. */
-/* 0=card gray (leftovers even), 1=paper white (leftovers odd),
-   2=accent-blue tint (today-series even), 3=deeper accent tint (today-series odd) */
-const SERIES_SHADE = ["#f3f3f3", "#ffffff", "#dbeeff", "#c7e4fa"];
-
-/* on-screen series banding: indices 0/1 are series that don't touch
-   today (base/alt row of a light gray pair, matching the VS Code
-   Light+ page) and indices 2/3 are today's slate and any other days
-   sharing that same series (base/alt row of the old VS Code Dark+
-   grays), so today's games stay spotlighted against the light week. */
-const SERIES_BG = ["#ececec", "#e2e2e2", "#363636", "#4a4a4a"];
-
-/* colors used only on the remaining dark VS Code Dark+ surfaces — today's
-   slate calendar cells and the Plays view's integrated-terminal panel —
-   since those stay dark even though the rest of the app is light. */
-const DARK_TOKENS = { teamText:"#9cdcfe", numText:"#b5cea8", strText:"#ce9178", cmText:"#6a9955",
-  over:"#89d185", under:"#f14c4c", blue:"#569cd6" };
+/* series shading — two pairs, two waves:
+   wave 0 (current/past series):  light gray  ↔  white
+   wave 1 (future series):        soft navy   ↔  darker gray  */
+/* 0=light-gray (leftovers even), 1=white (leftovers odd),
+   2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -981,10 +943,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const live = g.isLive && !final;
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
-  const bg = g.seriesShade!=null ? SERIES_BG[g.seriesShade] : C.card;
-  // today's slate (and any other days sharing that series) sits on a dark
-  // cell even in the light theme, so its text needs the old dark-theme tokens
-  const dark = g.seriesShade===2 || g.seriesShade===3;
+  const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   return (
@@ -996,30 +955,29 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
-          background:C.under, color:"#fff", border:"1px solid #8a1a22", borderRadius:2,
-          padding:"1px 5px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.25,
-          boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
-          textOverflow:"ellipsis" }}>{tag}</div>
+          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
+          padding:"1px 5px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.25,
+          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</div>
       )}
       {tagInMarkers && (
         <div title={tag} style={{ position:"absolute", right:6, top:"50%", zIndex:3, maxWidth:"64%",
-          transform:"translateY(-50%)",
-          background:C.under, color:"#fff", border:"1px solid #8a1a22", borderRadius:2,
-          padding:"1px 6px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.3,
-          boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          transform:"translateY(-50%) rotate(-2deg)",
+          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
+          padding:"1px 6px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.3,
+          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
         display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : (dark ? DARK_TOKENS.cmText : C.cmText), fontWeight: live ? 700 : 400,
-        fontStyle: live ? "normal" : "italic" }}>
+        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-        teamId={g.awayId} t={t} showInd={showInd} tag={null} dark={dark} />
+        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
       <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-        teamId={g.homeId} t={t} showInd={showInd} tag={null} dark={dark} />
+        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
     </div>
   );
 }
@@ -1150,7 +1108,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
               textTransform:"uppercase", color:C.inkSoft }}>{SEASON} game log</div>
             <div style={{ fontFamily:SANS, fontSize:18, fontWeight:800 }}>{name}</div>
           </div>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
             borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
         </div>
 
@@ -1179,7 +1137,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
             const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
-              gap:6, padding:"5px 12px", borderTop:`1px solid ${C.rule}`, alignItems:"baseline" }}>
+              gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{calDay(s.date).md}</span>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft,
                 fontWeight: repeatOpp ? 800 : 400 }}>{
@@ -1228,7 +1186,7 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {info.vs.map((s,i)=>(
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                  gap:10, alignItems:"baseline", borderBottom:`1px solid ${C.rule}`, paddingBottom:4 }}>
+                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:34, flexShrink:0 }}>{calDay(s.date).md}</span>
                   <span style={{ fontFamily:MONO, flex:"1 1 auto", minWidth:0 }}>
                     <PLine s={s} season={info.season} maxSize={13} /></span>
@@ -1341,7 +1299,7 @@ function PropAnalyzer({ injected = null }) {
           <option value="15">Last 15</option><option value="20">Last 20</option>
           <option value="month">This month</option><option value="season">Season</option></select></Field>
         <button onClick={()=>analyzeLive()} disabled={busy} style={{ padding:"8px 16px",
-          border:`1px solid ${busy?C.rule:C.accent}`, borderRadius:2, background:busy?C.rule:C.accent, color:C.accentInk,
+          border:`1px solid ${C.ink}`, borderRadius:2, background:busy?C.rule:C.ink, color:"#fff",
           fontFamily:MONO, fontSize:12, letterSpacing:"0.06em", textTransform:"uppercase",
           cursor:busy?"default":"pointer" }}>{busy?"…":"Analyze"}</button>
       </div>
@@ -1380,9 +1338,8 @@ function PropAnalyzer({ injected = null }) {
                 <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
                   axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill:"rgba(0,0,0,0.05)" }}
-                  contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}`,
-                    background:C.card, color:C.ink }} />
+                <Tooltip cursor={{ fill:"rgba(0,0,0,0.04)" }}
+                  contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}` }} />
                 <Bar dataKey="value" radius={[2,2,0,0]}>
                   {analysis.recent.map((g,i)=>(
                     <Cell key={i} fill={g.value>analysis.L ? C.over : C.under} />
@@ -1410,7 +1367,7 @@ function PropModal({ injected, onClose }) {
         <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
           display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
           <span style={{ fontFamily:SANS, fontWeight:700, fontSize:16 }}>Prop Lookup</span>
-          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+          <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
             borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
         </div>
         <div style={{ padding:"14px 18px 20px" }}>
@@ -1568,7 +1525,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
     <button onClick={()=>enabled&&setView(id)} disabled={!enabled}
       style={{ flex:1, padding:"5px 8px", border:"none", cursor:enabled?"pointer":"not-allowed",
         fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em", textTransform:"uppercase",
-        background: view===id ? C.accent : "transparent", color: view===id ? C.accentInk : (enabled?C.inkSoft:C.rule),
+        background: view===id ? C.ink : "transparent", color: view===id ? "#fff" : (enabled?C.inkSoft:C.rule),
         borderRadius:2 }}>{label}</button>
   );
 
@@ -1583,7 +1540,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
       </div>
 
       {/* view toggle */}
-      <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid ${C.rule}` }}>
+      <div style={{ display:"flex", gap:3, padding:"6px 10px 2px", borderBottom:`1px solid #EEF0F2` }}>
         {tabBtn("vssp", canVs ? `vs ${oppPitcherName.split(" ").slice(-1)[0]}` : "vs SP", canVs)}
         {tabBtn("last5","Last 5")}
       </div>
@@ -1618,7 +1575,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           if (view==="last5") {
             return (
             <div key={p.id} style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6,
-              padding:"3px 10px", alignItems:"center", borderTop:`1px solid ${C.rule}` }}>
+              padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
               <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
               <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
                 overflow:"hidden", textOverflow:"ellipsis",
@@ -1635,7 +1592,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           const st = vsData[p.id];
           return (
           <div key={p.id} style={{ display:"grid", gridTemplateColumns:HV_COLS, gap:6,
-            padding:"3px 10px", alignItems:"center", borderTop:`1px solid ${C.rule}` }}>
+            padding:"3px 10px", alignItems:"center", borderTop:`1px solid #EEF0F2` }}>
             <span style={{ fontFamily:MONO, fontSize:11, color:C.ruleDark }}>{p.order}</span>
             <span style={{ fontFamily:SANS, fontSize:12.5, whiteSpace:"nowrap",
               overflow:"hidden", textOverflow:"ellipsis" }} title={p.name}>{p.name}</span>
@@ -1667,7 +1624,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
 
       {/* starting pitcher — visually separated from the hitters */}
       <div style={{ margin:"6px 10px 12px", padding:"10px 12px", borderRadius:3,
-        background:C.card, border:`1px solid ${C.rule}` }}>
+        background:"#fff", border:`1px solid ${C.rule}` }}>
         <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
           color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
         <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
@@ -1727,37 +1684,37 @@ function GameModal({ m, tags, setTag, onClose }) {
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
       const bg = tagResultBg(tags?.[g.gamePk])
-        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : C.paper);
+        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
       const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
       // card
-      x.fillStyle = C.paper; x.fillRect(0,0,W,H);          // paper margin
+      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);          // paper margin
       const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
-      x.fillStyle = bg; x.strokeStyle = C.rule; x.lineWidth = 1;
+      x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
       const rr = 4;
       x.beginPath();
       x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
       x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath(); x.fill(); x.stroke();
       // time / FINAL, top-right
-      x.fillStyle = C.inkSoft; x.font = `9px ${MONO}`;
+      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
       x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
       // teams + scores
-      x.textAlign = "left"; x.fillStyle = C.ink;
-      x.font = `700 15px ${SANS}`;
+      x.textAlign = "left"; x.fillStyle = "#14181F";
+      x.font = "700 15px system-ui, sans-serif";
       x.fillText(aw, cx+12, cy+34);
       x.fillText(hm, cx+12, cy+56);
       if (final) {
-        x.textAlign = "right"; x.font = `700 15px ${MONO}`;
-        x.fillStyle = g.awayScore>g.homeScore ? C.ink : C.inkSoft;
+        x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
+        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
         x.fillText(String(g.awayScore), cx+cw-14, cy+34);
-        x.fillStyle = g.homeScore>g.awayScore ? C.ink : C.inkSoft;
+        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play chip, filling most of the empty space to the right
-      // of the team names/scores
+      // tagged play written big, filling most of the empty space to the
+      // right of the team names/scores
       if (tagVal) {
-        drawTagBadge(x, tagVal, cx + cw*0.68, cy + ch/2, cw*0.55, 14);
+        drawRedTag(x, tagVal, cx + cw*0.60, cy + ch/2, cw*0.78, 36);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
@@ -1852,29 +1809,29 @@ function GameModal({ m, tags, setTag, onClose }) {
                 <span className="ts-nav-inline" style={{ display:"none", gap:4 }}>
                   <button onClick={()=>go(-1)} disabled={!hasPrev} aria-label="Previous game"
                     style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                      background:C.card, color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      background:"#fff", color:hasPrev?C.ink:C.rule, fontFamily:MONO, fontSize:16,
                       cursor:hasPrev?"pointer":"default", lineHeight:1 }}>‹</button>
                   <button onClick={()=>go(1)} disabled={!hasNext} aria-label="Next game"
                     style={{ width:32, height:32, borderRadius:4, border:`1px solid ${C.rule}`,
-                      background:C.card, color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
+                      background:"#fff", color:hasNext?C.ink:C.rule, fontFamily:MONO, fontSize:16,
                       cursor:hasNext?"pointer":"default", lineHeight:1 }}>›</button>
                 </span>
               )}
               <button onClick={()=>setTagEditing(v=>!v)}
                 title={tagVal ? "Edit play tag" : "Tag this game"}
                 style={{ border:`1px solid ${tagVal?"#D7263D":C.rule}`,
-                  background:tagVal?"#F2657A":C.card, color:tagVal?"#fff":C.ink,
+                  background:tagVal?"#F2657A":"#fff", color:tagVal?"#fff":C.ink,
                   borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                   textTransform:"uppercase", padding:"5px 10px", cursor:"pointer", fontWeight:700 }}>
                 {tagVal ? "Play ✓" : "Play"}</button>
               <button onClick={exportCard} title="Copy game image to clipboard"
                 aria-label="Copy game image"
-                style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:C.card,
+                style={{ border:`1px solid ${copied==="ok"?C.over:C.rule}`, background:"#fff",
                   color:copied==="ok"?C.over:C.ink,
                   borderRadius:3, fontFamily:MONO, fontSize:11, letterSpacing:"0.08em",
                   textTransform:"uppercase", padding:"5px 10px", cursor:"pointer" }}>
                 {copied==="ok" ? "Copied ✓" : copied==="dl" ? "Saved ✓" : copied==="err" ? "Failed" : "Copy"}</button>
-              <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:C.card,
+              <button onClick={onClose} style={{ border:`1px solid ${C.rule}`, background:"#fff",
                 borderRadius:2, fontFamily:MONO, fontSize:13, padding:"4px 10px", cursor:"pointer" }}>✕</button>
             </div>
           </div>
@@ -1884,7 +1841,7 @@ function GameModal({ m, tags, setTag, onClose }) {
 
         {/* tag editor */}
         {tagEditing && (
-          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"rgba(207,34,46,0.08)",
+          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"#FFF3F4",
             display:"flex", gap:8, alignItems:"center" }}>
             <input autoFocus defaultValue={tagVal}
               placeholder="e.g. PLAY · over 8.5 · fade the public"
@@ -1892,7 +1849,7 @@ function GameModal({ m, tags, setTag, onClose }) {
               onBlur={e=>{ setTag(g, e.target.value); }}
               style={{ flex:1, ...inputStyle }} />
             <button onMouseDown={e=>{ e.preventDefault(); setTag(g, ""); setTagEditing(false); }}
-              style={{ border:`1px solid ${C.rule}`, background:C.card, borderRadius:2,
+              style={{ border:`1px solid ${C.rule}`, background:"#fff", borderRadius:2,
                 fontFamily:MONO, fontSize:11, padding:"6px 10px", cursor:"pointer", color:C.under }}>Remove</button>
           </div>
         )}
@@ -2039,11 +1996,11 @@ const RESPONSIVE_CSS = `
 html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:none; }
 #root { min-height:100vh; }
 @font-face {
-  font-family: 'Cascadia Code';
+  font-family: 'Permanent Marker';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('${import.meta.env.BASE_URL}fonts/CascadiaCode-Regular.woff2') format('woff2');
+  src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
@@ -2058,8 +2015,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
-  .ts-lineup-col + .ts-lineup-col { border-top:1px solid ${C.rule}; }
-  .ts-h2h-divider { border-left:none !important; border-top:1px solid ${C.rule}; }
+  .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
+  .ts-h2h-divider { border-left:none !important; border-top:1px solid #CDD3DA; }
   .ts-app { padding:calc(14px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right))
     calc(36px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left)); }
   .ts-nav-arrow { display:none !important; }
@@ -2165,7 +2122,7 @@ function TagsView({ tags, setResult }) {
         title={on ? `Clear ${label}` : `Mark ${label}`}
         style={{ width:30, height:28, borderRadius:3, cursor:"pointer",
           border:`1px solid ${on ? color : C.rule}`,
-          background: on ? color : C.card, color: on ? "#fff" : C.inkSoft,
+          background: on ? color : "#fff", color: on ? "#fff" : C.inkSoft,
           fontFamily:MONO, fontSize:12, fontWeight:700 }}>{label}</button>
     );
   };
@@ -2184,41 +2141,31 @@ function TagsView({ tags, setResult }) {
 
   return (
     <div>
-      {/* ─────────── RECORD DASHBOARD, styled as an integrated terminal ─────────── */}
-      <div style={{ border:`1px solid ${C.rule}`, borderRadius:6, overflow:"hidden",
-        background:C.term, marginBottom:26, boxShadow:"0 4px 16px rgba(0,0,0,0.3)" }}>
-        {/* terminal title bar */}
-        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
-          background:C.termBar, borderBottom:`1px solid ${C.rule}` }}>
-          <span style={{ width:10, height:10, borderRadius:"50%", background:"#ff5f56", flexShrink:0 }} />
-          <span style={{ width:10, height:10, borderRadius:"50%", background:"#ffbd2e", flexShrink:0 }} />
-          <span style={{ width:10, height:10, borderRadius:"50%", background:"#27c93f", flexShrink:0 }} />
-          <span style={{ fontFamily:MONO, fontSize:10.5, color:"rgba(255,255,255,0.45)",
-            margin:"0 auto", transform:"translateX(-13px)" }}>plays — zsh</span>
-        </div>
+      {/* ─────────── RECORD DASHBOARD (visually distinct) ─────────── */}
+      <div style={{ border:`2px solid ${C.ink}`, borderRadius:6, overflow:"hidden",
+        background:C.ink, marginBottom:26 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
           gap:10, padding:"10px 16px", flexWrap:"wrap" }}>
           <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.18em",
-            textTransform:"uppercase", color:"rgba(255,255,255,0.6)" }}>
-            <span style={{ color:DARK_TOKENS.over }}>❯</span> track-record</span>
+            textTransform:"uppercase", color:"rgba(255,255,255,0.6)" }}>Track Record</span>
           {/* filters */}
           <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
             {FILTERS.map(([id,lbl])=>(
               <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
-                border:`1px solid ${range===id?C.accent:"rgba(255,255,255,0.25)"}`, borderRadius:2,
-                background:range===id?C.accent:"transparent", color:range===id?C.accentInk:"rgba(255,255,255,0.75)",
+                border:`1px solid ${range===id?"#fff":"rgba(255,255,255,0.25)"}`, borderRadius:2,
+                background:range===id?"#fff":"transparent", color:range===id?C.ink:"rgba(255,255,255,0.75)",
                 fontFamily:MONO, fontSize:10, letterSpacing:"0.04em", textTransform:"uppercase",
                 cursor:"pointer" }}>{lbl}</button>))}
           </div>
         </div>
 
-        <div style={{ background:C.term, padding:"16px", display:"flex", gap:20,
+        <div style={{ background:C.paper, padding:"16px", display:"flex", gap:20,
           flexWrap:"wrap", alignItems:"center" }}>
           <div>
             <div style={{ fontFamily:MONO, fontSize:38, fontWeight:700, lineHeight:1 }}>
-              <span style={{ color:DARK_TOKENS.over }}>{wins}</span>
+              <span style={{ color:C.over }}>{wins}</span>
               <span style={{ color:C.ruleDark }}>–</span>
-              <span style={{ color:DARK_TOKENS.under }}>{losses}</span>
+              <span style={{ color:C.under }}>{losses}</span>
             </div>
             <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
               {rangeLabel}{pct!=null ? ` · ${pct}% win` : ""}</div>
@@ -2245,13 +2192,13 @@ function TagsView({ tags, setResult }) {
                     if(!active || !payload || !payload.length) return null;
                     const d = payload[0].payload;
                     if (!d.result) return (
-                      <div style={{ background:C.card, border:`1px solid ${C.rule}`, borderRadius:3,
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
                         padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
                         <div style={{ color:C.inkSoft }}>Start</div>
                       </div>
                     );
                     return (
-                      <div style={{ background:C.card, border:`1px solid ${C.rule}`, borderRadius:3,
+                      <div style={{ background:"#fff", border:`1px solid ${C.rule}`, borderRadius:3,
                         padding:"6px 9px", fontFamily:MONO, fontSize:11, lineHeight:1.5 }}>
                         <div style={{ color:C.inkSoft }}>#{d.i} · {d.label}
                           {d.matchup ? ` · ${d.matchup}` : ""}</div>
@@ -2266,10 +2213,10 @@ function TagsView({ tags, setResult }) {
                     );
                   }} />
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
-                  <Line type="linear" dataKey="net" stroke={DARK_TOKENS.blue} strokeWidth={2}
+                  <Line type="linear" dataKey="net" stroke={C.blue} strokeWidth={2}
                     dot={(p)=>{
                       if (!dotIdx.has(p.index)) return <React.Fragment key={p.index} />;
-                      return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={DARK_TOKENS.blue} />;
+                      return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={C.blue} />;
                     }}
                     activeDot={{ r:4 }} isAnimationActive={false} />
                 </ComposedChart>
@@ -2285,55 +2232,57 @@ function TagsView({ tags, setResult }) {
         <div style={{ padding:"18px 4px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
           No plays in this range.</div>
       ) : (
-      <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:14 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
           const graded = r.result==="W" || r.result==="L" || r.result==="P";
-          const resultColor = r.result==="W"?C.over : r.result==="L"?C.under : C.blue;
-          const matchup = r.away && r.home
-            ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : "";
+          const tint = r.result==="W" ? "rgba(27,127,92,0.10)"
+                     : r.result==="L" ? "rgba(215,38,61,0.09)"
+                     : r.result==="P" ? "rgba(43,76,126,0.09)" : "#fff";
+          const edge = r.result==="W" ? C.over : r.result==="L" ? C.under
+                     : r.result==="P" ? C.blue : C.rule;
 
           if (graded) {
-            // compact one-line terminal log entry so more plays fit on screen
+            // compact one-line row so more plays fit on screen
             return (
-              <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:8,
-                borderRadius:3, background:C.card, padding:"5px 10px", fontFamily:MONO }}>
-                <span style={{ color:C.ruleDark, flexShrink:0 }}>❯</span>
-                <span style={{ fontSize:12, fontWeight:700, color:resultColor,
-                  flexShrink:0, whiteSpace:"nowrap" }}>[{r.result}]</span>
-                <span style={{ fontSize:11, fontWeight:700, color:C.teamText,
-                  flexShrink:0, whiteSpace:"nowrap" }}>{matchup}</span>
-                <span style={{ fontSize:13, color:C.ink,
+              <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:10,
+                border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
+                background:tint, padding:"5px 10px" }}>
+                <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700,
+                  color: r.result==="W"?C.over:r.result==="L"?C.under:C.blue, flexShrink:0, width:14 }}>{r.result}</span>
+                <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:700, color:C.inkSoft,
+                  flexShrink:0, whiteSpace:"nowrap" }}>
+                  {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}</span>
+                <span style={{ fontFamily:SANS, fontSize:13, fontWeight:600, color:C.ink,
                   whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1, minWidth:0 }}
                   title={r.text}>{r.text}</span>
-                <span style={{ fontSize:9.5, color:C.cmText, fontStyle:"italic", flexShrink:0,
+                <span style={{ fontFamily:MONO, fontSize:9.5, color:C.ruleDark, flexShrink:0,
                   whiteSpace:"nowrap", textAlign:"right" }}>
-                  # {r.date ? calDay(r.date).md : ""}{r.time ? ` ${fmtTime(r.time)}` : ""}</span>
+                  {r.date ? calDay(r.date).md : ""}{r.time ? ` · ${fmtTime(r.time)}` : ""}</span>
                 <button onClick={()=>setResult(r.gamePk, null)} title="Undo result"
                   style={{ flexShrink:0, width:26, height:24, borderRadius:3, cursor:"pointer",
-                    border:`1px solid ${C.rule}`, background:C.paper, color:C.inkSoft,
+                    border:`1px solid ${C.rule}`, background:"#fff", color:C.inkSoft,
                     fontFamily:MONO, fontSize:13, lineHeight:1, padding:0 }}>↩</button>
               </div>
             );
           }
 
-          // ungraded — full row with W/L/P buttons
+          // ungraded — full row with W/L buttons
           return (
             <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:12,
-              border:`1px solid ${C.rule}`, borderRadius:4,
-              background:C.card, padding:"10px 12px", fontFamily:MONO }}>
-              <span style={{ color:C.ruleDark, fontSize:15, flexShrink:0, alignSelf:"flex-start", marginTop:2 }}>❯</span>
+              border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
+              background:tint, padding:"10px 12px" }}>
               <div style={{ minWidth:0, flex:1 }}>
-                <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.04em",
-                  color:C.teamText }}>
+                <div style={{ fontFamily:MONO, fontSize:11, fontWeight:700, letterSpacing:"0.04em",
+                  color:C.inkSoft }}>
                   {r.away && r.home
                     ? `${TEAM_ABBR[r.awayId]||r.away} @ ${TEAM_ABBR[r.homeId]||r.home}`
                     : "—"}</div>
-                <div style={{ fontSize:14.5, fontWeight:600, marginTop:2,
+                <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700, marginTop:2,
                   color:C.ink, wordBreak:"break-word" }}>{r.text}</div>
               </div>
-              <div style={{ fontSize:10, color:C.cmText, fontStyle:"italic", textAlign:"right",
+              <div style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark, textAlign:"right",
                 flexShrink:0, lineHeight:1.4 }}>
-                <div>{r.date ? `# ${calDay(r.date).md}` : ""}</div>
+                <div>{r.date ? calDay(r.date).md : ""}</div>
                 {r.time && <div>{fmtTime(r.time)}</div>}
               </div>
               <div style={{ display:"flex", gap:5, flexShrink:0 }}>
@@ -2357,10 +2306,8 @@ export default function App() {
 
   useEffect(() => {
     document.title = "MLB";
-    // warm the UI's monospace font early
-    if (document.fonts?.load) {
-      document.fonts.load("400 14px 'Cascadia Code'").catch(()=>{});
-    }
+    // warm the export font early so it's ready well before anyone hits export
+    if (document.fonts?.load) document.fonts.load("400 20px 'Permanent Marker'").catch(()=>{});
   }, []);
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
