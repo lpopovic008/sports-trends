@@ -937,11 +937,12 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* on-screen series banding: indices 0/1 are series that don't touch
-   today (base/alt row of a lighter, faintly cool-toned pair) and
-   indices 2/3 are today's slate and any other days sharing that same
-   series (base/alt row of a darker pair), so today reads as visually
-   closer to the editor background than the rest of the week. */
-const SERIES_BG = ["#3f3f47", "#4a4a54", "#232328", "#2b2b31"];
+   today (base/alt row of a lighter pair, tinted with a hint of purple)
+   and indices 2/3 are today's slate and any other days sharing that
+   same series (base/alt row of a darker pair, tinted with a hint of
+   green), so today reads as visually closer to the editor background
+   than the rest of the week. */
+const SERIES_BG = ["#433d49", "#4e4856", "#222825", "#2a302e"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
