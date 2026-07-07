@@ -948,20 +948,26 @@ function NowLine() {
 function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
   if (inningNum == null) return null;
   const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
-  const baseStyle = (on) => ({ position:"absolute", width:6, height:6, borderRadius:1,
-    transform:"rotate(45deg)", background: on ? C.ink : "transparent",
-    border:`1px solid ${C.ink}` });
+  // diamonds as SVG polygons (not rotated CSS boxes) so all three bases are
+  // drawn in one coordinate space — guarantees 2nd sits exactly centered
+  // over 1st/3rd instead of relying on independently-positioned, separately
+  // anti-aliased rotated elements to line up pixel-for-pixel.
+  const diamond = (cx, cy, on) => {
+    const r = 3.4;
+    return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
+      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1" />;
+  };
   return (
     <div style={{ flexShrink:0, width:32, display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", gap:4,
       borderLeft:`1px solid ${C.rule}`, height:"100%" }}>
       <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
-      <div style={{ position:"relative", width:16, height:14 }}>
-        <span style={{ ...baseStyle(onSecond), top:0, left:5 }} />
-        <span style={{ ...baseStyle(onThird), top:6, left:0 }} />
-        <span style={{ ...baseStyle(onFirst), top:6, left:10 }} />
-      </div>
+      <svg width="20" height="16" viewBox="0 0 20 16">
+        {diamond(10, 4, onSecond)}
+        {diamond(4, 11, onThird)}
+        {diamond(16, 11, onFirst)}
+      </svg>
       <div style={{ display:"flex", gap:2 }}>
         {[0,1,2].map(i=>(
           <span key={i} style={{ width:4, height:4, borderRadius:"50%",
