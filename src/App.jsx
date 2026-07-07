@@ -1083,7 +1083,7 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
   const bb = Number(st.baseOnBalls)||0, k = Number(st.strikeOuts)||0;
 
   const ipCol = season
-    ? col(outs > season.avgOuts+2, outs < season.avgOuts-2)
+    ? col(outs > season.avgOuts+3, outs < season.avgOuts-3)
     : col(outs>=18, outs>0 && outs<12);
 
   // H/ER/BB/K: below a 2.0-inning outing (6 outs) the rate stats are too
