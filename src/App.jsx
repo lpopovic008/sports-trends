@@ -1504,10 +1504,10 @@ async function loadBatterVs(batterId, pitcherId) {
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
 const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
 function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId }) {
-  const [view, setView] = useState("last5");      // "last5" | "vssp"
+  const canVs = !!oppPitcherId && !!oppPitcherName;
+  const [view, setView] = useState(() => canVs ? "vssp" : "last5");   // "last5" | "vssp"
   const [vsData, setVsData] = useState({});       // batterId -> stat | null
   const [vsLoading, setVsLoading] = useState(false);
-  const canVs = !!oppPitcherId && !!oppPitcherName;
 
   // lazy-load batter-vs-pitcher lines the first time the toggle flips
   useEffect(() => {
