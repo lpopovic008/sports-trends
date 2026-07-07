@@ -378,7 +378,10 @@ function TravelTrends({ tags, setTag, onReady }) {
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
 
   const load = useCallback(async () => {
-    setErr(""); setDays(null); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
+    // keep showing the current calendar while refreshing (setDays isn't
+    // cleared here) so a manual refresh doesn't unmount the scroll
+    // container and reset which day is in view
+    setErr(""); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
          fetch from 3 days back so the -2 day's travel has a "prev day". */
