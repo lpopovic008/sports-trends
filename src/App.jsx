@@ -989,17 +989,17 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
-          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
-          padding:"1px 5px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.25,
-          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
-          textOverflow:"ellipsis", transform:"rotate(-2deg)" }}>{tag}</div>
+          background:C.markerDeep, color:"#fff", border:"1px solid #8f7300", borderRadius:2,
+          padding:"1px 5px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.25,
+          boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          textOverflow:"ellipsis" }}>{tag}</div>
       )}
       {tagInMarkers && (
         <div title={tag} style={{ position:"absolute", right:6, top:"50%", zIndex:3, maxWidth:"64%",
-          transform:"translateY(-50%) rotate(-2deg)",
-          background:"#F2657A", color:"#fff", border:"1px solid #D7263D", borderRadius:3,
-          padding:"1px 6px", fontFamily:SANS, fontSize:9.5, fontWeight:700, lineHeight:1.3,
-          boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
+          transform:"translateY(-50%)",
+          background:C.markerDeep, color:"#fff", border:"1px solid #8f7300", borderRadius:2,
+          padding:"1px 6px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.3,
+          boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
