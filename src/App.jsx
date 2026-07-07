@@ -965,8 +965,7 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   };
   return (
     <div style={{ flexShrink:0, width:32, display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:4,
-      borderLeft:`1px solid ${C.rule}`, height:"100%" }}>
+      alignItems:"center", justifyContent:"center", gap:4, height:"100%" }}>
       <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
       <svg width="20" height="16" viewBox="0 0 20 16">
