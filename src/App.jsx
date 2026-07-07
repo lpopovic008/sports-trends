@@ -800,24 +800,26 @@ function TravelTrends({ tags, setTag, onReady }) {
     const rematch = [];
     const rematchTier = {};                       // teamId -> 'strong' | 'weak'
     const rematchVerdict = {};                    // teamId -> 'up' | 'down' | 'even'
-    const checkRematch = (pid, oppId, pitcher, oppName) => {
+    const checkRematch = (pid, teamId, oppId, pitcher, oppName) => {
       if (!pid) return;
       const entry = faced[pid];
       const facings = (entry?.list||[]).filter(x => x.oppId===oppId && x.date < date);
       if (!facings.length) return;
       const strong = facings.some(x => x.ip >= 4);
-      rematch.push({ pitcher, pid, opp:oppName, oppId, strong });
-      rematchTier[oppId] = strong ? "strong" : "weak";   // oppId = team facing again
+      rematch.push({ pitcher, pid, opp:oppName, oppId, teamId, strong });
+      // keyed by the PITCHER'S OWN team, so the box lights up in that
+      // team's row — not the opponent they're facing again
+      rematchTier[teamId] = strong ? "strong" : "weak";
       // most recent prior start against this opponent: color its IP/H/ER/BB/K
       // line the same way the pitcher's game log does, and count green vs red
       const mostRecent = facings.reduce((a,b) => b.date > a.date ? b : a);
       const colors = Object.values(pitcherLineColors(mostRecent.stat, entry.season));
       const greens = colors.filter(c=>c===C.over).length;
       const reds = colors.filter(c=>c===C.under).length;
-      rematchVerdict[oppId] = greens>reds ? "up" : reds>greens ? "down" : "even";
+      rematchVerdict[teamId] = greens>reds ? "up" : reds>greens ? "down" : "even";
     };
-    checkRematch(g.awayPid, g.homeId, g.awayPname, g.homeName);
-    checkRematch(g.homePid, g.awayId, g.homePname, g.awayName);
+    checkRematch(g.awayPid, g.awayId, g.homeId, g.awayPname, g.homeName);
+    checkRematch(g.homePid, g.homeId, g.awayId, g.homePname, g.awayName);
     const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
@@ -845,7 +847,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     echo.forEach(e=>add(e.teamId, "echo"));
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
-    rematch.forEach(m=>add(m.oppId, "rematch"));   // team facing the pitcher again
+    rematch.forEach(m=>add(m.teamId, "rematch"));   // the pitcher's own team
 
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
