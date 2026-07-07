@@ -117,6 +117,51 @@ function pitcherSeasonAverages(splits) {
     era: sum("earnedRuns")*27/outs,
   };
 }
+// colors one pitcher start's IP/H/ER/BB/K line relative to the pitcher's own
+// season pace (or fixed fallback thresholds if no season data exists yet).
+// Shared by PLine's rendering and the pitcher-rematch trend indicator, which
+// counts how many of these came back green vs red for a thumbs up/down.
+function pitcherLineColors(st, season) {
+  const col = (good, bad) => good ? C.over : bad ? C.under : C.ink;
+  const outs = ipToOuts(st.inningsPitched);
+  const h = Number(st.hits)||0, er = Number(st.earnedRuns)||0;
+  const bb = Number(st.baseOnBalls)||0, k = Number(st.strikeOuts)||0;
+
+  const ipCol = season
+    ? col(outs > season.avgOuts+3, outs < season.avgOuts-3)
+    : col(outs>=18, outs>0 && outs<12);
+
+  // H/ER/BB/K: below a 2.0-inning outing (6 outs) the rate stats are too
+  // noisy to judge against fixed benchmarks, so short outings still color
+  // relative to the pitcher's own season pace (or the flat fallback, if no
+  // season data exists yet). Longer outings use fixed per-9 benchmarks —
+  // league-average-ish rates read as "bad" here since the goal is calling
+  // out starts that were actually good, not just average.
+  const SHORT_OUTING_OUTS = 6;   // 2.0 innings
+  const longOuting = outs > SHORT_OUTING_OUTS;
+  const rate9 = (n) => outs>0 ? n*27/outs : null;
+
+  let hCol, bbCol, erCol, kCol;
+  if (season && longOuting) {
+    const h9 = rate9(h), bb9 = rate9(bb), era = rate9(er), k9 = rate9(k);
+    hCol  = col(h9<=7.0, h9>=9.0);
+    bbCol = col(bb9<=2.0, bb9>=4.0);
+    erCol = col(era<=3.0, era>=4.0);
+    kCol  = col(k9>=9.0, k9<=6.0);
+  } else {
+    const expH = season ? season.h9 * outs/27 : null;
+    hCol = expH!=null ? col(h<=expH-1.5, h>=expH+1.5) : col(h<=3, h>=5);
+    const expBB = season ? season.bb9 * outs/27 : null;
+    bbCol = expBB!=null ? col(bb<=expBB-1, bb>=expBB+1) : col(bb<=1, bb>=3);
+    const gameERA = outs>0 ? er*27/outs : null;
+    erCol = (gameERA!=null && season)
+      ? col(gameERA<=season.era-1, gameERA>=season.era+1)
+      : col(er<=1, er>3);
+    const expK = season ? season.k9 * outs/27 : null;
+    kCol = expK!=null ? col(k>=expK+2, k<=expK-2) : col(k>=5, k<=3);
+  }
+  return { ipCol, hCol, erCol, bbCol, kCol };
+}
 const ord = (n) => n + (["th","st","nd","rd"][(n%100>>3^1&&n%10)||0] || "th");
 // tags may be an old plain string or the new { text, away, home, date } object
 const tagText = (entry) => !entry ? "" : (typeof entry === "string" ? entry : (entry.text || ""));
@@ -369,6 +414,7 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [comebacks, setComebacks] = useState(null);
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
+  const [hitsMap, setHitsMap] = useState({});  // teamId -> { date -> hits }
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
   const [now, setNow] = useState(()=>new Date());
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
@@ -381,7 +427,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     // keep showing the current calendar while refreshing (setDays isn't
     // cleared here) so a manual refresh doesn't unmount the scroll
     // container and reset which day is in view
-    setErr(""); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setBusy(true);
+    setErr(""); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
          fetch from 3 days back so the -2 day's travel has a "prev day". */
@@ -539,7 +585,8 @@ function TravelTrends({ tags, setTag, onReady }) {
          include today so a trend that completes today (game just went final)
          is picked up on refresh and shows up on the team's next game. */
       const lbFrom = addDays(start,-35), lbTo = start;
-      const lr = await fetch(`${API}/schedule?sportId=1&startDate=${lbFrom}&endDate=${lbTo}&gameType=R`);
+      const lr = await fetch(`${API}/schedule?sportId=1&startDate=${lbFrom}&endDate=${lbTo}` +
+        `&gameType=R&hydrate=linescore`);
       const lj = await lr.json();
       const finals = (lj.dates||[]).flatMap(d=>d.games||[])
         .filter(g=>g.status?.abstractGameState==="Final")
@@ -547,6 +594,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       const byTeamRes = {};    // teamId -> [{date,res}]
       const teamName = {};
       const runsByDate = {};   // teamId -> { date -> runs scored }
+      const hitsByDate = {};   // teamId -> { date -> hits }
       finals.forEach(g=>{
         const gd = g.officialDate || g.gameDate.slice(0,10);
         ["home","away"].forEach(side=>{
@@ -559,6 +607,11 @@ function TravelTrends({ tags, setTag, onReady }) {
           if (!isNaN(runs)) {
             const m = runsByDate[t.team.id] = runsByDate[t.team.id]||{};
             m[gd] = Math.max(m[gd] ?? 0, runs);   // max if a doubleheader
+          }
+          const hits = Number(g.linescore?.teams?.[side]?.hits);
+          if (!isNaN(hits)) {
+            const hm = hitsByDate[t.team.id] = hitsByDate[t.team.id]||{};
+            hm[gd] = Math.max(hm[gd] ?? 0, hits);   // max if a doubleheader
           }
         });
       });
@@ -634,18 +687,23 @@ function TravelTrends({ tags, setTag, onReady }) {
             `?stats=gameLog&group=pitching&season=${SEASON}&gameType=R`);
           if (!pr.ok) return;
           const pj = await pr.json();
+          const splits = pj.stats?.[0]?.splits || [];
           const list = [];
-          (pj.stats?.[0]?.splits || []).forEach(s=>{
+          splits.forEach(s=>{
             const ip = parseFloat(s.stat?.inningsPitched);
             if (s.opponent?.id)
-              list.push({ oppId:s.opponent.id, date:s.date, ip: isNaN(ip)?0:ip });
+              list.push({ oppId:s.opponent.id, date:s.date, ip: isNaN(ip)?0:ip, stat:s.stat });
           });
-          facedMap[pid] = list;     // [{oppId, date, ip}] — all prior facings
+          // list: all prior facings (oppId/date/ip/full stat line); season:
+          // this pitcher's own season averages, used to color that facing's
+          // stat line for the rematch thumbs up/down indicator
+          facedMap[pid] = { list, season: pitcherSeasonAverages(splits) };
         } catch { /* leave unset */ }
       });
       // all trend markers appear together (rematch · 10-run · late · echo · travel)
       setFaced(facedMap);
       setRunsMap(runsByDate);
+      setHitsMap(hitsByDate);
       setComebacks(cbList);
       setEchoes(echoList);
     } catch (e) {
@@ -737,21 +795,39 @@ function TravelTrends({ tags, setTag, onReady }) {
       (c.teamId===g.homeId || c.teamId===g.awayId));
     const rematch = [];
     const rematchTier = {};                       // teamId -> 'strong' | 'weak'
+    const rematchVerdict = {};                    // teamId -> 'up' | 'down' | 'even'
     const checkRematch = (pid, oppId, pitcher, oppName) => {
       if (!pid) return;
-      const facings = (faced[pid]||[]).filter(x => x.oppId===oppId && x.date < date);
+      const entry = faced[pid];
+      const facings = (entry?.list||[]).filter(x => x.oppId===oppId && x.date < date);
       if (!facings.length) return;
       const strong = facings.some(x => x.ip >= 4);
       rematch.push({ pitcher, pid, opp:oppName, oppId, strong });
       rematchTier[oppId] = strong ? "strong" : "weak";   // oppId = team facing again
+      // most recent prior start against this opponent: color its IP/H/ER/BB/K
+      // line the same way the pitcher's game log does, and count green vs red
+      const mostRecent = facings.reduce((a,b) => b.date > a.date ? b : a);
+      const colors = Object.values(pitcherLineColors(mostRecent.stat, entry.season));
+      const greens = colors.filter(c=>c===C.over).length;
+      const reds = colors.filter(c=>c===C.under).length;
+      rematchVerdict[oppId] = greens>reds ? "up" : reds>greens ? "down" : "even";
     };
     checkRematch(g.awayPid, g.homeId, g.awayPname, g.homeName);
     checkRematch(g.homePid, g.awayId, g.homePname, g.awayName);
-    const prevD = addDays(date,-1);
+    const prevD = addDays(date,-1), prev2D = addDays(date,-2);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
+
+    // last game's hits for a team, and how that compares to the game before
+    // it — feeds the number shown inside every "10+ runs" indicator box
+    const hitsInfo = (tid) => {
+      const hits = hitsMap[tid]?.[prevD];
+      if (hits==null) return null;
+      const prevHits = hitsMap[tid]?.[prev2D];
+      return { hits, diff: prevHits!=null ? hits-prevHits : null };
+    };
 
     // per-team trend keys for the duplicated markers
     const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
@@ -765,7 +841,9 @@ function TravelTrends({ tags, setTag, onReady }) {
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
-      rematchTier:(tid)=>rematchTier[tid] || null };
+      rematchTier:(tid)=>rematchTier[tid] || null,
+      rematchVerdict:(tid)=>rematchVerdict[tid] || null,
+      hitsInfo };
   };
 
   return (
@@ -916,11 +994,34 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
           let color = slot.color;
           if (slot.key==="rematch" && present)
             color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
+
+          // small info drawn inside the swatch: a thumb for the pitcher
+          // rematch (only once it's lit up), or this team's last-game hits
+          // for the 10+ runs slot (always, lit up or not)
+          let inner = null, innerColor = "#fff";
+          if (slot.key==="rematch" && present) {
+            const verdict = t.rematchVerdict(teamId);
+            inner = verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : "–";
+            innerColor = verdict==="even" ? "#000" : "#fff";
+          } else if (slot.key==="bigday") {
+            const hi = t.hitsInfo(teamId);
+            if (hi && hi.hits!=null) {
+              inner = String(hi.hits);
+              innerColor = hi.diff>0 ? C.over : hi.diff<0 ? C.under : C.ink;
+            }
+          }
+
           return <span key={slot.key} title={present ? slot.label : undefined}
-            style={{ width:13, height:11, borderRadius:2,
+            style={{ position:"relative", width:16, height:14, flexShrink:0 }}>
+            <span style={{ position:"absolute", inset:0, borderRadius:2,
               background: present ? color : "transparent",
               boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
-              opacity: present ? 1 : 0.45 }} />;
+              opacity: present ? 1 : 0.45 }} />
+            {inner && <span style={{ position:"absolute", inset:0, display:"flex",
+              alignItems:"center", justifyContent:"center", fontFamily:MONO,
+              fontSize: slot.key==="rematch" ? 8 : 9, fontWeight:700,
+              color:innerColor, lineHeight:1 }}>{inner}</span>}
+          </span>;
         })}
       </span>
     </div>
@@ -1077,44 +1178,7 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
     return () => window.removeEventListener("resize", fit);
   }, [s, season, maxSize, minSize]);
   const st = s.stat;
-  const col = (good, bad) => good ? C.over : bad ? C.under : C.ink;
-  const outs = ipToOuts(st.inningsPitched);
-  const h = Number(st.hits)||0, er = Number(st.earnedRuns)||0;
-  const bb = Number(st.baseOnBalls)||0, k = Number(st.strikeOuts)||0;
-
-  const ipCol = season
-    ? col(outs > season.avgOuts+3, outs < season.avgOuts-3)
-    : col(outs>=18, outs>0 && outs<12);
-
-  // H/ER/BB/K: below a 2.0-inning outing (6 outs) the rate stats are too
-  // noisy to judge against fixed benchmarks, so short outings still color
-  // relative to the pitcher's own season pace (or the flat fallback, if no
-  // season data exists yet). Longer outings use fixed per-9 benchmarks —
-  // league-average-ish rates read as "bad" here since the goal is calling
-  // out starts that were actually good, not just average.
-  const SHORT_OUTING_OUTS = 6;   // 2.0 innings
-  const longOuting = outs > SHORT_OUTING_OUTS;
-  const rate9 = (n) => outs>0 ? n*27/outs : null;
-
-  let hCol, bbCol, erCol, kCol;
-  if (season && longOuting) {
-    const h9 = rate9(h), bb9 = rate9(bb), era = rate9(er), k9 = rate9(k);
-    hCol  = col(h9<=7.0, h9>=9.0);
-    bbCol = col(bb9<=2.0, bb9>=4.0);
-    erCol = col(era<=3.0, era>=4.0);
-    kCol  = col(k9>=9.0, k9<=6.0);
-  } else {
-    const expH = season ? season.h9 * outs/27 : null;
-    hCol = expH!=null ? col(h<=expH-1.5, h>=expH+1.5) : col(h<=3, h>=5);
-    const expBB = season ? season.bb9 * outs/27 : null;
-    bbCol = expBB!=null ? col(bb<=expBB-1, bb>=expBB+1) : col(bb<=1, bb>=3);
-    const gameERA = outs>0 ? er*27/outs : null;
-    erCol = (gameERA!=null && season)
-      ? col(gameERA<=season.era-1, gameERA>=season.era+1)
-      : col(er<=1, er>3);
-    const expK = season ? season.k9 * outs/27 : null;
-    kCol = expK!=null ? col(k>=expK+2, k<=expK-2) : col(k>=5, k<=3);
-  }
+  const { ipCol, hCol, erCol, bbCol, kCol } = pitcherLineColors(st, season);
 
   const cells = [
     [`${st.inningsPitched} IP`, ipCol],
