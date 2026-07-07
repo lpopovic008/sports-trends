@@ -18,7 +18,11 @@ const C = {
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
-  bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
+  /* neon yellow: 10-run scoreboard explosion — bright enough that the
+     green/red/black hits number drawn on top of it (see the "10+ runs"
+     indicator) stays readable; the old neon pink sat too close to red
+     and green in hue/lightness for either to show up on it */
+  bigday:"#FFEE00",
   echo:"#A0EE26",          /* neon lime: momentum wave */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -955,9 +959,9 @@ function Legend() {
     </div>
   );
 }
-function Pill({ children, color, title }) {
+function Pill({ children, color, title, textColor="#fff" }) {
   return <span title={title} style={{ fontFamily:MONO, fontSize:8.5, letterSpacing:"0.04em",
-    color:"#fff", background:color, borderRadius:2, padding:"1px 4px" }}>{children}</span>;
+    color:textColor, background:color, borderRadius:2, padding:"1px 4px" }}>{children}</span>;
 }
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
@@ -2108,7 +2112,7 @@ function GameModal({ m, tags, setTag, onClose }) {
             {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak yesterday">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
-            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} textColor={C.ink} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
           </div>
         )}
 
