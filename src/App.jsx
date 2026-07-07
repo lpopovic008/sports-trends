@@ -5,19 +5,21 @@ import {
 } from "recharts";
 
 /* ───────────────────────────── palette ─────────────────────────────
-   VS Code Dark+ identity: near-black editor background, panel-gray
+   VS Code Light+ identity: white editor background, light panel-gray
    surfaces, hairline borders, and syntax-token colors standing in for
    game data (team = variable blue, score = number green, hits = string
-   orange, time = comment green). Series are told apart by a grayscale
-   cell background (see SERIES_BG), not by hue. */
+   red, time = comment green). Today's slate is the one exception — it
+   keeps the old VS Code Dark+ look (see DARK_TOKENS and SERIES_BG)
+   since that's a deliberate "spotlight" on today's games. */
 const C = {
-  paper:"#242424", card:"#2b2b2c", ink:"#d4d4d4", inkSoft:"#8a8a8a",
-  rule:"#3c3c3c", ruleDark:"#585858", marker:"#e2c08d", markerDeep:"#b89500",
-  over:"#89d185", under:"#f14c4c", blue:"#569cd6",
+  paper:"#ffffff", card:"#f3f3f3", ink:"#1e1e1e", inkSoft:"#6e6e6e",
+  rule:"#e0e0e0", ruleDark:"#b3b3b3", marker:"#e2c08d", markerDeep:"#b89500",
+  over:"#1a7f37", under:"#cf222e", blue:"#0451a5",
   accent:"#007acc", accentInk:"#ffffff",   /* VS Code's status-bar/button blue */
   /* syntax-token colors for game data (teams/time/scores/hits) */
-  teamText:"#9cdcfe", numText:"#b5cea8", strText:"#ce9178", cmText:"#6a9955",
-  /* integrated-terminal panel for the Plays view */
+  teamText:"#001080", numText:"#098658", strText:"#a31515", cmText:"#008000",
+  /* integrated-terminal panel for the Plays view — stays dark regardless
+     of app theme, like a real terminal */
   term:"#0c0c0c", termBar:"#2d2d2d",
   /* indicator colors — a five-color neon graffiti set, ordered so each
      swatch sits next to its nearest hue on the color wheel — unchanged
@@ -317,7 +319,7 @@ const inputStyle = {
   borderRadius:2, background:C.card, fontFamily:SANS, fontSize:16, color:C.ink, outline:"none",
 };
 const ErrBox = ({ children }) => (
-  <div style={{ padding:"12px 14px", background:"rgba(241,76,76,0.12)", border:`1px solid ${C.under}`,
+  <div style={{ padding:"12px 14px", background:"rgba(207,34,46,0.10)", border:`1px solid ${C.under}`,
     borderRadius:2, color:C.under, fontFamily:SANS, fontSize:13, marginBottom:16 }}>{children}</div>
 );
 const Tag = ({ children, tone }) => (
@@ -892,23 +894,24 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
+function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true, dark=false }) {
   const keys = t.keysFor(teamId);
   const showScore = final || live;
   // syntax-token coloring: team = variable blue, score = number green,
-  // hits = string orange — a loser dims instead of changing color, so
+  // hits = string red — a loser dims instead of changing color, so
   // the token colors stay consistent and only opacity/weight carry W/L
   const lost = final && !won;
+  const tk = dark ? DARK_TOKENS : C;
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 14px 16px 1fr", alignItems:"center", gap:2 }}>
-      <span style={{ fontFamily:MONO, fontSize:13, color:C.teamText,
+      <span style={{ fontFamily:MONO, fontSize:13, color:tk.teamText,
         fontWeight: final ? (won?800:400) : 600,
         opacity: lost ? 0.55 : 1 }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
         fontWeight: final && won ? 800 : 400,
-        color: showScore ? C.numText : C.ruleDark,
+        color: showScore ? tk.numText : C.ruleDark,
         opacity: lost ? 0.55 : 1 }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.strText,
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:tk.strText,
         opacity: lost ? 0.6 : 0.9 }}>
         {showScore && hits!=null ? hits : ""}</span>
       <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
@@ -937,12 +940,17 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
 
 /* on-screen series banding: indices 0/1 are series that don't touch
-   today (base/alt row of a lighter pair, tinted with a hint of purple)
-   and indices 2/3 are today's slate and any other days sharing that
-   same series (base/alt row of a darker pair, tinted with a hint of
-   green), so today reads as visually closer to the editor background
-   than the rest of the week. */
-const SERIES_BG = ["#433d49", "#4e4856", "#222825", "#2a302e"];
+   today (base/alt row of a light gray pair, matching the VS Code
+   Light+ page) and indices 2/3 are today's slate and any other days
+   sharing that same series (base/alt row of the old VS Code Dark+
+   grays), so today's games stay spotlighted against the light week. */
+const SERIES_BG = ["#ececec", "#e2e2e2", "#363636", "#4a4a4a"];
+
+/* colors used only on the remaining dark VS Code Dark+ surfaces — today's
+   slate calendar cells and the Plays view's integrated-terminal panel —
+   since those stay dark even though the rest of the app is light. */
+const DARK_TOKENS = { teamText:"#9cdcfe", numText:"#b5cea8", strText:"#ce9178", cmText:"#6a9955",
+  over:"#89d185", under:"#f14c4c", blue:"#569cd6" };
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -967,6 +975,9 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_BG[g.seriesShade] : C.card;
+  // today's slate (and any other days sharing that series) sits on a dark
+  // cell even in the light theme, so its text needs the old dark-theme tokens
+  const dark = g.seriesShade===2 || g.seriesShade===3;
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   return (
@@ -993,15 +1004,15 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       )}
       <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
         display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : C.cmText, fontWeight: live ? 700 : 400,
+        color: live ? "#E5142B" : (dark ? DARK_TOKENS.cmText : C.cmText), fontWeight: live ? 700 : 400,
         fontStyle: live ? "normal" : "italic" }}>
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
+        teamId={g.awayId} t={t} showInd={showInd} tag={null} dark={dark} />
       <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
+        teamId={g.homeId} t={t} showInd={showInd} tag={null} dark={dark} />
     </div>
   );
 }
@@ -1362,7 +1373,7 @@ function PropAnalyzer({ injected = null }) {
                 <XAxis dataKey="name" tick={{ fontFamily:MONO, fontSize:9, fill:C.inkSoft }}
                   axisLine={{ stroke:C.rule }} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontFamily:MONO, fontSize:10, fill:C.inkSoft }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill:"rgba(255,255,255,0.06)" }}
+                <Tooltip cursor={{ fill:"rgba(0,0,0,0.05)" }}
                   contentStyle={{ fontFamily:MONO, fontSize:11, borderRadius:2, border:`1px solid ${C.rule}`,
                     background:C.card, color:C.ink }} />
                 <Bar dataKey="value" radius={[2,2,0,0]}>
@@ -1866,7 +1877,7 @@ function GameModal({ m, tags, setTag, onClose }) {
 
         {/* tag editor */}
         {tagEditing && (
-          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"rgba(241,76,76,0.10)",
+          <div style={{ padding:"10px 18px", borderBottom:`1px solid ${C.rule}`, background:"rgba(207,34,46,0.08)",
             display:"flex", gap:8, alignItems:"center" }}>
             <input autoFocus defaultValue={tagVal}
               placeholder="e.g. PLAY · over 8.5 · fade the public"
@@ -2189,7 +2200,7 @@ function TagsView({ tags, setResult }) {
           gap:10, padding:"10px 16px", flexWrap:"wrap" }}>
           <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.18em",
             textTransform:"uppercase", color:"rgba(255,255,255,0.6)" }}>
-            <span style={{ color:C.over }}>❯</span> track-record</span>
+            <span style={{ color:DARK_TOKENS.over }}>❯</span> track-record</span>
           {/* filters */}
           <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
             {FILTERS.map(([id,lbl])=>(
@@ -2205,9 +2216,9 @@ function TagsView({ tags, setResult }) {
           flexWrap:"wrap", alignItems:"center" }}>
           <div>
             <div style={{ fontFamily:MONO, fontSize:38, fontWeight:700, lineHeight:1 }}>
-              <span style={{ color:C.over }}>{wins}</span>
+              <span style={{ color:DARK_TOKENS.over }}>{wins}</span>
               <span style={{ color:C.ruleDark }}>–</span>
-              <span style={{ color:C.under }}>{losses}</span>
+              <span style={{ color:DARK_TOKENS.under }}>{losses}</span>
             </div>
             <div style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, marginTop:4 }}>
               {rangeLabel}{pct!=null ? ` · ${pct}% win` : ""}</div>
@@ -2255,10 +2266,10 @@ function TagsView({ tags, setResult }) {
                     );
                   }} />
                   <ReferenceLine y={0} stroke={C.ruleDark} strokeDasharray="3 3" />
-                  <Line type="linear" dataKey="net" stroke={C.blue} strokeWidth={2}
+                  <Line type="linear" dataKey="net" stroke={DARK_TOKENS.blue} strokeWidth={2}
                     dot={(p)=>{
                       if (!dotIdx.has(p.index)) return <React.Fragment key={p.index} />;
-                      return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={C.blue} />;
+                      return <circle key={p.index} cx={p.cx} cy={p.cy} r={2.5} fill={DARK_TOKENS.blue} />;
                     }}
                     activeDot={{ r:4 }} isAnimationActive={false} />
                 </ComposedChart>
