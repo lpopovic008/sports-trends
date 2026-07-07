@@ -814,18 +814,23 @@ function TravelTrends({ tags, setTag, onReady }) {
     };
     checkRematch(g.awayPid, g.homeId, g.awayPname, g.homeName);
     checkRematch(g.homePid, g.awayId, g.homePname, g.awayName);
-    const prevD = addDays(date,-1), prev2D = addDays(date,-2);
+    const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
     // last game's hits for a team, and how that compares to the game before
-    // it — feeds the number shown inside every "10+ runs" indicator box
+    // it — feeds the number shown inside every "10+ runs" indicator box.
+    // Scans back over the team's actual played dates (not a fixed "yesterday")
+    // so an off-day doesn't leave the box blank.
     const hitsInfo = (tid) => {
-      const hits = hitsMap[tid]?.[prevD];
-      if (hits==null) return null;
-      const prevHits = hitsMap[tid]?.[prev2D];
+      const m = hitsMap[tid];
+      if (!m) return null;
+      const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
+      if (!pastDates.length) return null;
+      const hits = m[pastDates[0]];
+      const prevHits = pastDates.length>1 ? m[pastDates[1]] : null;
       return { hits, diff: prevHits!=null ? hits-prevHits : null };
     };
 
