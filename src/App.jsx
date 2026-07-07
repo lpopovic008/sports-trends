@@ -1029,9 +1029,11 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
         teamId={g.homeId} t={t} showInd={showInd} tag={null} />
       {/* live status overlays the reserved spacer column (between hits and
           indicators) that both TeamRows leave empty, spanning their full
-          height instead of being duplicated per row */}
+          height instead of being duplicated per row. left = the card's own
+          7px padding + the abbr/score/hits column widths and gaps (24+2+
+          14+2+16+2) that TeamRow's grid already reserves before it. */}
       {live && (
-        <div style={{ position:"absolute", left:60, top:0, bottom:0 }}>
+        <div style={{ position:"absolute", left:67, top:0, bottom:0 }}>
           <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
             onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />
         </div>
