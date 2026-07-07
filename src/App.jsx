@@ -387,7 +387,7 @@ function TravelTrends({ tags, setTag, onReady }) {
          fetch from 3 days back so the -2 day's travel has a "prev day". */
       const from = addDays(start,-3), to = addDays(start,4);
       const r = await fetch(`${API}/schedule?sportId=1&startDate=${from}&endDate=${to}` +
-        `&gameType=R&hydrate=probablePitcher,linescore,lineups`);
+        `&gameType=R&hydrate=probablePitcher,linescore(runners),lineups`);
       if (!r.ok) throw new Error(`schedule ${r.status}`);
       const j = await r.json();
       const byTeamDate = {};   // teamId -> { date -> venueTz }
@@ -407,6 +407,10 @@ function TravelTrends({ tags, setTag, onReady }) {
             isFinal, isLive,
             awayScore: g.teams.away.score, homeScore: g.teams.home.score,
             awayHits: g.linescore?.teams?.away?.hits, homeHits: g.linescore?.teams?.home?.hits,
+            inningNum: g.linescore?.currentInning, inningState: g.linescore?.inningState,
+            outs: g.linescore?.outs,
+            onFirst: !!g.linescore?.offense?.first, onSecond: !!g.linescore?.offense?.second,
+            onThird: !!g.linescore?.offense?.third,
             gamePk:g.gamePk, _raw:g,
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
@@ -939,6 +943,36 @@ function NowLine() {
   );
 }
 
+/* live-game status: inning + a mini three-base diamond + outs, stacked in
+   a narrow column docked to the right of the team rows. */
+function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
+  if (inningNum == null) return null;
+  const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
+  const baseStyle = (on) => ({ position:"absolute", width:6, height:6, borderRadius:1,
+    transform:"rotate(45deg)", background: on ? C.ink : "transparent",
+    border:`1px solid ${C.ink}` });
+  return (
+    <div style={{ flexShrink:0, width:32, display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", gap:4,
+      borderLeft:`1px solid ${C.rule}`, height:"100%" }}>
+      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+        {arrow}{inningNum}</div>
+      <div style={{ position:"relative", width:16, height:14 }}>
+        <span style={{ ...baseStyle(onSecond), top:0, left:5 }} />
+        <span style={{ ...baseStyle(onThird), top:6, left:0 }} />
+        <span style={{ ...baseStyle(onFirst), top:6, left:10 }} />
+      </div>
+      <div style={{ display:"flex", gap:2 }}>
+        {[0,1,2].map(i=>(
+          <span key={i} style={{ width:4, height:4, borderRadius:"50%",
+            background: outs!=null && i<outs ? C.ink : "transparent",
+            border:`1px solid ${C.ink}` }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CalCard({ g, t, tag, showInd=true, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
@@ -955,6 +989,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
       height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
+      display:"flex", alignItems:"center", gap:5,
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
@@ -971,16 +1006,20 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
-      <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
-        display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
-        {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
-          flexShrink:0 }} />}
-        {final ? "FINAL" : live ? "LIVE" : time}</div>
-      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
-      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
+          display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
+          color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+          {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+            flexShrink:0 }} />}
+          {final ? "FINAL" : live ? "LIVE" : time}</div>
+        <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
+          teamId={g.awayId} t={t} showInd={showInd} tag={null} />
+        <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
+          teamId={g.homeId} t={t} showInd={showInd} tag={null} />
+      </div>
+      {live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
+        onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />}
     </div>
   );
 }
@@ -2006,8 +2045,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(166px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:166px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(200px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:200px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
