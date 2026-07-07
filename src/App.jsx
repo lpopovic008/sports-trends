@@ -989,7 +989,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
-          background:C.markerDeep, color:"#fff", border:"1px solid #8f7300", borderRadius:2,
+          background:C.under, color:"#fff", border:"1px solid #8a1a22", borderRadius:2,
           padding:"1px 5px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.25,
           boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
@@ -997,7 +997,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       {tagInMarkers && (
         <div title={tag} style={{ position:"absolute", right:6, top:"50%", zIndex:3, maxWidth:"64%",
           transform:"translateY(-50%)",
-          background:C.markerDeep, color:"#fff", border:"1px solid #8f7300", borderRadius:2,
+          background:C.under, color:"#fff", border:"1px solid #8a1a22", borderRadius:2,
           padding:"1px 6px", fontFamily:MONO, fontSize:9.5, fontWeight:700, lineHeight:1.3,
           boxShadow:"0 1px 3px rgba(0,0,0,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
