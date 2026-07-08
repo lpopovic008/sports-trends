@@ -832,6 +832,14 @@ function TravelTrends({ tags, setTag, onReady }) {
     };
     checkRematch(g.awayPid, g.awayId, g.homeId, g.awayPname, g.homeName);
     checkRematch(g.homePid, g.homeId, g.awayId, g.homePname, g.awayName);
+
+    // this team's probable starter's season ERA — independent of any rematch
+    const pitcherEra = (tid) => {
+      const pid = tid===g.awayId ? g.awayPid : tid===g.homeId ? g.homePid : null;
+      const era = pid ? faced[pid]?.season?.era : null;
+      return era!=null ? era : null;
+    };
+
     const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
@@ -857,24 +865,38 @@ function TravelTrends({ tags, setTag, onReady }) {
       if (!hi || hi.hits==null) return null;
       return hi.hits>=10 ? "hot" : hi.hits<=6 ? "cold" : null;
     };
+    // hit-trend momentum: last game's hits vs 2 games back; if tied, the
+    // 3rd-most-recent game breaks the tie. null once history runs out.
+    const hitsMomentum = (tid) => {
+      const m = hitsMap[tid];
+      if (!m) return null;
+      const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
+      if (pastDates.length < 2) return null;
+      const h1 = m[pastDates[0]], h2 = m[pastDates[1]];
+      if (h1==null || h2==null) return null;
+      if (h1 !== h2) return h1 > h2 ? "up" : "down";
+      const h3 = pastDates.length>2 ? m[pastDates[2]] : null;
+      if (h3==null || h3===h1) return "flat";
+      return h1 > h3 ? "up" : "down";
+    };
 
-    // per-team trend keys for the duplicated markers
+    // per-team keys for the 2x2 situational-trend grid
     const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
     const add = (tid, key) => { if (sideKeys[tid]) sideKeys[tid].add(key); };
     (g.travelers||[]).forEach(x=>add(x.teamId, "travel"));
     echo.forEach(e=>add(e.teamId, "echo"));
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
-    rematch.forEach(m=>add(m.teamId, "rematch"));   // the pitcher's own team
-    [g.awayId, g.homeId].forEach(tid=>{ if (batsState(tid)) add(tid, "bats"); });
 
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null,
       rematchVerdict:(tid)=>rematchVerdict[tid] || null,
+      pitcherEra,
       batsState,
-      hitsInfo };
+      hitsInfo,
+      hitsMomentum };
   };
 
   return (
@@ -928,7 +950,7 @@ function TravelTrends({ tags, setTag, onReady }) {
                 </div>
                 <div style={{ padding:4, display:"flex", flexDirection:"column", gap:4 }}>
                   {d.games.length===0
-                    ? <div className="ts-cell" style={{ height:54, display:"flex", alignItems:"center",
+                    ? <div className="ts-cell" style={{ height:CARD_H, display:"flex", alignItems:"center",
                         justifyContent:"center", fontFamily:SANS, fontSize:12, color:C.ruleDark }}>—</div>
                     : (() => {
                         const lineIdx = isToday
@@ -938,13 +960,13 @@ function TravelTrends({ tags, setTag, onReady }) {
                         const cells = [];
                         d.games.forEach((g,i)=>{
                           if(i===lineIdx) cells.push(<NowLine key="nl"/>);
-                          if(!g) cells.push(<div key={i} className="ts-cell" style={{ height:54, borderRadius:2,
+                          if(!g) cells.push(<div key={i} className="ts-cell" style={{ height:CARD_H, borderRadius:2,
                             border:`1px dashed ${C.rule}`, opacity:0.4, boxSizing:"border-box" }}/>);
                           else {
                             const di = dayGames.indexOf(g);
                             const t = dayTrends[di];   // reuse; already computed above
                             cells.push(<CalCard key={i} g={g} t={t} tag={tagText(tags[g.gamePk])}
-                              showInd={showIndicators}
+                              showInd={showIndicators} now={now}
                               onOpen={()=>setModal({ date:d.date, games:dayGames, trends:dayTrends,
                                 idx:di })}/>);
                           }
@@ -985,30 +1007,57 @@ function Pill({ children, color, title, textColor="#fff" }) {
   return <span title={title} style={{ fontFamily:MONO, fontSize:8.5, letterSpacing:"0.04em",
     color:textColor, background:color, borderRadius:2, padding:"1px 4px" }}>{children}</span>;
 }
-/* fixed marker slots — same position on every card so trends read at a glance.
-   order left→right; add new trends here and every card adjusts automatically. */
+
+/* box geometry shared by every indicator swatch in the app — the pitcher/
+   batter stat boxes and the situational-trend boxes are always this size. */
+const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
+const HEADER_H = 11;
+const TEAM_BAND_H = BOX_H*2 + BOX_GAP;    // tall enough for a team's 2x2 trend grid
+const BASES_W = 40;                        // reserved for the live bases display — never shifts
+const CARD_H = 100;
+
+/* fixed situational-trend slots, rendered as a 2x2 grid per team. add new
+   trends here and every card + the legend adjust automatically. */
 const TREND_SLOTS = [
-  { key:"bats",    color:C.boom,    label:"Slump/Boom",
-    desc:"Teams with hot or cold bats" },
-  { key:"rematch", color:C.rematch, label:"Pitcher rematch",
-    desc:"Team has faced this pitcher this year already" },
-  { key:"bigday",  color:C.bigday,  label:"10+ runs",
+  { key:"bigday", color:C.bigday, label:"Big Day",
     desc:"Team scored 10+ runs yesterday" },
-  { key:"late",    color:C.late,    label:"Late go-ahead",
+  { key:"late",   color:C.late,   label:"Late go-ahead",
     desc:"Team never led until the 8th inning or later yesterday" },
-  { key:"echo",    color:C.echo,    label:"Streak echo",
+  { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
-  { key:"travel",  color:C.travel,  label:"B2B travel",
+  { key:"travel", color:C.travel, label:"B2B travel",
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true }) {
-  const keys = t.keysFor(teamId);
+/* one pitcher/batter stat box. empty + dimmed when the underlying condition
+   doesn't apply (no dash — that would imply "checked, no data"); filled
+   black with the value on top once there's something to show, including a
+   dash for "checked, nothing to show yet" so the two states read differently. */
+function StatBox({ children, title, big=false }) {
+  const has = children!=null && children!=="";
+  return (
+    <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, flexShrink:0,
+      borderRadius:2, background: has ? "#000" : "transparent",
+      boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`, opacity: has ? 1 : 0.45,
+      display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {has && <span style={{ position:"relative", top:1, fontFamily: big ? SANS : MONO,
+        fontSize: big ? 11 : 9.5, fontWeight:800, color:"#fff", lineHeight:1 }}>{children}</span>}
+    </span>
+  );
+}
+
+/* one situational-trend box: colored outline when lit, dimmed neutral
+   outline when not — no fill, matching the rest of the app's indicator style. */
+function TrendBox({ present, color, title }) {
+  return <span title={title} style={{ width:BOX_W, height:BOX_H, borderRadius:2, flexShrink:0,
+    boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
+    opacity: present ? 1 : 0.45 }} />;
+}
+
+function TeamLine({ abbr, score, hits, won, final, live }) {
   const showScore = final || live;
   return (
-    <div style={{ display:"grid",
-      gridTemplateColumns: live ? "24px 14px 16px 32px 1fr" : "24px 14px 16px 1fr",
-      alignItems:"center", gap:2 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"24px 22px 18px", alignItems:"center", gap:2 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
@@ -1017,52 +1066,6 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
         color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
       <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
-      {/* reserves room for the live-status widget, which is drawn once by
-          the parent CalCard as an absolutely-positioned overlay spanning
-          both rows, rather than duplicated per row */}
-      {live && <span />}
-      <span style={{ display:"flex", gap:2, justifyContent:"flex-end" }}>
-        {showInd && TREND_SLOTS.map(slot=>{
-          const present = keys.has(slot.key);
-          let color = slot.color;
-          if (slot.key==="rematch" && present)
-            color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
-          if (slot.key==="bats" && present)
-            color = t.batsState(teamId)==="cold" ? C.slump : C.boom;
-
-          // small info drawn inside the swatch: a thumb for the pitcher
-          // rematch (only once it's lit up), or this team's last-game hits
-          // for the Slump/Boom slot (always, lit up or not). Once a lit
-          // swatch actually has content to show, its background goes black
-          // (with the colored outline kept) so the content has a solid
-          // backdrop — the "neutral" black/white text flips to white then.
-          let inner = null, innerColor = C.ink;
-          if (slot.key==="rematch" && present) {
-            const verdict = t.rematchVerdict(teamId);
-            inner = verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : "–";
-            if (verdict==="even") innerColor = "#fff";
-          } else if (slot.key==="bats") {
-            const hi = t.hitsInfo(teamId);
-            if (hi && hi.hits!=null) {
-              inner = String(hi.hits);
-              innerColor = hi.diff>0 ? C.over : hi.diff<0 ? C.under : (present ? "#fff" : C.ink);
-            }
-          }
-          const filled = present && inner;
-
-          return <span key={slot.key} title={present ? slot.label : undefined}
-            style={{ position:"relative", width:16, height:14, flexShrink:0 }}>
-            <span style={{ position:"absolute", inset:0, borderRadius:2,
-              background: filled ? "#000" : "transparent",
-              boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
-              opacity: present ? 1 : 0.45 }} />
-            {inner && <span style={{ position:"absolute", inset:0, top:1, display:"flex",
-              alignItems:"center", justifyContent:"center", fontFamily:MONO,
-              fontSize: slot.key==="rematch" ? 8 : 9, fontWeight:700,
-              color:innerColor, lineHeight:1 }}>{inner}</span>}
-          </span>;
-        })}
-      </span>
     </div>
   );
 }
@@ -1090,7 +1093,7 @@ function NowLine() {
 }
 
 /* live-game status: inning + a mini three-base diamond + outs, stacked in
-   a narrow column docked to the right of the team rows. */
+   a narrow column docked to the right of the team lines. */
 function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
   if (inningNum == null) return null;
   const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
@@ -1104,7 +1107,7 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
       fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1" />;
   };
   return (
-    <div style={{ flexShrink:0, width:32, display:"flex", flexDirection:"column",
+    <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", gap:4, height:"100%" }}>
       <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
@@ -1124,11 +1127,107 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   );
 }
 
-function CalCard({ g, t, tag, showInd=true, onOpen }) {
+/* column 1 — Game: the two team lines, with a fixed-width slot reserved for
+   the live bases display so nothing shifts when a game goes live. */
+function GameSection({ g, aw, hm, awWon, hmWon, final, live }) {
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:`1fr ${BASES_W}px`,
+      gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px` }}>
+      <div style={{ gridColumn:1, gridRow:1 }} />
+      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+        <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
+      </div>
+      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
+        <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
+      </div>
+      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
+        alignItems:"center", justifyContent:"center" }}>
+        {live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
+          onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />}
+      </div>
+    </div>
+  );
+}
+
+/* column 2 — Pitcher/Batter: PITCHER (rematch · rematch result · season ERA)
+   and BATTER (hot/cold bats · hit-trend momentum · last game's hits), one
+   row per team. */
+function PitcherBatterSection({ g, t }) {
+  const statsFor = (tid) => {
+    const hasRematch = !!t.rematchTier(tid);
+    const verdict = hasRematch ? t.rematchVerdict(tid) : null;
+    const era = t.pitcherEra(tid);
+    const bats = t.batsState(tid);
+    const momentum = t.hitsMomentum(tid);
+    const hi = t.hitsInfo(tid);
+    return {
+      p1: hasRematch ? "\u{1F501}" : null,
+      p2: verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : verdict==="even" ? "➖" : null,
+      p3: era!=null ? era.toFixed(1) : "–",
+      b1: bats==="hot" ? "\u{1F525}" : bats==="cold" ? "❄️" : null,
+      b2: momentum==="up" ? "\u{1F4C8}" : momentum==="down" ? "\u{1F4C9}" : momentum==="flat" ? "➡️" : "–",
+      b3: hi && hi.hits!=null ? String(hi.hits) : "–",
+    };
+  };
+  const away = statsFor(g.awayId), home = statsFor(g.homeId);
+  const row = (s) => (
+    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+      <StatBox title="Pitcher rematch">{s.p1}</StatBox>
+      <StatBox title="Rematch result">{s.p2}</StatBox>
+      <StatBox title="Season ERA">{s.p3}</StatBox>
+      <span style={{ width:MID_GAP, flexShrink:0 }} />
+      <StatBox title="Hot/cold bats">{s.b1}</StatBox>
+      <StatBox title="Hit-trend momentum">{s.b2}</StatBox>
+      <StatBox title="Hits last game" big>{s.b3}</StatBox>
+    </div>
+  );
+  const headerCol = (label) => (
+    <div style={{ width:BOX_W*3+BOX_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
+      fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
+  );
+  return (
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px` }}>
+      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+        {headerCol("PITCHER")}
+        <span style={{ width:MID_GAP, flexShrink:0 }} />
+        {headerCol("BATTER")}
+      </div>
+      <div style={{ display:"flex", alignItems:"center" }}>{row(away)}</div>
+      <div style={{ display:"flex", alignItems:"center" }}>{row(home)}</div>
+    </div>
+  );
+}
+
+/* column 3 — Trends: a 2x2 grid of situational trends per team. */
+function TrendsSection({ g, t }) {
+  const grid = (tid) => (
+    <div style={{ display:"grid", gridTemplateColumns:`repeat(2, ${BOX_W}px)`,
+      gridTemplateRows:`repeat(2, ${BOX_H}px)`, gap:BOX_GAP }}>
+      {TREND_SLOTS.map(slot=>{
+        const present = t.keysFor(tid).has(slot.key);
+        return <TrendBox key={slot.key} present={present} color={slot.color}
+          title={present ? slot.label : undefined} />;
+      })}
+    </div>
+  );
+  return (
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px`,
+      justifyItems:"center" }}>
+      <div />
+      <div style={{ display:"flex", alignItems:"center" }}>{grid(g.awayId)}</div>
+      <div style={{ display:"flex", alignItems:"center" }}>{grid(g.homeId)}</div>
+    </div>
+  );
+}
+
+function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
   const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
   const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
-  const live = g.isLive && !final;
+  // MLB's API sometimes flips a game to "Live" a little ahead of its listed
+  // start time — hold off on the LIVE badge (and the bases display) until
+  // that time has actually passed, then defer entirely to the API.
+  const live = g.isLive && !final && now.getTime() >= new Date(g.time).getTime();
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
@@ -1139,7 +1238,7 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
-      height:54, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
+      height:CARD_H, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
@@ -1158,25 +1257,16 @@ function CalCard({ g, t, tag, showInd=true, onOpen }) {
       )}
       <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
         display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400, marginBottom:2 }}>
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
-      <TeamRow abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live}
-        teamId={g.awayId} t={t} showInd={showInd} tag={null} />
-      <TeamRow abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live}
-        teamId={g.homeId} t={t} showInd={showInd} tag={null} />
-      {/* live status overlays the reserved spacer column (between hits and
-          indicators) that both TeamRows leave empty, spanning their full
-          height instead of being duplicated per row. left = the card's own
-          7px padding + the abbr/score/hits column widths and gaps (24+2+
-          14+2+16+2) that TeamRow's grid already reserves before it. */}
-      {live && (
-        <div style={{ position:"absolute", left:67, top:0, bottom:0 }}>
-          <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
-            onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />
-        </div>
-      )}
+      <div style={{ display:"grid",
+        gridTemplateColumns: showInd ? "repeat(3, minmax(0,1fr))" : "1fr", columnGap:8 }}>
+        <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} />
+        {showInd && <PitcherBatterSection g={g} t={t} />}
+        {showInd && <TrendsSection g={g} t={t} />}
+      </div>
     </div>
   );
 }
@@ -2185,8 +2275,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(200px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:200px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(400px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:400px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
