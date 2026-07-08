@@ -622,7 +622,10 @@ function TravelTrends({ tags, setTag, onReady }) {
           const hits = Number(g.linescore?.teams?.[side]?.hits);
           if (!isNaN(hits)) {
             const hm = hitsByDate[t.team.id] = hitsByDate[t.team.id]||{};
-            hm[gd] = Math.max(hm[gd] ?? 0, hits);   // max if a doubleheader
+            // finals is sorted chronologically, so on a doubleheader date the
+            // later game (the actual "most recent" one) is processed last and
+            // simply overwrites — not maxed against — the earlier game's hits
+            hm[gd] = hits;
           }
         });
       });
