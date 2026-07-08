@@ -499,16 +499,27 @@ function TravelTrends({ tags, setTag, onReady }) {
         oppByTeamDay[di][g.awayId] = g.homeId;
         oppByTeamDay[di][g.homeId] = g.awayId;
       }));
+      // doubleheaders put two games on the same pair/day — dayByPair only
+      // keeps one game per pair per day (it's the anchor used to continue a
+      // series row across other days), so always prefer the non-makeup game
+      // as that anchor; the other game still gets its own row below since
+      // placement is tracked per game, not per pair.
+      const isMakeup = (g) => /makeup/i.test(g._raw?.description || "");
       const dayByPair = perDay.map(games=>{
-        const m={}; games.forEach(g=>{ m[g.pair]=g; }); return m;
+        const m={};
+        games.forEach(g=>{
+          const existing = m[g.pair];
+          if (!existing || (isMakeup(existing) && !isMakeup(g))) m[g.pair]=g;
+        });
+        return m;
       });
 
       const grid   = Array.from({length:numDays}, ()=>[]);    // grid[di][row]=game|"RESV"|null
-      const placed = Array.from({length:numDays}, ()=>({}));  // di -> pair -> true
+      const placed = Array.from({length:numDays}, ()=>({}));  // di -> gamePk -> true
       const RESV = "__reserved__";   // blocks a cell (series gap) but renders blank
       const putAt = (di,row,g,shade)=>{
         while(grid[di].length<=row) grid[di].push(null);
-        grid[di][row]=g; placed[di][g.pair]=true; g.seriesShade=shade;
+        grid[di][row]=g; placed[di][g.gamePk]=true; g.seriesShade=shade;
       };
       const reserve = (di,row)=>{     // hold a cell blank if it's currently free
         while(grid[di].length<=row) grid[di].push(null);
@@ -543,7 +554,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         for(let d=0; d<numDays; d++){
           if(d===di) continue;
           const match = dayByPair[d][g.pair];
-          if(match && !placed[d][g.pair] && continuous(g.awayId, g.homeId, di, d)){
+          if(match && !placed[d][match.gamePk] && continuous(g.awayId, g.homeId, di, d)){
             const r = nextFreeFrom(d, row);   // prefer the seed's row
             putAt(d, r, match, shade);
             // reserve the same row on the off-days between di and d
@@ -557,7 +568,7 @@ function TravelTrends({ tags, setTag, onReady }) {
 
       // ---- step 1: seed today's games (navy/gray), each propagates ----
       perDay[TODAY_DI].forEach((g,row)=>{
-        if(placed[TODAY_DI][g.pair]) return;
+        if(placed[TODAY_DI][g.gamePk]) return;
         seed(TODAY_DI, row, g, 2 + (row%2));   // 2=navy, 3=darker-gray
       });
 
@@ -566,7 +577,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         for(const di of [TODAY_DI-radius, TODAY_DI+radius]){
           if(di<0 || di>=numDays) continue;
           perDay[di].forEach(g=>{
-            if(placed[di][g.pair]) return;       // already locked by a seed
+            if(placed[di][g.gamePk]) return;     // already locked by a seed
             const r = nextFreeFrom(di, 0);
             seed(di, r, g, 0 + (r%2));           // white/light-gray, and re-seed
           });
