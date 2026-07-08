@@ -1056,7 +1056,7 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
               background: filled ? "#000" : "transparent",
               boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
               opacity: present ? 1 : 0.45 }} />
-            {inner && <span style={{ position:"absolute", inset:0, display:"flex",
+            {inner && <span style={{ position:"absolute", inset:0, top:1, display:"flex",
               alignItems:"center", justifyContent:"center", fontFamily:MONO,
               fontSize: slot.key==="rematch" ? 8 : 9, fontWeight:700,
               color:innerColor, lineHeight:1 }}>{inner}</span>}
