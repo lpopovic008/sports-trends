@@ -18,11 +18,7 @@ const C = {
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
-  /* neon yellow: 10-run scoreboard explosion — bright enough that the
-     green/red/black hits number drawn on top of it (see the "10+ runs"
-     indicator) stays readable; the old neon pink sat too close to red
-     and green in hue/lightness for either to show up on it */
-  bigday:"#FFEE00",
+  bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#A0EE26",          /* neon lime: momentum wave */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -1008,12 +1004,13 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 
           // small info drawn inside the swatch: a thumb for the pitcher
           // rematch (only once it's lit up), or this team's last-game hits
-          // for the 10+ runs slot (always, lit up or not)
-          let inner = null, innerColor = "#fff";
+          // for the 10+ runs slot (always, lit up or not). The swatch itself
+          // is never filled — just a colored outline when lit — so this text
+          // always sits on the card's own background, not a solid color.
+          let inner = null, innerColor = C.ink;
           if (slot.key==="rematch" && present) {
             const verdict = t.rematchVerdict(teamId);
             inner = verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : "–";
-            innerColor = verdict==="even" ? "#000" : "#fff";
           } else if (slot.key==="bigday") {
             const hi = t.hitsInfo(teamId);
             if (hi && hi.hits!=null) {
@@ -1025,8 +1022,7 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ position:"relative", width:16, height:14, flexShrink:0 }}>
             <span style={{ position:"absolute", inset:0, borderRadius:2,
-              background: present ? color : "transparent",
-              boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
+              boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
               opacity: present ? 1 : 0.45 }} />
             {inner && <span style={{ position:"absolute", inset:0, display:"flex",
               alignItems:"center", justifyContent:"center", fontFamily:MONO,
@@ -2114,7 +2110,7 @@ function GameModal({ m, tags, setTag, onClose }) {
             {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak yesterday">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
-            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} textColor={C.ink} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
           </div>
         )}
 
