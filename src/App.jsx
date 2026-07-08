@@ -1016,9 +1016,9 @@ const PB_BOX_W = 24, PB_BOX_H = 24, PB_GAP = 3;
 const HEADER_H = 11;                       // PITCHER/BATTER label row
 const TEAM_ROW_H = 18;                      // a team's Game (name/score/hits) row
 const TRENDS_ROW_H = BOX_H;                // a team's situational-trends row, right under its main row
-const ROW_GAP = 3;
+const ROW_GAP = 1;
 const BASES_W = 44;                        // reserved for the live bases display — never shifts
-const CARD_H = 108;
+const CARD_H = 100;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
