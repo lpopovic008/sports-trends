@@ -1008,15 +1008,17 @@ function Pill({ children, color, title, textColor="#fff" }) {
     color:textColor, background:color, borderRadius:2, padding:"1px 4px" }}>{children}</span>;
 }
 
-/* box geometry shared by every indicator swatch in the app — the pitcher/
-   batter stat boxes and the situational-trend boxes are always this size. */
+/* box geometry — the situational-trend boxes are one size, and the bigger
+   pitcher/batter stat boxes (which have more empty space to fill in their
+   row) are another. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
+const PB_BOX_W = 24, PB_BOX_H = 24, PB_GAP = 3;
 const HEADER_H = 11;                       // PITCHER/BATTER label row
-const MAIN_H = 30;                         // a team's Game+Pitcher/Batter row — tall enough for the big score
+const MAIN_H = PB_BOX_H + 2;                // a team's Game+Pitcher/Batter row
 const TRENDS_ROW_H = BOX_H;                // a team's situational-trends row, right under its main row
 const ROW_GAP = 3;
-const BASES_W = 62;                        // reserved for the live bases display — never shifts
-const CARD_H = 132;
+const BASES_W = 44;                        // reserved for the live bases display — never shifts
+const CARD_H = 124;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1039,11 +1041,11 @@ function StatBox({ children, title, big=false }) {
   const has = children!=null && children!=="";
   const isDash = children==="–";
   return (
-    <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, flexShrink:0,
-      borderRadius:2, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
+    <span title={title} style={{ position:"relative", width:PB_BOX_W, height:PB_BOX_H, flexShrink:0,
+      borderRadius:3, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
       display:"flex", alignItems:"center", justifyContent:"center" }}>
       {has && <span style={{ position:"relative", top:1, fontFamily: big ? SANS : MONO,
-        fontSize: big ? 11 : 9.5, fontWeight:800, color: isDash ? C.ruleDark : C.ink,
+        fontSize: big ? 15 : 13, fontWeight:800, color: isDash ? C.ruleDark : C.ink,
         lineHeight:1 }}>{children}</span>}
     </span>
   );
@@ -1058,21 +1060,17 @@ function TrendBox({ present, color, title }) {
     opacity: present ? 1 : 0.45 }} />;
 }
 
-/* the team abbreviation stays pinned to the top of the row; the score is
-   drawn much bigger and bottom-anchored instead — its top ends up lower than
-   the team name, and its bottom lines up with the bottom of the
-   pitcher/batter stat boxes in the same row. */
 function TeamLine({ abbr, score, hits, won, final, live }) {
   const showScore = final || live;
   return (
-    <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:"100%" }}>
-      <span style={{ alignSelf:"flex-start", fontFamily:MONO, fontSize:13,
+    <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:1 }}>
+      <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
-      <span style={{ fontFamily:MONO, fontSize:22, lineHeight:1,
-        fontWeight: final && won ? 800 : 500,
+      <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
+        fontWeight: final && won ? 800 : 400,
         color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark }}>
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
     </div>
   );
@@ -1100,10 +1098,8 @@ function NowLine() {
   );
 }
 
-/* live-game status: a mini three-base diamond, with the inning + outs
-   stacked to its right, docked next to the team lines. Laid out horizontally
-   (rather than stacked top-to-bottom) so the diamond itself can be drawn
-   bigger without needing extra vertical room. */
+/* live-game status: inning on top, the mini three-base diamond in the
+   middle, outs below — stacked top-to-bottom, docked next to the team lines. */
 function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
   if (inningNum == null) return null;
   const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
@@ -1117,23 +1113,21 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
       fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1.4" />;
   };
   return (
-    <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"row",
-      alignItems:"center", justifyContent:"center", gap:5, height:"100%" }}>
+    <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", gap:3 }}>
+      <div style={{ fontFamily:MONO, fontSize:12, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+        {arrow}{inningNum}</div>
       <svg width="30" height="24" viewBox="0 0 30 24">
         {diamond(15, 6, onSecond)}
         {diamond(6, 16.5, onThird)}
         {diamond(24, 16.5, onFirst)}
       </svg>
-      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
-        <div style={{ fontFamily:MONO, fontSize:12, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
-          {arrow}{inningNum}</div>
-        <div style={{ display:"flex", gap:2.5 }}>
-          {[0,1,2].map(i=>(
-            <span key={i} style={{ width:5.5, height:5.5, borderRadius:"50%",
-              background: outs!=null && i<outs ? C.ink : "transparent",
-              border:`1.4px solid ${C.ink}` }} />
-          ))}
-        </div>
+      <div style={{ display:"flex", gap:2.5 }}>
+        {[0,1,2].map(i=>(
+          <span key={i} style={{ width:5.5, height:5.5, borderRadius:"50%",
+            background: outs!=null && i<outs ? C.ink : "transparent",
+            border:`1.4px solid ${C.ink}` }} />
+        ))}
       </div>
     </div>
   );
@@ -1158,11 +1152,10 @@ function pitcherBatterStats(t, tid) {
   };
 }
 /* PITCHER (rematch · rematch result · season ERA) and BATTER (hot/cold bats
-   · hit-trend momentum · last game's hits), bottom-anchored in the row so
-   the boxes share the same baseline as the big score next to them. */
+   · hit-trend momentum · last game's hits) — bigger boxes to fill the row. */
 function PBBoxRow({ s }) {
   return (
-    <div style={{ display:"flex", alignItems:"flex-end", gap:BOX_GAP, height:"100%" }}>
+    <div style={{ display:"flex", alignItems:"center", gap:PB_GAP, height:"100%" }}>
       <StatBox title="Pitcher rematch">{s.p1}</StatBox>
       <StatBox title="Rematch result">{s.p2}</StatBox>
       <StatBox title="Season ERA" big>{s.p3}</StatBox>
@@ -1174,7 +1167,7 @@ function PBBoxRow({ s }) {
   );
 }
 const pbHeaderCol = (label) => (
-  <div style={{ width:BOX_W*3+BOX_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
+  <div style={{ width:PB_BOX_W*3+PB_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
     fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
 );
 
@@ -2298,7 +2291,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
-  .ts-card-grid { grid-template-columns:1fr !important; grid-auto-rows:auto !important; row-gap:6px; }
+  .ts-card-grid { grid-template-columns:1fr !important; grid-template-rows:none !important;
+    grid-auto-rows:auto !important; row-gap:6px; }
   .ts-card-grid > div { grid-column:1 !important; grid-row:auto !important; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
