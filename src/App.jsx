@@ -1014,11 +1014,11 @@ function Pill({ children, color, title, textColor="#fff" }) {
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const PB_BOX_W = 24, PB_BOX_H = 24, PB_GAP = 3;
 const HEADER_H = 11;                       // PITCHER/BATTER label row
-const MAIN_H = PB_BOX_H + 2;                // a team's Game+Pitcher/Batter row
+const TEAM_ROW_H = 18;                      // a team's Game (name/score/hits) row
 const TRENDS_ROW_H = BOX_H;                // a team's situational-trends row, right under its main row
 const ROW_GAP = 3;
 const BASES_W = 44;                        // reserved for the live bases display — never shifts
-const CARD_H = 124;
+const CARD_H = 108;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1152,10 +1152,11 @@ function pitcherBatterStats(t, tid) {
   };
 }
 /* PITCHER (rematch · rematch result · season ERA) and BATTER (hot/cold bats
-   · hit-trend momentum · last game's hits) — bigger boxes to fill the row. */
+   · hit-trend momentum · last game's hits) — bigger boxes, vertically
+   centered against the team's name+trends rows combined. */
 function PBBoxRow({ s }) {
   return (
-    <div style={{ display:"flex", alignItems:"flex-end", gap:PB_GAP, height:"100%" }}>
+    <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
       <StatBox title="Pitcher rematch">{s.p1}</StatBox>
       <StatBox title="Rematch result">{s.p2}</StatBox>
       <StatBox title="Season ERA" big>{s.p3}</StatBox>
@@ -1231,7 +1232,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
       {showInd ? (
         <div className="ts-card-grid" style={{ display:"grid",
           gridTemplateColumns:`auto auto ${BASES_W}px`,
-          gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${TRENDS_ROW_H}px ${MAIN_H}px ${TRENDS_ROW_H}px`,
+          gridTemplateRows:`${HEADER_H}px ${TEAM_ROW_H}px ${TRENDS_ROW_H}px ${TEAM_ROW_H}px ${TRENDS_ROW_H}px`,
           columnGap:10, rowGap:ROW_GAP }}>
           <div className="gc-bases" style={{ gridColumn:3, gridRow:"2 / span 3", display:"flex",
             alignItems:"center", justifyContent:"center" }}>{bases}</div>
@@ -1242,29 +1243,34 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
             {pbHeaderCol("BATTER")}
           </div>
           <div className="gc-game-away" style={{ gridColumn:1, gridRow:2,
-            display:"flex", alignItems:"flex-end" }}>
+            display:"flex", alignItems:"center" }}>
             <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
           </div>
-          <div className="gc-pb-away" style={{ gridColumn:2, gridRow:2 }}>
+          {/* spans the team name row + the trends row below it, centered
+              within that combined height — its midpoint lines up with the
+              midpoint of those two rows, not just the name row alone. */}
+          <div className="gc-pb-away" style={{ gridColumn:2, gridRow:"2 / span 2",
+            display:"flex", alignItems:"center" }}>
             <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
           </div>
-          <div className="gc-trends-away" style={{ gridColumn:"1 / span 2", gridRow:3 }}>
+          <div className="gc-trends-away" style={{ gridColumn:1, gridRow:3 }}>
             <TrendBoxRow tid={g.awayId} t={t} />
           </div>
           <div className="gc-game-home" style={{ gridColumn:1, gridRow:4,
-            display:"flex", alignItems:"flex-end" }}>
+            display:"flex", alignItems:"center" }}>
             <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
           </div>
-          <div className="gc-pb-home" style={{ gridColumn:2, gridRow:4 }}>
+          <div className="gc-pb-home" style={{ gridColumn:2, gridRow:"4 / span 2",
+            display:"flex", alignItems:"center" }}>
             <PBBoxRow s={pitcherBatterStats(t, g.homeId)} />
           </div>
-          <div className="gc-trends-home" style={{ gridColumn:"1 / span 2", gridRow:5 }}>
+          <div className="gc-trends-home" style={{ gridColumn:1, gridRow:5 }}>
             <TrendBoxRow tid={g.homeId} t={t} />
           </div>
         </div>
       ) : (
         <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-          columnGap:10, gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, rowGap:ROW_GAP }}>
+          columnGap:10, gridTemplateRows:`${TEAM_ROW_H}px ${TEAM_ROW_H}px`, rowGap:ROW_GAP }}>
           <div style={{ gridColumn:1, gridRow:1 }}>
             <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
           </div>
