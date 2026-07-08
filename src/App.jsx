@@ -1030,28 +1030,29 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-/* one pitcher/batter stat box. empty + dimmed when the underlying condition
-   doesn't apply (no dash — that would imply "checked, no data"); filled
-   black with the value on top once there's something to show, including a
-   dash for "checked, nothing to show yet" so the two states read differently. */
+/* one pitcher/batter stat box: a plain outline, dimmed when the underlying
+   condition doesn't apply. A dash ("checked, nothing to show yet") reads
+   muted; an actual value (emoji or number) reads at full ink strength. */
 function StatBox({ children, title, big=false }) {
   const has = children!=null && children!=="";
+  const isDash = children==="–";
   return (
     <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, flexShrink:0,
-      borderRadius:2, background: has ? "#000" : "transparent",
-      boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`, opacity: has ? 1 : 0.45,
+      borderRadius:2, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`, opacity: has ? 1 : 0.45,
       display:"flex", alignItems:"center", justifyContent:"center" }}>
       {has && <span style={{ position:"relative", top:1, fontFamily: big ? SANS : MONO,
-        fontSize: big ? 11 : 9.5, fontWeight:800, color:"#fff", lineHeight:1 }}>{children}</span>}
+        fontSize: big ? 11 : 9.5, fontWeight:800, color: isDash ? C.ruleDark : C.ink,
+        lineHeight:1 }}>{children}</span>}
     </span>
   );
 }
 
-/* one situational-trend box: colored outline when lit, dimmed neutral
-   outline when not — no fill, matching the rest of the app's indicator style. */
+/* one situational-trend box: filled solid with its color when lit, dimmed
+   neutral outline when not. */
 function TrendBox({ present, color, title }) {
   return <span title={title} style={{ width:BOX_W, height:BOX_H, borderRadius:2, flexShrink:0,
-    boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
+    background: present ? color : "transparent",
+    boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
     opacity: present ? 1 : 0.45 }} />;
 }
 
@@ -1175,7 +1176,7 @@ function PitcherBatterSection({ g, t }) {
     <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
       <StatBox title="Pitcher rematch">{s.p1}</StatBox>
       <StatBox title="Rematch result">{s.p2}</StatBox>
-      <StatBox title="Season ERA">{s.p3}</StatBox>
+      <StatBox title="Season ERA" big>{s.p3}</StatBox>
       <span style={{ width:MID_GAP, flexShrink:0 }} />
       <StatBox title="Hot/cold bats">{s.b1}</StatBox>
       <StatBox title="Hit-trend momentum">{s.b2}</StatBox>
@@ -1263,7 +1264,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       <div style={{ display:"grid",
-        gridTemplateColumns: showInd ? "repeat(3, minmax(0,1fr))" : "1fr", columnGap:8 }}>
+        gridTemplateColumns: showInd ? "1fr auto auto" : "1fr", columnGap:14 }}>
         <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} />
         {showInd && <PitcherBatterSection g={g} t={t} />}
         {showInd && <TrendsSection g={g} t={t} />}
