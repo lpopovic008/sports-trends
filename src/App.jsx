@@ -2288,12 +2288,9 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
 .ts-cell { box-sizing:border-box; }
 @media (max-width:760px){
-  .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
+  .ts-cal { grid-auto-flow:column; grid-auto-columns:94%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
-  .ts-card-grid { grid-template-columns:1fr !important; grid-template-rows:none !important;
-    grid-auto-rows:auto !important; row-gap:6px; }
-  .ts-card-grid > div { grid-column:1 !important; grid-row:auto !important; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
