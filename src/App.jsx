@@ -12,8 +12,10 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  /* indicator colors — a five-color neon graffiti set, ordered so each
-     swatch sits next to its nearest hue on the color wheel */
+  /* indicator colors — a neon graffiti set, ordered so each swatch sits
+     next to its nearest hue on the color wheel */
+  boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
+  slump:"#0FF0FC",         /* neon cyan: cold bats, 6 or fewer hits last game */
   rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
@@ -837,7 +839,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
     // last game's hits for a team, and how that compares to the game before
-    // it — feeds the number shown inside every "10+ runs" indicator box.
+    // it — feeds the number shown inside the "Slump/Boom" indicator box.
     // Scans back over the team's actual played dates (not a fixed "yesterday")
     // so an off-day doesn't leave the box blank.
     const hitsInfo = (tid) => {
@@ -849,6 +851,12 @@ function TravelTrends({ tags, setTag, onReady }) {
       const prevHits = pastDates.length>1 ? m[pastDates[1]] : null;
       return { hits, diff: prevHits!=null ? hits-prevHits : null };
     };
+    // "hot" bats (10+ hits) or "cold" bats (6 or fewer) in the team's last game
+    const batsState = (tid) => {
+      const hi = hitsInfo(tid);
+      if (!hi || hi.hits==null) return null;
+      return hi.hits>=10 ? "hot" : hi.hits<=6 ? "cold" : null;
+    };
 
     // per-team trend keys for the duplicated markers
     const sideKeys = { [g.awayId]:new Set(), [g.homeId]:new Set() };
@@ -858,12 +866,14 @@ function TravelTrends({ tags, setTag, onReady }) {
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
     rematch.forEach(m=>add(m.teamId, "rematch"));   // the pitcher's own team
+    [g.awayId, g.homeId].forEach(tid=>{ if (batsState(tid)) add(tid, "bats"); });
 
     const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
     return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null,
       rematchVerdict:(tid)=>rematchVerdict[tid] || null,
+      batsState,
       hitsInfo };
   };
 
@@ -978,6 +988,8 @@ function Pill({ children, color, title, textColor="#fff" }) {
 /* fixed marker slots — same position on every card so trends read at a glance.
    order left→right; add new trends here and every card adjusts automatically. */
 const TREND_SLOTS = [
+  { key:"bats",    color:C.boom,    label:"Slump/Boom",
+    desc:"Teams with hot or cold bats" },
   { key:"rematch", color:C.rematch, label:"Pitcher rematch",
     desc:"Team has faced this pitcher this year already" },
   { key:"bigday",  color:C.bigday,  label:"10+ runs",
@@ -1015,19 +1027,21 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
           let color = slot.color;
           if (slot.key==="rematch" && present)
             color = t.rematchTier(teamId)==="weak" ? C.rematchLight : C.rematch;
+          if (slot.key==="bats" && present)
+            color = t.batsState(teamId)==="cold" ? C.slump : C.boom;
 
           // small info drawn inside the swatch: a thumb for the pitcher
           // rematch (only once it's lit up), or this team's last-game hits
-          // for the 10+ runs slot (always, lit up or not). Once a lit swatch
-          // actually has content to show, its background goes black (with
-          // the colored outline kept) so the content has a solid backdrop —
-          // the "neutral" black/white text flips to white in that case.
+          // for the Slump/Boom slot (always, lit up or not). Once a lit
+          // swatch actually has content to show, its background goes black
+          // (with the colored outline kept) so the content has a solid
+          // backdrop — the "neutral" black/white text flips to white then.
           let inner = null, innerColor = C.ink;
           if (slot.key==="rematch" && present) {
             const verdict = t.rematchVerdict(teamId);
             inner = verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : "–";
             if (verdict==="even") innerColor = "#fff";
-          } else if (slot.key==="bigday") {
+          } else if (slot.key==="bats") {
             const hi = t.hitsInfo(teamId);
             if (hi && hi.hits!=null) {
               inner = String(hi.hits);
