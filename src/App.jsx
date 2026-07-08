@@ -1004,24 +1004,28 @@ function TeamRow({ abbr, score, hits, won, final, live, teamId, t, showInd=true 
 
           // small info drawn inside the swatch: a thumb for the pitcher
           // rematch (only once it's lit up), or this team's last-game hits
-          // for the 10+ runs slot (always, lit up or not). The swatch itself
-          // is never filled — just a colored outline when lit — so this text
-          // always sits on the card's own background, not a solid color.
+          // for the 10+ runs slot (always, lit up or not). Once a lit swatch
+          // actually has content to show, its background goes black (with
+          // the colored outline kept) so the content has a solid backdrop —
+          // the "neutral" black/white text flips to white in that case.
           let inner = null, innerColor = C.ink;
           if (slot.key==="rematch" && present) {
             const verdict = t.rematchVerdict(teamId);
             inner = verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : "–";
+            if (verdict==="even") innerColor = "#fff";
           } else if (slot.key==="bigday") {
             const hi = t.hitsInfo(teamId);
             if (hi && hi.hits!=null) {
               inner = String(hi.hits);
-              innerColor = hi.diff>0 ? C.over : hi.diff<0 ? C.under : C.ink;
+              innerColor = hi.diff>0 ? C.over : hi.diff<0 ? C.under : (present ? "#fff" : C.ink);
             }
           }
+          const filled = present && inner;
 
           return <span key={slot.key} title={present ? slot.label : undefined}
             style={{ position:"relative", width:16, height:14, flexShrink:0 }}>
             <span style={{ position:"absolute", inset:0, borderRadius:2,
+              background: filled ? "#000" : "transparent",
               boxShadow: present ? `inset 0 0 0 2px ${color}` : `inset 0 0 0 1.5px ${C.inkSoft}`,
               opacity: present ? 1 : 0.45 }} />
             {inner && <span style={{ position:"absolute", inset:0, display:"flex",
