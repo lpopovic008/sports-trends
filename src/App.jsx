@@ -1011,10 +1011,12 @@ function Pill({ children, color, title, textColor="#fff" }) {
 /* box geometry shared by every indicator swatch in the app — the pitcher/
    batter stat boxes and the situational-trend boxes are always this size. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
-const HEADER_H = 11;
-const TEAM_BAND_H = BOX_H;                 // one team's row height, shared by all 3 sections
+const HEADER_H = 11;                       // PITCHER/BATTER label row
+const MAIN_H = 30;                         // a team's Game+Pitcher/Batter row — tall enough for the big score
+const TRENDS_ROW_H = BOX_H;                // a team's situational-trends row, right under its main row
+const ROW_GAP = 3;
 const BASES_W = 62;                        // reserved for the live bases display — never shifts
-const CARD_H = 78;
+const CARD_H = 132;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1030,15 +1032,15 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-/* one pitcher/batter stat box: a plain outline, dimmed when the underlying
-   condition doesn't apply. A dash ("checked, nothing to show yet") reads
-   muted; an actual value (emoji or number) reads at full ink strength. */
+/* one pitcher/batter stat box: a plain outline that always looks the same
+   whether or not it has content. A dash ("checked, nothing to show yet")
+   reads muted; an actual value (emoji or number) reads at full ink strength. */
 function StatBox({ children, title, big=false }) {
   const has = children!=null && children!=="";
   const isDash = children==="–";
   return (
     <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, flexShrink:0,
-      borderRadius:2, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`, opacity: has ? 1 : 0.45,
+      borderRadius:2, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
       display:"flex", alignItems:"center", justifyContent:"center" }}>
       {has && <span style={{ position:"relative", top:1, fontFamily: big ? SANS : MONO,
         fontSize: big ? 11 : 9.5, fontWeight:800, color: isDash ? C.ruleDark : C.ink,
@@ -1056,17 +1058,21 @@ function TrendBox({ present, color, title }) {
     opacity: present ? 1 : 0.45 }} />;
 }
 
+/* the team abbreviation stays pinned to the top of the row; the score is
+   drawn much bigger and bottom-anchored instead — its top ends up lower than
+   the team name, and its bottom lines up with the bottom of the
+   pitcher/batter stat boxes in the same row. */
 function TeamLine({ abbr, score, hits, won, final, live }) {
   const showScore = final || live;
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:1 }}>
-      <span style={{ fontFamily:MONO, fontSize:13,
+    <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:"100%" }}>
+      <span style={{ alignSelf:"flex-start", fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
-      <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
-        fontWeight: final && won ? 800 : 400,
+      <span style={{ fontFamily:MONO, fontSize:22, lineHeight:1,
+        fontWeight: final && won ? 800 : 500,
         color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
+      <span style={{ fontFamily:MONO, fontSize:10, color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
     </div>
   );
@@ -1133,51 +1139,30 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   );
 }
 
-/* column 1 — Game: the two team lines, with a fixed-width slot reserved for
-   the live bases display so nothing shifts when a game goes live. */
-function GameSection({ g, aw, hm, awWon, hmWon, final, live }) {
-  return (
-    <div style={{ display:"grid", gridTemplateColumns:`1fr ${BASES_W}px`,
-      gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px` }}>
-      <div style={{ gridColumn:1, gridRow:1 }} />
-      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
-        <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
-      </div>
-      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
-        <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
-      </div>
-      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
-        alignItems:"center", justifyContent:"center" }}>
-        {live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
-          onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />}
-      </div>
-    </div>
-  );
-}
-
-/* column 2 — Pitcher/Batter: PITCHER (rematch · rematch result · season ERA)
-   and BATTER (hot/cold bats · hit-trend momentum · last game's hits), one
-   row per team. */
-function PitcherBatterSection({ g, t }) {
-  const statsFor = (tid) => {
-    const hasRematch = !!t.rematchTier(tid);
-    const verdict = hasRematch ? t.rematchVerdict(tid) : null;
-    const era = t.pitcherEra(tid);
-    const bats = t.batsState(tid);
-    const momentum = t.hitsMomentum(tid);
-    const hi = t.hitsInfo(tid);
-    return {
-      p1: hasRematch ? "\u{1F501}" : null,
-      p2: verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : verdict==="even" ? "➖" : null,
-      p3: era!=null ? era.toFixed(1) : "–",
-      b1: bats==="hot" ? "\u{1F525}" : bats==="cold" ? "❄️" : null,
-      b2: momentum==="up" ? "\u{1F4C8}" : momentum==="down" ? "\u{1F4C9}" : momentum==="flat" ? "➡️" : "–",
-      b3: hi && hi.hits!=null ? String(hi.hits) : "–",
-    };
+/* this team's probable starter's rematch/ERA + hot-cold bats/momentum/hits,
+   shown as the 6 pitcher/batter stat boxes. */
+function pitcherBatterStats(t, tid) {
+  const hasRematch = !!t.rematchTier(tid);
+  const verdict = hasRematch ? t.rematchVerdict(tid) : null;
+  const era = t.pitcherEra(tid);
+  const bats = t.batsState(tid);
+  const momentum = t.hitsMomentum(tid);
+  const hi = t.hitsInfo(tid);
+  return {
+    p1: hasRematch ? "\u{1F501}" : null,
+    p2: verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : verdict==="even" ? "➖" : null,
+    p3: era!=null ? era.toFixed(1) : "–",
+    b1: bats==="hot" ? "\u{1F525}" : bats==="cold" ? "❄️" : null,
+    b2: momentum==="up" ? "\u{1F4C8}" : momentum==="down" ? "\u{1F4C9}" : momentum==="flat" ? "➡️" : "–",
+    b3: hi && hi.hits!=null ? String(hi.hits) : "–",
   };
-  const away = statsFor(g.awayId), home = statsFor(g.homeId);
-  const row = (s) => (
-    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+}
+/* PITCHER (rematch · rematch result · season ERA) and BATTER (hot/cold bats
+   · hit-trend momentum · last game's hits), bottom-anchored in the row so
+   the boxes share the same baseline as the big score next to them. */
+function PBBoxRow({ s }) {
+  return (
+    <div style={{ display:"flex", alignItems:"flex-end", gap:BOX_GAP, height:"100%" }}>
       <StatBox title="Pitcher rematch">{s.p1}</StatBox>
       <StatBox title="Rematch result">{s.p2}</StatBox>
       <StatBox title="Season ERA" big>{s.p3}</StatBox>
@@ -1187,41 +1172,22 @@ function PitcherBatterSection({ g, t }) {
       <StatBox title="Hits last game" big>{s.b3}</StatBox>
     </div>
   );
-  const headerCol = (label) => (
-    <div style={{ width:BOX_W*3+BOX_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
-      fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
-  );
-  return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px` }}>
-      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-        {headerCol("PITCHER")}
-        <span style={{ width:MID_GAP, flexShrink:0 }} />
-        {headerCol("BATTER")}
-      </div>
-      <div style={{ display:"flex", alignItems:"center" }}>{row(away)}</div>
-      <div style={{ display:"flex", alignItems:"center" }}>{row(home)}</div>
-    </div>
-  );
 }
+const pbHeaderCol = (label) => (
+  <div style={{ width:BOX_W*3+BOX_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
+    fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
+);
 
-/* column 3 — Trends: a row of 4 situational-trend boxes per team (away row
-   on top, home row on bottom — 2 rows x 4 columns in all). */
-function TrendsSection({ g, t }) {
-  const grid = (tid) => (
-    <div style={{ display:"flex", gap:BOX_GAP }}>
+/* one team's row of 4 situational-trend boxes, sitting directly under that
+   team's Game/Pitcher-Batter row. */
+function TrendBoxRow({ tid, t }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP, height:"100%" }}>
       {TREND_SLOTS.map(slot=>{
         const present = t.keysFor(tid).has(slot.key);
         return <TrendBox key={slot.key} present={present} color={slot.color}
           title={present ? slot.label : undefined} />;
       })}
-    </div>
-  );
-  return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px`,
-      justifyItems:"start" }}>
-      <div />
-      <div style={{ display:"flex", alignItems:"center" }}>{grid(g.awayId)}</div>
-      <div style={{ display:"flex", alignItems:"center" }}>{grid(g.homeId)}</div>
     </div>
   );
 }
@@ -1239,6 +1205,8 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
+  const bases = live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
+    onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />;
   return (
     <div onClick={onOpen||undefined} className="ts-cell"
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
@@ -1267,12 +1235,51 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
-      <div className="ts-card-grid" style={{ display:"grid",
-        gridTemplateColumns: showInd ? "1fr auto auto" : "1fr", columnGap:14 }}>
-        <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} />
-        {showInd && <PitcherBatterSection g={g} t={t} />}
-        {showInd && <TrendsSection g={g} t={t} />}
-      </div>
+      {showInd ? (
+        <div className="ts-card-grid" style={{ display:"grid",
+          gridTemplateColumns:`1fr auto ${BASES_W}px`,
+          gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${TRENDS_ROW_H}px ${MAIN_H}px ${TRENDS_ROW_H}px`,
+          columnGap:14, rowGap:ROW_GAP }}>
+          <div className="gc-bases" style={{ gridColumn:3, gridRow:"2 / span 3", display:"flex",
+            alignItems:"center", justifyContent:"center" }}>{bases}</div>
+          <div className="gc-header-pb" style={{ gridColumn:2, gridRow:1,
+            display:"flex", alignItems:"center", gap:BOX_GAP }}>
+            {pbHeaderCol("PITCHER")}
+            <span style={{ width:MID_GAP, flexShrink:0 }} />
+            {pbHeaderCol("BATTER")}
+          </div>
+          <div className="gc-game-away" style={{ gridColumn:1, gridRow:2 }}>
+            <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
+          </div>
+          <div className="gc-pb-away" style={{ gridColumn:2, gridRow:2 }}>
+            <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
+          </div>
+          <div className="gc-trends-away" style={{ gridColumn:"1 / span 2", gridRow:3 }}>
+            <TrendBoxRow tid={g.awayId} t={t} />
+          </div>
+          <div className="gc-game-home" style={{ gridColumn:1, gridRow:4 }}>
+            <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
+          </div>
+          <div className="gc-pb-home" style={{ gridColumn:2, gridRow:4 }}>
+            <PBBoxRow s={pitcherBatterStats(t, g.homeId)} />
+          </div>
+          <div className="gc-trends-home" style={{ gridColumn:"1 / span 2", gridRow:5 }}>
+            <TrendBoxRow tid={g.homeId} t={t} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ display:"grid", gridTemplateColumns:`1fr ${BASES_W}px`,
+          gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, rowGap:ROW_GAP }}>
+          <div style={{ gridColumn:1, gridRow:1 }}>
+            <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
+          </div>
+          <div style={{ gridColumn:1, gridRow:2 }}>
+            <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
+          </div>
+          <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
+            alignItems:"center", justifyContent:"center" }}>{bases}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2291,7 +2298,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
-  .ts-card-grid { grid-template-columns:1fr !important; row-gap:6px; }
+  .ts-card-grid { grid-template-columns:1fr !important; grid-auto-rows:auto !important; row-gap:6px; }
+  .ts-card-grid > div { grid-column:1 !important; grid-row:auto !important; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
