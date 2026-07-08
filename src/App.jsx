@@ -1013,7 +1013,7 @@ function Pill({ children, color, title, textColor="#fff" }) {
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const HEADER_H = 11;
 const TEAM_BAND_H = BOX_H;                 // one team's row height, shared by all 3 sections
-const BASES_W = 40;                        // reserved for the live bases display — never shifts
+const BASES_W = 62;                        // reserved for the live bases display — never shifts
 const CARD_H = 78;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
@@ -1059,7 +1059,7 @@ function TrendBox({ present, color, title }) {
 function TeamLine({ abbr, score, hits, won, final, live }) {
   const showScore = final || live;
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"24px 22px 18px", alignItems:"center", gap:2 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:1 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
@@ -1094,8 +1094,10 @@ function NowLine() {
   );
 }
 
-/* live-game status: inning + a mini three-base diamond + outs, stacked in
-   a narrow column docked to the right of the team lines. */
+/* live-game status: a mini three-base diamond, with the inning + outs
+   stacked to its right, docked next to the team lines. Laid out horizontally
+   (rather than stacked top-to-bottom) so the diamond itself can be drawn
+   bigger without needing extra vertical room. */
 function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
   if (inningNum == null) return null;
   const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
@@ -1104,26 +1106,28 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   // over 1st/3rd instead of relying on independently-positioned, separately
   // anti-aliased rotated elements to line up pixel-for-pixel.
   const diamond = (cx, cy, on) => {
-    const r = 3.4;
+    const r = 5.1;
     return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
-      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1" />;
+      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1.4" />;
   };
   return (
-    <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:4, height:"100%" }}>
-      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
-        {arrow}{inningNum}</div>
-      <svg width="20" height="16" viewBox="0 0 20 16">
-        {diamond(10, 4, onSecond)}
-        {diamond(4, 11, onThird)}
-        {diamond(16, 11, onFirst)}
+    <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"row",
+      alignItems:"center", justifyContent:"center", gap:5, height:"100%" }}>
+      <svg width="30" height="24" viewBox="0 0 30 24">
+        {diamond(15, 6, onSecond)}
+        {diamond(6, 16.5, onThird)}
+        {diamond(24, 16.5, onFirst)}
       </svg>
-      <div style={{ display:"flex", gap:2 }}>
-        {[0,1,2].map(i=>(
-          <span key={i} style={{ width:4, height:4, borderRadius:"50%",
-            background: outs!=null && i<outs ? C.ink : "transparent",
-            border:`1px solid ${C.ink}` }} />
-        ))}
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+        <div style={{ fontFamily:MONO, fontSize:12, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+          {arrow}{inningNum}</div>
+        <div style={{ display:"flex", gap:2.5 }}>
+          {[0,1,2].map(i=>(
+            <span key={i} style={{ width:5.5, height:5.5, borderRadius:"50%",
+              background: outs!=null && i<outs ? C.ink : "transparent",
+              border:`1.4px solid ${C.ink}` }} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1214,7 +1218,7 @@ function TrendsSection({ g, t }) {
   );
   return (
     <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${TEAM_BAND_H}px ${TEAM_BAND_H}px`,
-      justifyItems:"center" }}>
+      justifyItems:"start" }}>
       <div />
       <div style={{ display:"flex", alignItems:"center" }}>{grid(g.awayId)}</div>
       <div style={{ display:"flex", alignItems:"center" }}>{grid(g.homeId)}</div>
@@ -1240,7 +1244,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
-      height:CARD_H, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
+      minHeight:CARD_H, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
@@ -1263,7 +1267,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
-      <div style={{ display:"grid",
+      <div className="ts-card-grid" style={{ display:"grid",
         gridTemplateColumns: showInd ? "1fr auto auto" : "1fr", columnGap:14 }}>
         <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} />
         {showInd && <PitcherBatterSection g={g} t={t} />}
@@ -2287,6 +2291,7 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   .ts-cal { grid-auto-flow:column; grid-auto-columns:82%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
+  .ts-card-grid { grid-template-columns:1fr !important; row-gap:6px; }
   .ts-lineups { grid-template-columns:1fr; }
   .ts-lineup-col { border-right:none !important; }
   .ts-lineup-col + .ts-lineup-col { border-top:1px solid #CDD3DA; }
