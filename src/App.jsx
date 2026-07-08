@@ -1012,12 +1012,13 @@ function Pill({ children, color, title, textColor="#fff" }) {
    batter stat boxes and the situational-trend boxes are always this size. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const HEADER_H = 11;
-const TEAM_BAND_H = BOX_H*2 + BOX_GAP;    // tall enough for a team's 2x2 trend grid
+const TEAM_BAND_H = BOX_H;                 // one team's row height, shared by all 3 sections
 const BASES_W = 40;                        // reserved for the live bases display — never shifts
-const CARD_H = 100;
+const CARD_H = 78;
 
-/* fixed situational-trend slots, rendered as a 2x2 grid per team. add new
-   trends here and every card + the legend adjust automatically. */
+/* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
+   top, home row on bottom — matching the Game/Pitcher-Batter sections). add
+   new trends here and every card + the legend adjust automatically. */
 const TREND_SLOTS = [
   { key:"bigday", color:C.bigday, label:"Big Day",
     desc:"Team scored 10+ runs yesterday" },
@@ -1198,11 +1199,11 @@ function PitcherBatterSection({ g, t }) {
   );
 }
 
-/* column 3 — Trends: a 2x2 grid of situational trends per team. */
+/* column 3 — Trends: a row of 4 situational-trend boxes per team (away row
+   on top, home row on bottom — 2 rows x 4 columns in all). */
 function TrendsSection({ g, t }) {
   const grid = (tid) => (
-    <div style={{ display:"grid", gridTemplateColumns:`repeat(2, ${BOX_W}px)`,
-      gridTemplateRows:`repeat(2, ${BOX_H}px)`, gap:BOX_GAP }}>
+    <div style={{ display:"flex", gap:BOX_GAP }}>
       {TREND_SLOTS.map(slot=>{
         const present = t.keysFor(tid).has(slot.key);
         return <TrendBox key={slot.key} present={present} color={slot.color}
