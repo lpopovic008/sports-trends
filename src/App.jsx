@@ -1155,7 +1155,7 @@ function pitcherBatterStats(t, tid) {
    · hit-trend momentum · last game's hits) — bigger boxes to fill the row. */
 function PBBoxRow({ s }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:PB_GAP, height:"100%" }}>
+    <div style={{ display:"flex", alignItems:"flex-end", gap:PB_GAP, height:"100%" }}>
       <StatBox title="Pitcher rematch">{s.p1}</StatBox>
       <StatBox title="Rematch result">{s.p2}</StatBox>
       <StatBox title="Season ERA" big>{s.p3}</StatBox>
@@ -1241,7 +1241,8 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
             <span style={{ width:MID_GAP, flexShrink:0 }} />
             {pbHeaderCol("BATTER")}
           </div>
-          <div className="gc-game-away" style={{ gridColumn:1, gridRow:2 }}>
+          <div className="gc-game-away" style={{ gridColumn:1, gridRow:2,
+            display:"flex", alignItems:"flex-end" }}>
             <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
           </div>
           <div className="gc-pb-away" style={{ gridColumn:2, gridRow:2 }}>
@@ -1250,7 +1251,8 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           <div className="gc-trends-away" style={{ gridColumn:"1 / span 2", gridRow:3 }}>
             <TrendBoxRow tid={g.awayId} t={t} />
           </div>
-          <div className="gc-game-home" style={{ gridColumn:1, gridRow:4 }}>
+          <div className="gc-game-home" style={{ gridColumn:1, gridRow:4,
+            display:"flex", alignItems:"flex-end" }}>
             <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
           </div>
           <div className="gc-pb-home" style={{ gridColumn:2, gridRow:4 }}>
