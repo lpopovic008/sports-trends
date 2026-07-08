@@ -1230,9 +1230,9 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
         {final ? "FINAL" : live ? "LIVE" : time}</div>
       {showInd ? (
         <div className="ts-card-grid" style={{ display:"grid",
-          gridTemplateColumns:`1fr auto ${BASES_W}px`,
+          gridTemplateColumns:`auto auto ${BASES_W}px`,
           gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${TRENDS_ROW_H}px ${MAIN_H}px ${TRENDS_ROW_H}px`,
-          columnGap:14, rowGap:ROW_GAP }}>
+          columnGap:10, rowGap:ROW_GAP }}>
           <div className="gc-bases" style={{ gridColumn:3, gridRow:"2 / span 3", display:"flex",
             alignItems:"center", justifyContent:"center" }}>{bases}</div>
           <div className="gc-header-pb" style={{ gridColumn:2, gridRow:1,
@@ -1261,8 +1261,8 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           </div>
         </div>
       ) : (
-        <div style={{ display:"grid", gridTemplateColumns:`1fr ${BASES_W}px`,
-          gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, rowGap:ROW_GAP }}>
+        <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
+          columnGap:10, gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, rowGap:ROW_GAP }}>
           <div style={{ gridColumn:1, gridRow:1 }}>
             <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
           </div>
@@ -2281,8 +2281,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(400px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:400px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(350px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:350px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
