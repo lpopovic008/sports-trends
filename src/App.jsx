@@ -1369,8 +1369,12 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
       setFontSize(size);
     };
     fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    // a ResizeObserver on the element itself (not window resize) avoids a
+    // mobile-rotation race where the resize event can fire before the new
+    // viewport width has actually settled, leaving the text stuck oversized
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [s, season, maxSize, minSize]);
   const st = s.stat;
   const { ipCol, hCol, erCol, bbCol, kCol } = pitcherLineColors(st, season);
@@ -1895,7 +1899,7 @@ async function loadBatterVs(batterId, pitcherId) {
 
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
 const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
-function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId, showBoxPitching, boxPitchers }) {
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId, oppTeamId, date, showBoxPitching, boxPitchers }) {
   const canVs = !!oppPitcherId && !!oppPitcherName;
   // null = neither tab open, nothing shown yet — tapping a tab opens it,
   // tapping the already-open tab closes it again (accordion, not a toggle
@@ -2045,10 +2049,88 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
             <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
               color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
             <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
+            {/* the probable "starter" is sometimes just a 1-2 inning opener —
+                let the viewer look up the actual bulk pitcher alongside them */}
+            <AddPitcherBlock oppName={oppName} oppTeamId={oppTeamId} date={date} />
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/* lets the viewer manually add a second pitcher's info next to the
+   probable starter — for when the listed "starter" is really just an
+   opener going 1-2 innings and the actual bulk pitcher is someone else. */
+function AddPitcherBlock({ oppName, oppTeamId, date }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [added, setAdded] = useState(null);      // { id, name }
+  const [info, setInfo] = useState(undefined);   // same shape as pitcherInfo
+
+  useEffect(() => {
+    if (!added) return;
+    let alive = true;
+    loadPitcherVs(added.id, oppTeamId, date).then(r => { if (alive) setInfo(r); });
+    return () => { alive = false; };
+  }, [added, oppTeamId, date]);
+
+  const resolve = async () => {
+    const q = query.trim();
+    if (!q) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(`${API}/sports/1/players?season=${SEASON}`);
+      if (!r.ok) throw new Error(`roster ${r.status}`);
+      const j = await r.json();
+      const people = j.people || [];
+      const ql = q.toLowerCase();
+      const hit = people.find(p => (p.fullName||"").toLowerCase().includes(ql));
+      if (!hit) throw new Error(`No ${SEASON} MLB player matched "${q}".`);
+      setAdded({ id: hit.id, name: hit.fullName });
+      setOpen(false); setQuery("");
+    } catch (e) {
+      setErr(isNet(e.message) ? "Couldn't reach the MLB data service." : e.message);
+    } finally { setBusy(false); }
+  };
+
+  if (added) {
+    return (
+      <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${C.rule}`, position:"relative" }}>
+        <button onClick={()=>{ setAdded(null); setInfo(undefined); }} title="Remove this pitcher"
+          aria-label="Remove this pitcher"
+          style={{ position:"absolute", top:8, right:0, border:"none", background:"transparent",
+            color:C.inkSoft, cursor:"pointer", fontFamily:MONO, fontSize:13, padding:4, lineHeight:1 }}>✕</button>
+        <PitcherBlock name={added.name} pid={added.id} vsName={oppName} info={info} bare />
+      </div>
+    );
+  }
+
+  if (open) {
+    return (
+      <div style={{ marginTop:8 }}>
+        <div style={{ display:"flex", gap:6 }}>
+          <input autoFocus value={query} onChange={e=>setQuery(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") resolve(); if(e.key==="Escape") setOpen(false); }}
+            placeholder="Bulk pitcher's name" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+          <button onClick={resolve} disabled={busy} style={{ border:`1px solid ${C.ink}`,
+            background:busy?C.rule:C.ink, color:"#fff", borderRadius:2, fontFamily:MONO, fontSize:11,
+            padding:"6px 12px", cursor:busy?"default":"pointer" }}>{busy?"…":"Add"}</button>
+          <button onClick={()=>{ setOpen(false); setErr(""); }} style={{ border:`1px solid ${C.rule}`,
+            background:"#fff", color:C.ink, borderRadius:2, fontFamily:MONO, fontSize:11,
+            padding:"6px 10px", cursor:"pointer" }}>Cancel</button>
+        </div>
+        {err && <div style={{ marginTop:6, fontFamily:SANS, fontSize:12, color:C.under }}>{err}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={()=>setOpen(true)} style={{ marginTop:8, border:`1px dashed ${C.rule}`,
+      background:"transparent", color:C.inkSoft, borderRadius:3, fontFamily:MONO, fontSize:11,
+      padding:"5px 10px", cursor:"pointer" }}>+ Add a pitcher to check</button>
   );
 }
 
@@ -2070,8 +2152,10 @@ function FitTitle({ text, maxSize = 18, minSize = 12, style }) {
       setFontSize(size);
     };
     fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    // same rotation-race fix as PLine — observe the element, not the window
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [text, maxSize, minSize]);
   return <div ref={ref} style={{ whiteSpace:"nowrap", overflow:"hidden", fontSize, ...style }}>{text}</div>;
 }
@@ -2421,12 +2505,14 @@ function GameModal({ m, tags, setTag, onClose }) {
           <TeamPanel teamName={g.awayName} oppName={g.homeName}
             lineup={awayLU} pitcherName={g.awayPname} pitcherId={g.awayPid} pitcherInfo={awayP}
             oppPitcherName={g.homePname} oppPitcherId={g.homePid}
+            oppTeamId={g.homeId} date={date}
             showBoxPitching={showBoxPitching} boxPitchers={boxPitching?.away}
             onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
             <TeamPanel teamName={g.homeName} oppName={g.awayName}
               lineup={homeLU} pitcherName={g.homePname} pitcherId={g.homePid} pitcherInfo={homeP}
               oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
+              oppTeamId={g.awayId} date={date}
               showBoxPitching={showBoxPitching} boxPitchers={boxPitching?.home}
               onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           </div>
