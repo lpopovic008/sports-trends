@@ -1087,10 +1087,10 @@ function TeamLine({ abbr, score, hits, won, final, live }) {
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
-      <span style={{ fontFamily:MONO, fontSize:13, textAlign:"right",
+      <span style={{ fontFamily:MONO, fontSize:13, textAlign:"center",
         fontWeight: final && won ? 800 : 400,
         color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"right", color:C.ruleDark }}>
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"center", color:C.ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
     </div>
   );
@@ -1785,12 +1785,18 @@ async function loadBoxscorePitchers(gamePk) {
     const r = await fetch(`${API}/game/${gamePk}/boxscore`);
     if (!r.ok) return null;
     const j = await r.json();
-    const side = (teamObj) => (teamObj?.pitchers || []).map(pid => {
-      const p = teamObj.players?.[`ID${pid}`];
-      const stat = p?.stats?.pitching;
-      if (!p || !stat || stat.inningsPitched == null) return null;
-      return { pid, name: p.person?.fullName, stat };
-    }).filter(Boolean);
+    // the box score's own pitchers list can repeat an id (e.g. a pitcher
+    // tracked across multiple mid-inning defensive shuffles) — dedupe so
+    // each pitcher gets exactly one line.
+    const side = (teamObj) => {
+      const seen = new Set();
+      return (teamObj?.pitchers || []).filter(pid => seen.has(pid) ? false : (seen.add(pid), true)).map(pid => {
+        const p = teamObj.players?.[`ID${pid}`];
+        const stat = p?.stats?.pitching;
+        if (!p || !stat || stat.inningsPitched == null) return null;
+        return { pid, name: p.person?.fullName, stat };
+      }).filter(Boolean);
+    };
     return { away: side(j.teams?.away), home: side(j.teams?.home) };
   } catch { return null; }
 }
