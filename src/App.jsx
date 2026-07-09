@@ -1044,9 +1044,11 @@ function EraNum({ era, verdict }) {
   const has = era != null;
   const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
   return (
-    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
-      fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
-      background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
+    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0,
+      display:"flex", justifyContent:"center" }}>
+      <span style={{ fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
+        background:bg, borderRadius:3, padding:2 }}>{has ? era.toFixed(2) : "–"}</span>
+    </span>
   );
 }
 
@@ -1060,9 +1062,11 @@ function HitNum({ hits, big=false }) {
   const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
   return (
     <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
-      textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
-      fontWeight: big?700:400, color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
-      background:bg, borderRadius:3 }}>{has ? hits : "–"}</span>
+      display:"flex", justifyContent:"center" }}>
+      <span style={{ fontFamily:MONO, fontSize: big?13:10, fontWeight: big?700:400,
+        color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
+        background:bg, borderRadius:3, padding:2 }}>{has ? hits : "–"}</span>
+    </span>
   );
 }
 
@@ -1160,23 +1164,19 @@ function pitcherBatterStats(t, tid) {
   const [h3, h2, h1] = t.hitsTrio(tid);
   return { era: t.pitcherEra(tid), verdict: t.rematchVerdict(tid), h3, h2, h1 };
 }
-/* PITCHER (season ERA) and BATTER (last 3 games' hits, oldest to most
-   recent) — no boxes, just the numbers themselves. */
+/* last 3 games' hits (oldest to most recent), then the pitcher's season
+   ERA — no boxes, no header labels, just the numbers themselves. */
 function PBBoxRow({ s }) {
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:PB_GAP }}>
-      <EraNum era={s.era} verdict={s.verdict} />
-      <span style={{ width:MID_GAP, flexShrink:0 }} />
       <HitNum hits={s.h3} />
       <HitNum hits={s.h2} />
       <HitNum hits={s.h1} big />
+      <span style={{ width:MID_GAP, flexShrink:0 }} />
+      <EraNum era={s.era} verdict={s.verdict} />
     </div>
   );
 }
-const pbHeaderCol = (label, n=3) => (
-  <div style={{ width:PB_BOX_W*n+PB_GAP*(n-1), textAlign:"center", fontFamily:MONO, fontSize:8.5,
-    fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
-);
 
 /* column 1 — Game: the two team lines, with a fixed-width slot next to the
    score reserved for the live bases display so nothing shifts when a game
@@ -1198,16 +1198,12 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   );
 }
 
-/* column 2 — Pitcher/Batter: PITCHER (season ERA) and BATTER (last 3
-   games' hits), one row per team. */
+/* column 2 — Pitcher/Batter: last 3 games' hits and the pitcher's season
+   ERA, one row per team. */
 function PitcherBatterSection({ g, t }) {
   return (
     <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
-      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-        {pbHeaderCol("PITCHER", 1)}
-        <span style={{ width:MID_GAP, flexShrink:0 }} />
-        {pbHeaderCol("BATTER", 3)}
-      </div>
+      <div />
       <div style={{ display:"flex", alignItems:"center" }}>
         <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
       </div>
