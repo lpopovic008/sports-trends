@@ -1083,7 +1083,7 @@ function TrendBox({ present, color, title, inner }) {
 function TeamLine({ abbr, score, hits, won, final, live }) {
   const showScore = final || live;
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:1 }}>
+    <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:6 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
         color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
