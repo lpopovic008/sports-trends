@@ -14,6 +14,9 @@ const C = {
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
   softEven:"rgba(154,163,173,0.28)",
+  /* today's-slate dark cells — light text/outline equivalents of ink/inkSoft/
+     ruleDark/rule, used only when a card sits on the dark charcoal/navy pair */
+  darkText:"#F2F4F7", darkTextSoft:"#AEB7C4", darkOutline:"#57616F", darkBorder:"#3A4250",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -1042,13 +1045,14 @@ const TREND_SLOTS = [
    soft red if clearly bad, soft grey if they've faced them but it was too
    close to call either way — the text itself always stays its resting ink
    color, never tinted green or red. */
-function EraNum({ era, verdict }) {
+function EraNum({ era, verdict, dark }) {
   const has = era != null;
   const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder
     : verdict==="even" ? C.softEven : "transparent";
+  const color = has ? (dark?C.darkText:C.ink) : (dark?C.darkTextSoft:C.ruleDark);
   return (
     <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
-      fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
+      fontFamily:MONO, fontSize:8, fontWeight:700, color,
       background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
   );
 }
@@ -1058,13 +1062,15 @@ function EraNum({ era, verdict }) {
    two before it match the game box's own hits column (small mono, muted
    gray). All three get a soft green fill at 10+ hits, soft red at 6 or
    fewer — the text itself always stays its resting color, never tinted. */
-function HitNum({ hits, big=false }) {
+function HitNum({ hits, big=false, dark }) {
   const has = hits != null;
   const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
+  const restColor = dark ? C.darkTextSoft : C.ruleDark;
+  const color = has ? (big ? (dark?C.darkText:C.ink) : restColor) : restColor;
   return (
     <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
-      fontWeight: big?700:400, color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
+      fontWeight: big?700:400, color,
       background:bg, borderRadius:3 }}>{has ? hits : "–"}</span>
   );
 }
@@ -1072,11 +1078,11 @@ function HitNum({ hits, big=false }) {
 /* one situational-trend box: filled solid with its color when lit, dimmed
    neutral outline when not. `inner` draws a small marker on top (e.g. "!"
    for a team on a 10+ run back-to-back streak). */
-function TrendBox({ present, color, title, inner }) {
+function TrendBox({ present, color, title, inner, dark }) {
   return (
     <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, borderRadius:2,
       flexShrink:0, background: present ? color : "transparent",
-      boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
+      boxShadow: present ? "none" : `inset 0 0 0 1.5px ${dark?C.darkOutline:C.inkSoft}`,
       opacity: present ? 1 : 0.45, display:"flex", alignItems:"center", justifyContent:"center" }}>
       {present && inner && <span style={{ fontFamily:MONO, fontSize:9, fontWeight:800,
         color:"#fff", lineHeight:1 }}>{inner}</span>}
@@ -1084,17 +1090,20 @@ function TrendBox({ present, color, title, inner }) {
   );
 }
 
-function TeamLine({ abbr, score, hits, won, final, live }) {
+function TeamLine({ abbr, score, hits, won, final, live, dark }) {
   const showScore = final || live;
+  const ink = dark ? C.darkText : C.ink;
+  const inkSoft = dark ? C.darkTextSoft : C.inkSoft;
+  const ruleDark = dark ? C.darkTextSoft : C.ruleDark;
   return (
     <div style={{ display:"grid", gridTemplateColumns:"24px 16px 14px", alignItems:"center", gap:6 }}>
       <span style={{ fontFamily:MONO, fontSize:13,
         fontWeight: final ? (won?800:400) : 600,
-        color: final ? (won?C.ink:C.inkSoft) : C.ink }}>{abbr}</span>
+        color: final ? (won?ink:inkSoft) : ink }}>{abbr}</span>
       <span style={{ fontFamily:MONO, fontSize:13, textAlign:"center",
         fontWeight: final && won ? 800 : 400,
-        color: final ? (won?C.ink:C.inkSoft) : showScore ? C.ink : C.ruleDark }}>{showScore ? score : ""}</span>
-      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"center", color:C.ruleDark }}>
+        color: final ? (won?ink:inkSoft) : showScore ? ink : ruleDark }}>{showScore ? score : ""}</span>
+      <span style={{ fontFamily:MONO, fontSize:10, textAlign:"center", color:ruleDark }}>
         {showScore && hits!=null ? hits : ""}</span>
     </div>
   );
@@ -1102,10 +1111,13 @@ function TeamLine({ abbr, score, hits, won, final, live }) {
 
 /* series shading — two pairs, two waves:
    wave 0 (current/past series):  light gray  ↔  white
-   wave 1 (future series):        soft navy   ↔  darker gray  */
+   wave 1 (today's-slate series): dark charcoal ↔ dark navy (a real dark
+   theme, not just a darker tint — text/outlines on these two switch to
+   their light equivalents, see the `dark` prop threaded through below) */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
-   2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#8D95A2", "#91969C"];
+   2=dark-charcoal (today-series even), 3=dark-navy (today-series odd) */
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#242A33", "#16213E"];
+const isDarkShade = (shade) => shade===2 || shade===3;
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -1124,8 +1136,9 @@ function NowLine() {
 
 /* live-game status: inning on top, the mini three-base diamond in the
    middle, outs below — stacked top-to-bottom, docked next to the team lines. */
-function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird }) {
+function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird, dark }) {
   if (inningNum == null) return null;
+  const ink = dark ? C.darkText : C.ink;
   const arrow = inningState==="Bottom" || inningState==="End" ? "▼" : "▲";
   // diamonds as SVG polygons (not rotated CSS boxes) so all three bases are
   // drawn in one coordinate space — guarantees 2nd sits exactly centered
@@ -1134,12 +1147,12 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   const diamond = (cx, cy, on) => {
     const r = 3.6;
     return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
-      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1.2" />;
+      fill={on ? ink : "none"} stroke={ink} strokeWidth="1.2" />;
   };
   return (
     <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", gap:1.5 }}>
-      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
       <svg width="21" height="17" viewBox="0 0 21 17">
         {diamond(10.5, 4.5, onSecond)}
@@ -1149,8 +1162,8 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
       <div style={{ display:"flex", gap:1.5 }}>
         {[0,1,2].map(i=>(
           <span key={i} style={{ width:4, height:4, borderRadius:"50%",
-            background: outs!=null && i<outs ? C.ink : "transparent",
-            border:`1.1px solid ${C.ink}` }} />
+            background: outs!=null && i<outs ? ink : "transparent",
+            border:`1.1px solid ${ink}` }} />
         ))}
       </div>
     </div>
@@ -1165,14 +1178,14 @@ function pitcherBatterStats(t, tid) {
 }
 /* last 3 games' hits (oldest to most recent), then the pitcher's season
    ERA — no boxes, no header labels, just the numbers themselves. */
-function PBBoxRow({ s }) {
+function PBBoxRow({ s, dark }) {
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:PB_GAP }}>
-      <HitNum hits={s.h3} />
-      <HitNum hits={s.h2} />
-      <HitNum hits={s.h1} big />
+      <HitNum hits={s.h3} dark={dark} />
+      <HitNum hits={s.h2} dark={dark} />
+      <HitNum hits={s.h1} big dark={dark} />
       <span style={{ width:MID_GAP, flexShrink:0 }} />
-      <EraNum era={s.era} verdict={s.verdict} />
+      <EraNum era={s.era} verdict={s.verdict} dark={dark} />
     </div>
   );
 }
@@ -1180,15 +1193,15 @@ function PBBoxRow({ s }) {
 /* column 1 — Game: the two team lines, with a fixed-width slot next to the
    score reserved for the live bases display so nothing shifts when a game
    goes live. */
-function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
+function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases, dark }) {
   return (
     <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
       gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
       <div style={{ gridColumn:1, gridRow:1, display:"flex", alignItems:"center" }}>
-        <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
+        <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} dark={dark} />
       </div>
       <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
-        <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
+        <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} dark={dark} />
       </div>
       <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
         alignItems:"center", justifyContent:"center" }}>{bases}</div>
@@ -1200,10 +1213,10 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
    (see CalCard) rather than a dedicated header row, so they don't add any
    extra height to the card. Uses the exact same gap as PBBoxRow so each
    label sits centered directly over its numbers, not just its own slot. */
-function PBHeaderLabels() {
+function PBHeaderLabels({ dark }) {
   const label = (text, width) => (
     <div style={{ width, textAlign:"center", fontFamily:MONO, fontSize:7, fontWeight:700,
-      letterSpacing:"0.05em", color:C.inkSoft }}>{text}</div>
+      letterSpacing:"0.05em", color: dark?C.darkTextSoft:C.inkSoft }}>{text}</div>
   );
   return (
     <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
@@ -1216,14 +1229,14 @@ function PBHeaderLabels() {
 
 /* column 2 — Pitcher/Batter: last 3 games' hits and the pitcher's season
    ERA, one row per team. */
-function PitcherBatterSection({ g, t }) {
+function PitcherBatterSection({ g, t, dark }) {
   return (
     <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
       <div style={{ display:"flex", alignItems:"center" }}>
-        <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
+        <PBBoxRow s={pitcherBatterStats(t, g.awayId)} dark={dark} />
       </div>
       <div style={{ display:"flex", alignItems:"center" }}>
-        <PBBoxRow s={pitcherBatterStats(t, g.homeId)} />
+        <PBBoxRow s={pitcherBatterStats(t, g.homeId)} dark={dark} />
       </div>
     </div>
   );
@@ -1232,14 +1245,14 @@ function PitcherBatterSection({ g, t }) {
 /* column 3 — Trends: a row of 4 situational-trend boxes per team. Big Day
    gets a "!" marker when the team scored 10+ runs in each of its last two
    games, on top of the box simply being lit for the one-game version. */
-function TrendsSection({ g, t }) {
+function TrendsSection({ g, t, dark }) {
   const row = (tid) => (
     <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
       {TREND_SLOTS.map(slot=>{
         const present = t.keysFor(tid).has(slot.key);
         const inner = slot.key==="bigday" && t.bigDayStreak(tid) ? "!" : null;
         return <TrendBox key={slot.key} present={present} color={slot.color} inner={inner}
-          title={present ? slot.label : undefined} />;
+          title={present ? slot.label : undefined} dark={dark} />;
       })}
     </div>
   );
@@ -1261,16 +1274,17 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
   const live = g.isLive && !final && now.getTime() >= new Date(g.time).getTime();
   const awWon = final && g.awayScore > g.homeScore;
   const hmWon = final && g.homeScore > g.awayScore;
+  const dark = isDarkShade(g.seriesShade);
   const bg = g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#fff";
   const tagInCorner = tag && showInd;        // indicators on → tag overlaps corner
   const tagInMarkers = tag && !showInd;      // indicators off → tag sits where markers were
   const bases = live && <LiveDiamond inningNum={g.inningNum} inningState={g.inningState} outs={g.outs}
-    onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} />;
+    onFirst={g.onFirst} onSecond={g.onSecond} onThird={g.onThird} dark={dark} />;
   return (
     <div onClick={onOpen||undefined} className="ts-cell"
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
-      style={{ border:`1px solid ${C.rule}`, borderRadius:2, boxSizing:"border-box",
+      style={{ border:`1px solid ${dark?C.darkBorder:C.rule}`, borderRadius:2, boxSizing:"border-box",
       minHeight:CARD_H, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
@@ -1292,19 +1306,19 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
         gridTemplateColumns: showInd ? "auto auto auto" : "auto",
         gridTemplateRows:"auto auto", columnGap:12, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
-        {showInd && <div style={{ gridColumn:2, gridRow:1 }}><PBHeaderLabels /></div>}
+        {showInd && <div style={{ gridColumn:2, gridRow:1 }}><PBHeaderLabels dark={dark} /></div>}
         <div style={{ gridColumn: showInd?3:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
           display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-          color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+          color: live ? "#E5142B" : (dark?C.darkTextSoft:C.ruleDark), fontWeight: live ? 700 : 400 }}>
           {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
             flexShrink:0 }} />}
           {final ? "FINAL" : live ? "LIVE" : time}
         </div>
         <div style={{ gridColumn:1, gridRow:2 }}>
-          <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} />
+          <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} dark={dark} />
         </div>
-        {showInd && <div style={{ gridColumn:2, gridRow:2 }}><PitcherBatterSection g={g} t={t} /></div>}
-        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><TrendsSection g={g} t={t} /></div>}
+        {showInd && <div style={{ gridColumn:2, gridRow:2 }}><PitcherBatterSection g={g} t={t} dark={dark} /></div>}
+        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><TrendsSection g={g} t={t} dark={dark} /></div>}
       </div>
     </div>
   );
