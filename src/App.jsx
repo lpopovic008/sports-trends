@@ -13,6 +13,7 @@ const C = {
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
+  softEven:"rgba(154,163,173,0.28)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -1017,10 +1018,9 @@ function Pill({ children, color, title, textColor="#fff" }) {
    so everything still lines up under the PITCHER/BATTER headers. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const PB_BOX_W = 24, PB_GAP = 3;
-const HEADER_H = 9;                        // small "HITS"/"ERA" label row
 const MAIN_H = 19;                         // a team's row height
 const BASES_W = 38;                        // reserved for the live bases display — never shifts
-const CARD_H = 67;
+const CARD_H = 58;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1039,11 +1039,13 @@ const TREND_SLOTS = [
 /* the pitcher's season ERA (unrounded past the hundredth — no border around
    it, just a soft highlight fill). Soft green fill if they've faced this
    team already this season and had a clearly good outing (2+ stat margin),
-   soft red if clearly bad — the text itself always stays its resting ink
+   soft red if clearly bad, soft grey if they've faced them but it was too
+   close to call either way — the text itself always stays its resting ink
    color, never tinted green or red. */
 function EraNum({ era, verdict }) {
   const has = era != null;
-  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
+  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder
+    : verdict==="even" ? C.softEven : "transparent";
   return (
     <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
       fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
@@ -1103,7 +1105,7 @@ function TeamLine({ abbr, score, hits, won, final, live }) {
    wave 1 (future series):        soft navy   ↔  darker gray  */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
    2=soft-navy (today-series even), 3=darker-gray (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#BCC7D8", "#C2C8D0"];
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#8D95A2", "#91969C"];
 
 /* the "current time" marker that rests in the gap between today's games */
 function NowLine() {
@@ -1181,35 +1183,42 @@ function PBBoxRow({ s }) {
 function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   return (
     <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-      gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
-      <div style={{ gridColumn:1, gridRow:1 }} />
-      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+      gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
+      <div style={{ gridColumn:1, gridRow:1, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
+      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
+      <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
         alignItems:"center", justifyContent:"center" }}>{bases}</div>
     </div>
   );
 }
 
-const pbHeaderLabel = (label, width) => (
-  <div style={{ width, textAlign:"center", fontFamily:MONO, fontSize:7, fontWeight:700,
-    letterSpacing:"0.05em", color:C.inkSoft }}>{label}</div>
-);
+/* "HITS"/"ERA" column labels — rendered up in the card's own time/FINAL row
+   (see CalCard) rather than a dedicated header row, so they don't add any
+   extra height to the card. Uses the exact same gap as PBBoxRow so each
+   label sits centered directly over its numbers, not just its own slot. */
+function PBHeaderLabels() {
+  const label = (text, width) => (
+    <div style={{ width, textAlign:"center", fontFamily:MONO, fontSize:7, fontWeight:700,
+      letterSpacing:"0.05em", color:C.inkSoft }}>{text}</div>
+  );
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
+      {label("HITS", PB_BOX_W*3+PB_GAP*2)}
+      <span style={{ width:MID_GAP, flexShrink:0 }} />
+      {label("ERA", PB_BOX_W)}
+    </div>
+  );
+}
 
 /* column 2 — Pitcher/Batter: last 3 games' hits and the pitcher's season
    ERA, one row per team. */
 function PitcherBatterSection({ g, t }) {
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
-      <div style={{ display:"flex", alignItems:"center" }}>
-        {pbHeaderLabel("HITS", PB_BOX_W*3+PB_GAP*2)}
-        <span style={{ width:MID_GAP, flexShrink:0 }} />
-        {pbHeaderLabel("ERA", PB_BOX_W)}
-      </div>
+    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
       <div style={{ display:"flex", alignItems:"center" }}>
         <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
       </div>
@@ -1235,8 +1244,7 @@ function TrendsSection({ g, t }) {
     </div>
   );
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
-      <div />
+    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
       {row(g.awayId)}
       {row(g.homeId)}
     </div>
@@ -1280,17 +1288,23 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           boxShadow:"0 1px 3px rgba(120,0,20,0.3)", whiteSpace:"nowrap", overflow:"hidden",
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
-      <div style={{ fontFamily:MONO, fontSize:8, lineHeight:1.2,
-        display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-        color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400, marginBottom:2 }}>
-        {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
-          flexShrink:0 }} />}
-        {final ? "FINAL" : live ? "LIVE" : time}</div>
       <div className="ts-card-grid" style={{ display:"grid",
-        gridTemplateColumns: showInd ? "auto auto auto" : "auto", columnGap:12 }}>
-        <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} />
-        {showInd && <PitcherBatterSection g={g} t={t} />}
-        {showInd && <TrendsSection g={g} t={t} />}
+        gridTemplateColumns: showInd ? "auto auto auto" : "auto",
+        gridTemplateRows:"auto auto", columnGap:12, rowGap:2 }}>
+        <div style={{ gridColumn:1, gridRow:1 }} />
+        {showInd && <div style={{ gridColumn:2, gridRow:1 }}><PBHeaderLabels /></div>}
+        <div style={{ gridColumn: showInd?3:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
+          display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
+          color: live ? "#E5142B" : C.ruleDark, fontWeight: live ? 700 : 400 }}>
+          {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+            flexShrink:0 }} />}
+          {final ? "FINAL" : live ? "LIVE" : time}
+        </div>
+        <div style={{ gridColumn:1, gridRow:2 }}>
+          <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} />
+        </div>
+        {showInd && <div style={{ gridColumn:2, gridRow:2 }}><PitcherBatterSection g={g} t={t} /></div>}
+        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><TrendsSection g={g} t={t} /></div>}
       </div>
     </div>
   );
@@ -2172,9 +2186,8 @@ function GameModal({ m, tags, setTag, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:50,
-      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
-      justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px",
-      overflowY:"auto", overscrollBehavior:"contain" }}>
+      background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"center",
+      justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px" }}>
 
       {/* side nav arrows — same day's games only */}
       {hasPrev && (
@@ -2194,12 +2207,14 @@ function GameModal({ m, tags, setTag, onClose }) {
 
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
-        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)", overflow:"hidden" }}>
+        maxHeight:"100%", overflowY:"auto", overflowX:"hidden",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
 
-        {/* sticky region: header + tag editor scroll together. the card's
-            own overflow:hidden clips scrolled content cleanly behind this
-            sticky block instead of letting it bleed out past the card's
-            rounded corners as it passes underneath. */}
+        {/* sticky region: header + tag editor scroll together. the card
+            itself is now the scrolling element (not the full-screen overlay
+            behind it), so content scrolling up passes behind this sticky
+            block and disappears cleanly into it instead of just scrolling
+            off the top of the screen. */}
         <div style={{ position:"sticky", top:0, zIndex:3, background:C.paper,
           borderTopLeftRadius:6, borderTopRightRadius:6 }}>
         {/* header */}
