@@ -1118,12 +1118,14 @@ function TeamLine({ abbr, score, hits, won, final, live, dark }) {
 
 /* series shading — two pairs, two waves:
    wave 0 (current/past series):  light gray  ↔  white
-   wave 1 (today's-slate series): dark charcoal ↔ dark navy (a real dark
-   theme, not just a darker tint — text/outlines on these two switch to
-   their light equivalents, see the `dark` prop threaded through below) */
+   wave 1 (today's-slate series): dark charcoal ↔ lighter slate grey (a
+   real dark theme, not just a darker tint — text/outlines on these two
+   switch to their light equivalents, see the `dark` prop threaded through
+   below); kept clearly different in lightness so the two are easy to
+   tell apart at a glance */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
-   2=dark-charcoal (today-series even), 3=dark-navy (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#23262B", "#0E2A52"];
+   2=dark-charcoal (today-series even), 3=lighter-slate-grey (today-series odd) */
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#20232A", "#4B515A"];
 const isDarkShade = (shade) => shade===2 || shade===3;
 
 /* the "current time" marker that rests in the gap between today's games */
