@@ -1025,6 +1025,7 @@ function Pill({ children, color, title, textColor="#fff" }) {
    so everything still lines up under the PITCHER/BATTER headers. */
 const BOX_W = 14, BOX_H = 13, BOX_GAP = 1.5, MID_GAP = 5;
 const PB_BOX_W = 21, PB_GAP = 2;
+const ERA_BOX_W = 26;   // wider than PB_BOX_W — "12.34" needs ~24px at this font, hits never do
 const MAIN_H = 19;                         // a team's row height
 const BASES_W = 26;                        // reserved for the live bases display — never shifts
 const CARD_H = 58;
@@ -1056,8 +1057,8 @@ function EraNum({ era, verdict, dark }) {
     : verdict==="even" ? (dark?C.darkSoftEven:C.softEven) : "transparent";
   const color = has ? (dark?C.darkText:C.ink) : (dark?C.darkTextSoft:C.ruleDark);
   return (
-    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
-      fontFamily:MONO, fontSize:8, fontWeight:700, color,
+    <span title="Season ERA" style={{ width:ERA_BOX_W, flexShrink:0, textAlign:"center",
+      fontFamily:MONO, fontSize:8, fontWeight:700, color, whiteSpace:"nowrap",
       background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
   );
 }
@@ -1225,7 +1226,7 @@ function PBHeaderLabels({ dark }) {
     <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
       {label("HITS", PB_BOX_W*3+PB_GAP*2)}
       <span style={{ width:MID_GAP, flexShrink:0 }} />
-      {label("ERA", PB_BOX_W)}
+      {label("ERA", ERA_BOX_W)}
     </div>
   );
 }
