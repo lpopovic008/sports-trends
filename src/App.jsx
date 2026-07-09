@@ -12,7 +12,6 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -1011,13 +1010,13 @@ function Pill({ children, color, title, textColor="#fff" }) {
     color:textColor, background:color, borderRadius:2, padding:"1px 4px" }}>{children}</span>;
 }
 
-/* box geometry — the situational-trend boxes are one size, and the bigger
-   pitcher/batter stat boxes (which have more empty space to fill in their
-   row) are another. */
+/* box geometry — the situational-trend boxes are still real bordered boxes;
+   the pitcher/batter numbers are plain text but keep this same slot width
+   so everything still lines up under the PITCHER/BATTER headers. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
-const PB_BOX_W = 24, PB_BOX_H = 24, PB_GAP = 3;
+const PB_BOX_W = 24, PB_GAP = 3;
 const HEADER_H = 11;                       // PITCHER/BATTER label row
-const MAIN_H = PB_BOX_H + 2;                // a team's row — tall enough for the pitcher/batter boxes
+const MAIN_H = 26;                         // a team's row height
 const BASES_W = 44;                        // reserved for the live bases display — never shifts
 const CARD_H = 86;
 
@@ -1035,37 +1034,32 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-/* the pitcher's season ERA, written in the same small mono font as the game
-   time in the corner. Soft-green background if they've faced this team
-   already this season and had a clearly good outing (2+ stat margin), soft
-   red if clearly bad, no tint if they haven't faced them or it was a wash. */
-function EraBox({ era, verdict }) {
+/* the pitcher's season ERA (unrounded past the hundredth — no box around
+   it). Green text if they've faced this team already this season and had a
+   clearly good outing (2+ stat margin), red if clearly bad, plain ink if
+   they haven't faced them or it was a wash. */
+function EraNum({ era, verdict }) {
   const has = era != null;
-  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
+  const color = verdict==="up" ? C.over : verdict==="down" ? C.under : has ? C.ink : C.ruleDark;
   return (
-    <span title="Season ERA" style={{ position:"relative", width:PB_BOX_W, height:PB_BOX_H,
-      flexShrink:0, borderRadius:3, background:bg, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
-      display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <span style={{ fontFamily:MONO, fontSize:8, fontWeight:700,
-        color: has ? C.ink : C.ruleDark }}>{has ? era.toFixed(1) : "–"}</span>
-    </span>
+    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
+      fontFamily:MONO, fontSize:8, fontWeight:700, color }}>{has ? era.toFixed(2) : "–"}</span>
   );
 }
 
-/* one of the team's last 3 games' hits. The most recent game (big) matches
-   the score's font; the two before it match the small mono time font. Soft
-   green background at 10+ hits, soft red at 6 or fewer. */
-function HitBox({ hits, big=false }) {
+/* one of the team's last 3 games' hits, no box around it. The most recent
+   game matches the score's font/size; the two before it match the game
+   box's own hits column (small mono, muted gray). The most recent game
+   still turns green at 10+ hits, red at 6 or fewer. */
+function HitNum({ hits, big=false }) {
   const has = hits != null;
-  const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
+  const color = !big ? C.ruleDark
+    : !has ? C.ruleDark
+    : hits>=10 ? C.over : hits<=6 ? C.under : C.ink;
   return (
-    <span title={big ? "Hits, last game" : "Hits"} style={{ position:"relative", width:PB_BOX_W,
-      height:PB_BOX_H, flexShrink:0, borderRadius:3, background:bg,
-      boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
-      display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <span style={{ position:"relative", top: big?1:0, fontFamily:MONO, fontSize: big?13:8,
-        fontWeight: big?800:700, color: has ? C.ink : C.ruleDark }}>{has ? hits : "–"}</span>
-    </span>
+    <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
+      textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
+      fontWeight: big?700:400, color }}>{has ? hits : "–"}</span>
   );
 }
 
@@ -1164,15 +1158,15 @@ function pitcherBatterStats(t, tid) {
   return { era: t.pitcherEra(tid), verdict: t.rematchVerdict(tid), h3, h2, h1 };
 }
 /* PITCHER (season ERA) and BATTER (last 3 games' hits, oldest to most
-   recent). */
+   recent) — no boxes, just the numbers themselves. */
 function PBBoxRow({ s }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
-      <EraBox era={s.era} verdict={s.verdict} />
+    <div style={{ display:"flex", alignItems:"baseline", gap:PB_GAP }}>
+      <EraNum era={s.era} verdict={s.verdict} />
       <span style={{ width:MID_GAP, flexShrink:0 }} />
-      <HitBox hits={s.h3} />
-      <HitBox hits={s.h2} />
-      <HitBox hits={s.h1} big />
+      <HitNum hits={s.h3} />
+      <HitNum hits={s.h2} />
+      <HitNum hits={s.h1} big />
     </div>
   );
 }
