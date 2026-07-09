@@ -1037,7 +1037,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         </div>
       )}
 
-      {modal && <GameModal m={modal} tags={tags} setTag={setTag} onClose={()=>setModal(null)} />}
+      {modal && <GameModal m={modal} tags={tags} setTag={setTag} now={now} onClose={()=>setModal(null)} />}
     </div>
   );
 }
@@ -1352,7 +1352,11 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div className="ts-card-grid" style={{ display:"grid",
-        gridTemplateColumns: showInd ? `auto ${BASES_W}px auto auto` : `auto ${BASES_W}px`,
+        // the game column is "max-content", not "auto" — an "auto" track
+        // stretches to soak up any leftover row width, which pushed the
+        // bases column off-center (flush against the pitcher/batter column
+        // instead of centered between the two hits figures either side of it)
+        gridTemplateColumns: showInd ? `max-content ${BASES_W}px auto auto` : `max-content ${BASES_W}px`,
         gridTemplateRows:"auto auto", columnGap:7, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
         {/* the live bases display gets its own column spanning both rows —
@@ -2204,7 +2208,7 @@ function FitTitle({ text, maxSize = 18, minSize = 12, style }) {
   return <div ref={ref} style={{ whiteSpace:"nowrap", overflow:"hidden", fontSize, ...style }}>{text}</div>;
 }
 
-function GameModal({ m, tags, setTag, onClose }) {
+function GameModal({ m, tags, setTag, now, onClose }) {
   const { date, games, trends } = m;
   const [idx, setIdx] = useState(m.idx || 0);
   const g = games[idx];
@@ -2219,8 +2223,15 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [h2hOpen, setH2hOpen] = useState(false);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   // live/finished games show the game's actual box score (line score by
-  // inning, and the actual pitching line) instead of pre-game previews
-  const showBoxPitching = g.isFinal || g.isLive;
+  // inning, and the actual pitching line) instead of pre-game previews. MLB's
+  // API sometimes flips a game to "Live" a little ahead of its listed start
+  // time (and even then, the box score can list the probable starter with an
+  // all-zero line the instant they take the mound) — hold off on treating the
+  // game as live until that start time has actually passed, same as the
+  // calendar card's own LIVE badge/bases-display gating.
+  const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
+  const live = g.isLive && !final && now.getTime() >= new Date(g.time).getTime();
+  const showBoxPitching = final || live;
   const showLineScore = showBoxPitching;
   const [ls,     setLs]     = useState(showLineScore ? undefined : null);  // line score (live/finished only)
   const [boxPitching, setBoxPitching] = useState(showBoxPitching ? undefined : null);
@@ -2287,11 +2298,20 @@ function GameModal({ m, tags, setTag, onClose }) {
 
   useEffect(() => {
     let alive = true;
+    // box score by inning + full game pitching line — live/finished games
+    // only, re-checked as `live` itself flips once real game time passes
+    // (see the `live` gating above) so a modal left open through first pitch
+    // picks up the actual in-progress stats without needing to be reopened.
+    if (final || live) {
+      loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
+      loadBoxscorePitchers(g.gamePk).then(r=>{ if(alive) setBoxPitching(r); });
+    }
+    return () => { alive = false; };
+  }, [g.gamePk, final, live]);
+
+  useEffect(() => {
+    let alive = true;
     (async () => {
-      // box score by inning (live/finished games only) — shown above H2H
-      if (g.isFinal || g.isLive) loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
-      // full game pitching line (live/finished games only)
-      if (g.isFinal || g.isLive) loadBoxscorePitchers(g.gamePk).then(r=>{ if(alive) setBoxPitching(r); });
       // H2H summary (top-of-modal overview)
       try { const s = await loadH2H(g.awayId, g.homeId); if(alive) setH2H(s); }
       catch { if(alive) setH2H(null); }
@@ -2448,7 +2468,7 @@ function GameModal({ m, tags, setTag, onClose }) {
         {showLineScore && ls !== null && (
           <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}` }}>
             <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
-              color:C.inkSoft, marginBottom:6 }}>{g.isFinal ? "Final" : "Live"} · line score</div>
+              color:C.inkSoft, marginBottom:6 }}>{final ? "Final" : "Live"} · line score</div>
             {ls === undefined ? (
               <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
             ) : (() => {
