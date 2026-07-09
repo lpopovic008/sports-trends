@@ -815,7 +815,8 @@ function TravelTrends({ tags, setTag, onReady }) {
       setSlateCopied("err"); setTimeout(()=>setSlateCopied(null),2000);
     }
   };
-  useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied }); }, [load, busy, onReady, slateCopied, days, tags]);
+  useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied, modalOpen: !!modal });
+  }, [load, busy, onReady, slateCopied, days, tags, modal]);
 
   /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
@@ -1016,9 +1017,10 @@ function Pill({ children, color, title, textColor="#fff" }) {
    so everything still lines up under the PITCHER/BATTER headers. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const PB_BOX_W = 24, PB_GAP = 3;
-const MAIN_H = 19;                         // a team's row height — no header row above it anymore
+const HEADER_H = 9;                        // small "HITS"/"ERA" label row
+const MAIN_H = 19;                         // a team's row height
 const BASES_W = 38;                        // reserved for the live bases display — never shifts
-const CARD_H = 58;
+const CARD_H = 67;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1179,24 +1181,35 @@ function PBBoxRow({ s }) {
 function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   return (
     <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-      gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
-      <div style={{ gridColumn:1, gridRow:1, display:"flex", alignItems:"center" }}>
+      gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
+      <div style={{ gridColumn:1, gridRow:1 }} />
+      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
+      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
         alignItems:"center", justifyContent:"center" }}>{bases}</div>
     </div>
   );
 }
 
+const pbHeaderLabel = (label, width) => (
+  <div style={{ width, textAlign:"center", fontFamily:MONO, fontSize:7, fontWeight:700,
+    letterSpacing:"0.05em", color:C.inkSoft }}>{label}</div>
+);
+
 /* column 2 — Pitcher/Batter: last 3 games' hits and the pitcher's season
    ERA, one row per team. */
 function PitcherBatterSection({ g, t }) {
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
+      <div style={{ display:"flex", alignItems:"center" }}>
+        {pbHeaderLabel("HITS", PB_BOX_W*3+PB_GAP*2)}
+        <span style={{ width:MID_GAP, flexShrink:0 }} />
+        {pbHeaderLabel("ERA", PB_BOX_W)}
+      </div>
       <div style={{ display:"flex", alignItems:"center" }}>
         <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
       </div>
@@ -1222,7 +1235,8 @@ function TrendsSection({ g, t }) {
     </div>
   );
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
+      <div />
       {row(g.awayId)}
       {row(g.homeId)}
     </div>
@@ -2035,10 +2049,11 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [h2h,    setH2H]    = useState(undefined);
   const [h2hOpen, setH2hOpen] = useState(false);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
-  const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
-  // live/finished games show the game's actual pitching box score instead
-  // of the probable-starter preview
+  // live/finished games show the game's actual box score (line score by
+  // inning, and the actual pitching line) instead of pre-game previews
   const showBoxPitching = g.isFinal || g.isLive;
+  const showLineScore = showBoxPitching;
+  const [ls,     setLs]     = useState(showLineScore ? undefined : null);  // line score (live/finished only)
   const [boxPitching, setBoxPitching] = useState(showBoxPitching ? undefined : null);
   const [tagEditing, setTagEditing] = useState(false);
   const [copied, setCopied] = useState(null);   // ok|dl|err feedback for Export
@@ -2094,8 +2109,8 @@ function GameModal({ m, tags, setTag, onClose }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      // box score by inning (finished games only) — shown above H2H
-      if (g.isFinal) loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
+      // box score by inning (live/finished games only) — shown above H2H
+      if (g.isFinal || g.isLive) loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
       // full game pitching line (live/finished games only)
       if (g.isFinal || g.isLive) loadBoxscorePitchers(g.gamePk).then(r=>{ if(alive) setBoxPitching(r); });
       // H2H summary (top-of-modal overview)
@@ -2162,9 +2177,12 @@ function GameModal({ m, tags, setTag, onClose }) {
 
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
         border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:760, width:"100%",
-        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
+        margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)", overflow:"hidden" }}>
 
-        {/* sticky region: header + tag editor scroll together */}
+        {/* sticky region: header + tag editor scroll together. the card's
+            own overflow:hidden clips scrolled content cleanly behind this
+            sticky block instead of letting it bleed out past the card's
+            rounded corners as it passes underneath. */}
         <div style={{ position:"sticky", top:0, zIndex:3, background:C.paper,
           borderTopLeftRadius:6, borderTopRightRadius:6 }}>
         {/* header */}
@@ -2226,15 +2244,20 @@ function GameModal({ m, tags, setTag, onClose }) {
         </div>
         {/* end sticky region */}
 
-        {/* ── BOX SCORE BY INNING (finished games, above H2H) ── */}
-        {g.isFinal && ls !== null && (
+        {/* ── BOX SCORE BY INNING (live/finished games, above H2H) — always
+             shows a full 9-inning grid, padding in blank columns for
+             innings not reached yet so a live game's box score doesn't
+             visually resize as it goes. ── */}
+        {showLineScore && ls !== null && (
           <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.rule}` }}>
             <div style={{ fontFamily:MONO, fontSize:9.5, letterSpacing:"0.12em", textTransform:"uppercase",
-              color:C.inkSoft, marginBottom:6 }}>Final · line score</div>
+              color:C.inkSoft, marginBottom:6 }}>{g.isFinal ? "Final" : "Live"} · line score</div>
             {ls === undefined ? (
               <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
             ) : (() => {
-              const innings = ls.innings || [];
+              const played = ls.innings || [];
+              const innings = Array.from({ length: Math.max(9, played.length) },
+                (_, i) => played[i] || { num: i+1 });
               const tot = ls.teams || {};
               const cell = { fontFamily:MONO, fontSize:12, textAlign:"center", padding:"3px 0" };
               const head = { ...cell, fontSize:9, color:C.ruleDark, letterSpacing:"0.04em" };
@@ -2698,22 +2721,6 @@ export default function App() {
             <div style={{ display:"flex", alignItems:"center", gap:12 }}>
               <h1 style={{ margin:0, fontFamily:SANS, fontWeight:800, fontSize:34,
                 letterSpacing:"-0.02em", lineHeight:1 }}>MLB</h1>
-              {tab==="calendar" && cal && (
-                <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
-                  aria-label="Refresh" title="Refresh schedule & stats"
-                  style={{ width:30, height:30, borderRadius:5, border:`1px solid ${C.ink}`,
-                    background:C.ink, color:"#fff", cursor:cal.busy?"default":"pointer",
-                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
-                    padding:0 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                    style={{ animation: cal.busy ? "ts-spin 0.8s linear infinite" : "none" }}>
-                    <path d="M4 6.5A8 8 0 0 1 19 8" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
-                    <path d="M20 3.5V8h-4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M20 17.5A8 8 0 0 1 5 16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
-                    <path d="M4 20.5V16h4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
-              )}
               {tab==="calendar" && cal && cal.copySlate && (
                 <button onClick={()=>cal.copySlate()}
                   aria-label="Copy today's slate"
@@ -2772,6 +2779,23 @@ export default function App() {
           last batting order.
         </footer>
       </div>
+      {tab==="calendar" && cal && !cal.modalOpen && (
+        <button onClick={()=>cal.load && cal.load()} disabled={cal.busy}
+          aria-label="Refresh" title="Refresh schedule & stats"
+          style={{ position:"fixed", bottom:20, right:20, zIndex:40,
+            width:44, height:44, borderRadius:"50%", border:`1px solid ${C.ink}`,
+            background:C.ink, color:"#fff", cursor:cal.busy?"default":"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+            padding:0, boxShadow:"0 4px 14px rgba(0,0,0,0.3)" }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+            style={{ animation: cal.busy ? "ts-spin 0.8s linear infinite" : "none" }}>
+            <path d="M4 6.5A8 8 0 0 1 19 8" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+            <path d="M20 3.5V8h-4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M20 17.5A8 8 0 0 1 5 16" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
+            <path d="M4 20.5V16h4.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
