@@ -424,12 +424,20 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [err, setErr] = useState("");
   const [showIndicators, setShowIndicators] = useState(true);
   const westThreshold = TZ_RANK.MT;             // PT/MT count as "west"
+  // situational-trend data (echoes/comebacks/rematches/big-day/slump-boom)
+  // only needs to be pulled & computed once per day — tracks the date it was
+  // last loaded for, so a manual refresh can skip straight past it and just
+  // re-pull live scores/state instead of redoing all of that work every click.
+  const indicatorsLoadedForRef = useRef(null);
 
   const load = useCallback(async () => {
+    const needIndicators = indicatorsLoadedForRef.current !== start;
     // keep showing the current calendar while refreshing (setDays isn't
     // cleared here) so a manual refresh doesn't unmount the scroll
     // container and reset which day is in view
-    setErr(""); setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBusy(true);
+    setErr("");
+    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); }
+    setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
          fetch from 3 days back so the -2 day's travel has a "prev day". */
@@ -594,6 +602,10 @@ function TravelTrends({ tags, setTag, onReady }) {
       });
       setDays(out);
 
+      // situational-trend data already loaded for today — the refresh button
+      // only needed live scores/state, so stop here and leave it alone.
+      if (!needIndicators) return;
+
       /* ── streak-break echo: pull ~5 wks of finals, find snapped streaks ──
          include today so a trend that completes today (game just went final)
          is picked up on refresh and shows up on the team's next game. */
@@ -722,6 +734,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       setHitsMap(hitsByDate);
       setComebacks(cbList);
       setEchoes(echoList);
+      indicatorsLoadedForRef.current = start;
     } catch (e) {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
     } finally { setBusy(false); }
