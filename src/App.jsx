@@ -187,7 +187,7 @@ const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { h
 // Draw the tagged play as green monospace "code" text, right-aligned at
 // (rightX, cy) — matching today's-slate's terminal look instead of the old
 // red marker handwriting. Shrinks to fit maxW if needed, no rotation.
-function drawGreenTag(x, text, rightX, cy, maxW, fontSize = 15) {
+function drawGreenTag(x, text, leftX, cy, maxW, fontSize = 14) {
   if (!text) return;
   x.save();
   let size = fontSize;
@@ -197,10 +197,34 @@ function drawGreenTag(x, text, rightX, cy, maxW, fontSize = 15) {
     x.font = `700 ${size}px ${MONO}`;
   }
   x.fillStyle = "#39D98A";
-  x.textAlign = "right"; x.textBaseline = "middle";
-  x.fillText(text, rightX, cy);
+  x.textAlign = "left"; x.textBaseline = "middle";
+  x.fillText(text, leftX, cy);
   x.restore();
 }
+
+// a play's grade indicator box: empty outline until graded, then filled
+// solid with a check (win), ex (loss), or "P" (push).
+function drawPlayIndicator(x, result, bx, by, size = 14) {
+  const rr = 3;
+  x.save();
+  x.beginPath();
+  x.moveTo(bx+rr,by); x.arcTo(bx+size,by,bx+size,by+size,rr); x.arcTo(bx+size,by+size,bx,by+size,rr);
+  x.arcTo(bx,by+size,bx,by,rr); x.arcTo(bx,by,bx+size,by,rr); x.closePath();
+  if (result === "W" || result === "L" || result === "P") {
+    x.fillStyle = result==="W" ? "#1B7F5C" : result==="L" ? "#D7263D" : "#2B4C7E";
+    x.fill();
+    x.fillStyle = "#fff"; x.font = `700 ${Math.round(size*0.72)}px ${MONO}`;
+    x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillText(result==="W" ? "✓" : result==="L" ? "✕" : "P", bx+size/2, by+size/2+0.5);
+  } else {
+    x.strokeStyle = "#57616F"; x.lineWidth = 1.4; x.stroke();
+  }
+  x.restore();
+}
+
+// strips a leading "PLAY" convention off a tagged pick before drawing it —
+// redundant on an exported image that's already understood to be a play
+const stripPlayPrefix = (t) => (t||"").replace(/^\s*play\s*[·:\-–]?\s*/i, "");
 
 // Copy a canvas to the clipboard as PNG. Called synchronously in the click
 // handler and hands ClipboardItem a Promise<Blob> so the browser keeps the
@@ -776,8 +800,11 @@ function TravelTrends({ tags, setTag, onReady }) {
       const games = all.filter(g => tagText(tags[g.gamePk]));
       if (!games.length) { setSlateCopied("empty"); setTimeout(()=>setSlateCopied(null),2000); return; }
       const scale = 3;
-      // compact single-column layout, one tight row per tagged pick
-      const CW = 300, RH = 40, GAP = 5, PADX = 12, HEAD = 40, PADB = 12;
+      // one card per tagged pick, styled like today's slate's calendar card:
+      // teams stacked, time/FINAL top-right, the play (with its grade
+      // indicator) anchored at a fixed indent shared by every card so the
+      // indicator boxes line up in a column going down
+      const CW = 300, RH = 64, GAP = 6, PADX = 12, HEAD = 40, PADB = 12;
       const W = PADX*2 + CW;
       const H = HEAD + games.length*RH + (games.length-1)*GAP + PADB;
       const cv = document.createElement("canvas");
@@ -791,9 +818,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
-      // one compact row per tagged pick: TIME · AWAY@HOME · tag — each row
-      // styled like today's slate's dark charcoal card, with the tagged
-      // play as green monospace "code" on the right
+      // one card per tagged pick, matching the calendar card's own layout
       games.forEach((g,i)=>{
         const gx = PADX, gy = HEAD + i*(RH+GAP);
         const resultTint = tagResultBg(tags[g.gamePk]);
@@ -807,18 +832,33 @@ function TravelTrends({ tags, setTag, onReady }) {
         x.fillStyle = "#20232A"; x.fill();
         if (resultTint) { x.fillStyle = resultTint; x.fill(); }
         x.strokeStyle = "#3A4250"; x.lineWidth = 1; x.stroke();
-        // left: matchup (+ scores if final)
-        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#F2F4F7";
-        x.font = "700 13px system-ui, sans-serif";
-        let matchup = `${aw} @ ${hm}`;
-        if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
-        x.fillText(matchup, gx+10, gy+RH/2 - 6);
-        // small time under matchup
+        // time / FINAL, top-right
         x.fillStyle = "#AEB7C4"; x.font = "9px ui-monospace, Menlo, monospace";
-        x.fillText(time, gx+10, gy+RH/2 + 9);
-        // right: green code tag, vertically centered
-        const tv = tagText(tags[g.gamePk]);
-        drawGreenTag(x, tv, gx+CW-10, gy+RH/2, CW*0.5, 13);
+        x.textAlign = "right"; x.textBaseline = "alphabetic";
+        x.fillText(final?"FINAL":time, gx+CW-10, gy+16);
+        // teams stacked, left
+        const row1Y = gy+26, row2Y = gy+46;
+        x.textAlign = "left"; x.fillStyle = "#F2F4F7";
+        x.font = "700 14px system-ui, sans-serif";
+        x.fillText(aw, gx+12, row1Y);
+        x.fillText(hm, gx+12, row2Y);
+        // scores, right (if final)
+        if (final) {
+          x.textAlign = "right"; x.font = "700 14px ui-monospace, Menlo, monospace";
+          x.fillStyle = g.awayScore>g.homeScore ? "#F2F4F7" : "#AEB7C4";
+          x.fillText(String(g.awayScore), gx+CW-14, row1Y);
+          x.fillStyle = g.homeScore>g.awayScore ? "#F2F4F7" : "#AEB7C4";
+          x.fillText(String(g.homeScore), gx+CW-14, row2Y);
+        }
+        // the play: grade indicator box + green code text, anchored at the
+        // same fixed indent on every card so the indicators line up going down
+        const tv = stripPlayPrefix(tagText(tags[g.gamePk]));
+        const entry = tags[g.gamePk];
+        const gradeResult = entry && typeof entry === "object" ? entry.result : null;
+        const indentX = gx + CW*0.36, midY = gy + RH/2;
+        drawPlayIndicator(x, gradeResult, indentX, midY-7, 14);
+        const rightLimit = final ? gx+CW-40 : gx+CW-10;
+        drawGreenTag(x, tv, indentX+20, midY, rightLimit-(indentX+20), 13);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -841,7 +881,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     const checkRematch = (pid, teamId, oppId, pitcher, oppName) => {
       if (!pid) return;
       const entry = faced[pid];
-      const facings = (entry?.list||[]).filter(x => x.oppId===oppId && x.date < date);
+      const facings = (entry?.list||[]).filter(x => Number(x.oppId)===Number(oppId) && x.date < date);
       if (!facings.length) return;
       const strong = facings.some(x => x.ip >= 4);
       rematch.push({ pitcher, pid, opp:oppName, oppId, teamId, strong });
@@ -1820,7 +1860,10 @@ async function loadPitcherVs(pid, oppId, date) {
     const j = await r.json();
     const splits = (j.stats?.[0]?.splits||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
     const prior = splits.filter(s=>s.date < date);
-    return { vs: prior.filter(s=>s.opponent?.id===oppId), season: pitcherSeasonAverages(prior) };
+    // Number(...) on both sides — the opponent id can come back as a string
+    // in some API responses, which would silently fail a strict === match
+    // and make a real rematch look like it never happened
+    return { vs: prior.filter(s=>Number(s.opponent?.id)===Number(oppId)), season: pitcherSeasonAverages(prior) };
   } catch { return null; }
 }
 
@@ -2225,10 +2268,15 @@ function GameModal({ m, tags, setTag, onClose }) {
         x.fillStyle = g.homeScore>g.awayScore ? "#F2F4F7" : "#AEB7C4";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play written as green monospace "code" on its own row along
-      // the bottom, right-aligned — clear of the score column above it
+      // the play: grade indicator box + green monospace "code" text, both
+      // anchored at a fixed indent in the middle of the card
       if (tagVal) {
-        drawGreenTag(x, tagVal, cx+cw-10, cy+ch-12, cw-20, 14);
+        const entry = tags?.[g.gamePk];
+        const gradeResult = entry && typeof entry === "object" ? entry.result : null;
+        const indentX = cx + cw*0.39, midY = cy + ch/2;
+        drawPlayIndicator(x, gradeResult, indentX, midY-7, 14);
+        const rightLimit = final ? cx+cw-40 : cx+cw-10;
+        drawGreenTag(x, stripPlayPrefix(tagVal), indentX+20, midY, rightLimit-(indentX+20), 14);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
