@@ -1492,6 +1492,14 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
 // game-log modal as everywhere else.
 function PitcherStatLine({ p }) {
   const [showLog, setShowLog] = useState(false);
+  // same season-average context the season game-log modal colors its rows
+  // against, so this game's line and that modal agree on what's good/bad.
+  const [season, setSeason] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadPitcherSeason(p.pid).then(log => { if (alive) setSeason(pitcherSeasonAverages(log)); });
+    return () => { alive = false; };
+  }, [p.pid]);
   return (
     <div>
       <button onClick={()=>setShowLog(true)} title={`${p.name} — ${SEASON} game log`}
@@ -1501,7 +1509,7 @@ function PitcherStatLine({ p }) {
           display:"block", maxWidth:"100%", textAlign:"left", whiteSpace:"nowrap",
           overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</button>
       <div style={{ marginTop:2 }}>
-        <PLine s={{ stat:p.stat }} season={null} maxSize={13} />
+        <PLine s={{ stat:p.stat }} season={season} maxSize={13} />
       </div>
       {showLog && <PitcherSeasonModal pid={p.pid} name={p.name} onClose={()=>setShowLog(false)} />}
     </div>
@@ -1713,8 +1721,13 @@ async function loadBatterTrend(id, date) {
 async function loadLineup(game, side, date) {
   const lp = game.lineups?.[side+"Players"];
   if (lp && lp.length) {
+    // live/finished games can list the same player twice (mid-game
+    // substitution bookkeeping) — keep only each player's first appearance
+    // so the lineup never shows duplicate rows.
+    const seen = new Set();
+    const unique = lp.filter(p => seen.has(p.id) ? false : (seen.add(p.id), true));
     return { source:"confirmed",
-      players: lp.slice(0,9).map((p,i)=>({ id:p.id, name:p.fullName, order:i+1 })) };
+      players: unique.slice(0,9).map((p,i)=>({ id:p.id, name:p.fullName, order:i+1 })) };
   }
   const teamId = game.teams[side].team.id;
   const back = addDays(date,-14);
@@ -1827,7 +1840,12 @@ async function loadBatterVs(batterId, pitcherId) {
 const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
 function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId, showBoxPitching, boxPitchers }) {
   const canVs = !!oppPitcherId && !!oppPitcherName;
-  const [view, setView] = useState(() => canVs ? "vssp" : "last5");   // "last5" | "vssp"
+  // null = neither tab open, nothing shown yet — tapping a tab opens it,
+  // tapping the already-open tab closes it again (accordion, not a toggle
+  // between two always-visible views). Only the batting lineup collapses
+  // like this; the starting-pitcher/box-score pitching block below is
+  // always shown regardless of `view`.
+  const [view, setView] = useState(null);         // null | "last5" | "vssp"
   const [vsData, setVsData] = useState({});       // batterId -> stat | null
   const [vsLoading, setVsLoading] = useState(false);
 
@@ -1847,7 +1865,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
   }, [view, canVs, oppPitcherId, lineup]);
 
   const tabBtn = (id,label,enabled=true) => (
-    <button onClick={()=>enabled&&setView(id)} disabled={!enabled}
+    <button onClick={()=>enabled&&setView(v=>v===id?null:id)} disabled={!enabled}
       style={{ flex:1, padding:"5px 8px", border:"none", cursor:enabled?"pointer":"not-allowed",
         fontFamily:MONO, fontSize:9.5, letterSpacing:"0.06em", textTransform:"uppercase",
         background: view===id ? C.ink : "transparent", color: view===id ? "#fff" : (enabled?C.inkSoft:C.rule),
@@ -1871,8 +1889,8 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
       </div>
 
       <div style={{ padding:"4px 0" }}>
-        {/* header row depends on view */}
-        {view==="last5" ? (
+        {/* nothing renders here until a tab is tapped open */}
+        {view && (view==="last5" ? (
           <div style={{ display:"grid", gridTemplateColumns:ROW_COLS, gap:6, padding:"2px 10px",
             fontFamily:MONO, fontSize:9, letterSpacing:"0.04em", textTransform:"uppercase",
             color:C.ruleDark, alignItems:"center" }}>
@@ -1889,13 +1907,13 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
             <span style={{ textAlign:"right" }}>AB</span><span style={{ textAlign:"right" }}>H</span>
             <span style={{ textAlign:"right" }}>HR</span><span style={{ textAlign:"right" }}>AVG</span>
           </div>
-        )}
+        ))}
 
-        {!lineup && <div style={{ padding:"10px 12px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading lineup…</div>}
-        {lineup && lineup.players.length===0 &&
+        {view && !lineup && <div style={{ padding:"10px 12px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading lineup…</div>}
+        {view && lineup && lineup.players.length===0 &&
           <div style={{ padding:"8px 12px", fontFamily:SANS, fontSize:12, color:C.inkSoft }}>—</div>}
 
-        {lineup && lineup.players.map(p=>{
+        {view && lineup && lineup.players.map(p=>{
           const hot = nameStreak(p);
           if (view==="last5") {
             return (
