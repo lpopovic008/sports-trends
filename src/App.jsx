@@ -1023,10 +1023,10 @@ function Pill({ children, color, title, textColor="#fff" }) {
 /* box geometry — the situational-trend boxes are still real bordered boxes;
    the pitcher/batter numbers are plain text but keep this same slot width
    so everything still lines up under the PITCHER/BATTER headers. */
-const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
-const PB_BOX_W = 24, PB_GAP = 3;
+const BOX_W = 14, BOX_H = 13, BOX_GAP = 1.5, MID_GAP = 5;
+const PB_BOX_W = 21, PB_GAP = 2;
 const MAIN_H = 19;                         // a team's row height
-const BASES_W = 38;                        // reserved for the live bases display — never shifts
+const BASES_W = 26;                        // reserved for the live bases display — never shifts
 const CARD_H = 58;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
@@ -1151,25 +1151,25 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird,
   // over 1st/3rd instead of relying on independently-positioned, separately
   // anti-aliased rotated elements to line up pixel-for-pixel.
   const diamond = (cx, cy, on) => {
-    const r = 4.6;
+    const r = 3.7;
     return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
-      fill={on ? ink : "none"} stroke={ink} strokeWidth="1.3" />;
+      fill={on ? ink : "none"} stroke={ink} strokeWidth="1.2" />;
   };
   return (
     <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:2.5 }}>
-      <div style={{ fontFamily:MONO, fontSize:11, fontWeight:700, color:ink, whiteSpace:"nowrap" }}>
+      alignItems:"center", justifyContent:"center", gap:2 }}>
+      <div style={{ fontFamily:MONO, fontSize:10, fontWeight:700, color:ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
-      <svg width="27" height="22" viewBox="0 0 27 22">
-        {diamond(13.5, 5.5, onSecond)}
-        {diamond(5.5, 14.5, onThird)}
-        {diamond(21.5, 14.5, onFirst)}
+      <svg width="22" height="18" viewBox="0 0 22 18">
+        {diamond(11, 4.5, onSecond)}
+        {diamond(4.5, 12, onThird)}
+        {diamond(17.5, 12, onFirst)}
       </svg>
-      <div style={{ display:"flex", gap:2 }}>
+      <div style={{ display:"flex", gap:1.5 }}>
         {[0,1,2].map(i=>(
-          <span key={i} style={{ width:5, height:5, borderRadius:"50%",
+          <span key={i} style={{ width:4, height:4, borderRadius:"50%",
             background: outs!=null && i<outs ? ink : "transparent",
-            border:`1.2px solid ${ink}` }} />
+            border:`1.1px solid ${ink}` }} />
         ))}
       </div>
     </div>
@@ -1288,7 +1288,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
       role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
       onKeyDown={onOpen ? (e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen();} } : undefined}
       style={{ border:`1px solid ${dark?C.darkBorder:C.rule}`, borderRadius:2, boxSizing:"border-box",
-      minHeight:CARD_H, padding:"4px 7px", background:bg, overflow:"visible", position:"relative",
+      minHeight:CARD_H, padding:"4px 4px", background:bg, overflow:"visible", position:"relative",
       cursor: onOpen ? "pointer" : "default" }}>
       {tagInCorner && (
         <div title={tag} style={{ position:"absolute", top:-4, left:-5, zIndex:3, maxWidth:"86%",
@@ -1307,7 +1307,7 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
       )}
       <div className="ts-card-grid" style={{ display:"grid",
         gridTemplateColumns: showInd ? `auto ${BASES_W}px auto auto` : `auto ${BASES_W}px`,
-        gridTemplateRows:"auto auto", columnGap:12, rowGap:2 }}>
+        gridTemplateRows:"auto auto", columnGap:7, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
         {/* the live bases display gets its own column spanning both rows —
             from the FINAL/time row all the way down — instead of being
