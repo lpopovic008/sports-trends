@@ -1016,10 +1016,9 @@ function Pill({ children, color, title, textColor="#fff" }) {
    so everything still lines up under the PITCHER/BATTER headers. */
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const PB_BOX_W = 24, PB_GAP = 3;
-const HEADER_H = 11;                       // PITCHER/BATTER label row
-const MAIN_H = 26;                         // a team's row height
-const BASES_W = 44;                        // reserved for the live bases display — never shifts
-const CARD_H = 86;
+const MAIN_H = 19;                         // a team's row height — no header row above it anymore
+const BASES_W = 38;                        // reserved for the live bases display — never shifts
+const CARD_H = 58;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1129,25 +1128,25 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   // over 1st/3rd instead of relying on independently-positioned, separately
   // anti-aliased rotated elements to line up pixel-for-pixel.
   const diamond = (cx, cy, on) => {
-    const r = 5.1;
+    const r = 3.6;
     return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
-      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1.4" />;
+      fill={on ? C.ink : "none"} stroke={C.ink} strokeWidth="1.2" />;
   };
   return (
     <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:3 }}>
-      <div style={{ fontFamily:MONO, fontSize:12, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+      alignItems:"center", justifyContent:"center", gap:1.5 }}>
+      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
-      <svg width="30" height="24" viewBox="0 0 30 24">
-        {diamond(15, 6, onSecond)}
-        {diamond(6, 16.5, onThird)}
-        {diamond(24, 16.5, onFirst)}
+      <svg width="21" height="17" viewBox="0 0 21 17">
+        {diamond(10.5, 4.5, onSecond)}
+        {diamond(4.5, 11.5, onThird)}
+        {diamond(16.5, 11.5, onFirst)}
       </svg>
-      <div style={{ display:"flex", gap:2.5 }}>
+      <div style={{ display:"flex", gap:1.5 }}>
         {[0,1,2].map(i=>(
-          <span key={i} style={{ width:5.5, height:5.5, borderRadius:"50%",
+          <span key={i} style={{ width:4, height:4, borderRadius:"50%",
             background: outs!=null && i<outs ? C.ink : "transparent",
-            border:`1.4px solid ${C.ink}` }} />
+            border:`1.1px solid ${C.ink}` }} />
         ))}
       </div>
     </div>
@@ -1180,15 +1179,14 @@ function PBBoxRow({ s }) {
 function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   return (
     <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-      gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
-      <div style={{ gridColumn:1, gridRow:1 }} />
-      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+      gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
+      <div style={{ gridColumn:1, gridRow:1, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
+      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
       </div>
-      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
+      <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
         alignItems:"center", justifyContent:"center" }}>{bases}</div>
     </div>
   );
@@ -1198,8 +1196,7 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
    ERA, one row per team. */
 function PitcherBatterSection({ g, t }) {
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
-      <div />
+    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
       <div style={{ display:"flex", alignItems:"center" }}>
         <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
       </div>
@@ -1225,8 +1222,7 @@ function TrendsSection({ g, t }) {
     </div>
   );
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
-      <div />
+    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
       {row(g.awayId)}
       {row(g.homeId)}
     </div>
