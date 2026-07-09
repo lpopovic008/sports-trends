@@ -13,16 +13,16 @@ const C = {
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
   softOver:"rgba(27,127,92,0.32)", softUnder:"rgba(215,38,61,0.30)",
-  softEven:"rgba(255,255,255,0.55)",
+  softEven:"rgba(59,130,246,0.28)",
   /* today's-slate dark cells — light text/outline equivalents of ink/inkSoft/
      ruleDark/rule, used only when a card sits on the dark charcoal/navy pair */
   darkText:"#F2F4F7", darkTextSoft:"#AEB7C4", darkOutline:"#57616F", darkBorder:"#3A4250",
   // same green/red highlights, tuned brighter so a translucent tint still
   // pops against a dark charcoal/navy card instead of reading muddy; the
-  // "wash" grey is a soft white glow instead, so it reads as a highlight
-  // rather than another shade of grey against the dark card
+  // "wash" state is a soft blue glow instead of grey, so it reads as a
+  // highlight rather than another shade of grey against the dark card
   darkSoftOver:"rgba(46,204,146,0.4)", darkSoftUnder:"rgba(255,107,117,0.38)",
-  darkSoftEven:"rgba(255,255,255,0.22)",
+  darkSoftEven:"rgba(96,165,250,0.4)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
