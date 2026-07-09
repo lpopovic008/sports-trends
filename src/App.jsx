@@ -1500,6 +1500,26 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
   );
 }
 
+// one pitcher's line in the game's box score — name opens the same season
+// game-log modal as everywhere else.
+function PitcherStatLine({ p }) {
+  const [showLog, setShowLog] = useState(false);
+  return (
+    <div>
+      <button onClick={()=>setShowLog(true)} title={`${p.name} — ${SEASON} game log`}
+        style={{ font:"inherit", fontFamily:SANS, fontSize:13, fontWeight:700, color:C.blue,
+          cursor:"pointer", border:"none", background:"transparent", padding:0,
+          textDecoration:"underline", textDecorationColor:C.blue, textUnderlineOffset:2,
+          display:"block", maxWidth:"100%", textAlign:"left", whiteSpace:"nowrap",
+          overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</button>
+      <div style={{ marginTop:2 }}>
+        <PLine s={{ stat:p.stat }} season={null} maxSize={13} />
+      </div>
+      {showLog && <PitcherSeasonModal pid={p.pid} name={p.name} onClose={()=>setShowLog(false)} />}
+    </div>
+  );
+}
+
 /* ════════════════════════ PROP ANALYZER ════════════════════════ */
 function PropAnalyzer({ injected = null }) {
   const [name, setName] = useState("");
@@ -1760,6 +1780,24 @@ async function loadLineScore(gamePk) {
   } catch { return null; }
 }
 
+// every pitcher who has appeared in this game so far, in order, with their
+// current line (live games update as it goes; finished games are final).
+async function loadBoxscorePitchers(gamePk) {
+  if (!gamePk) return null;
+  try {
+    const r = await fetch(`${API}/game/${gamePk}/boxscore`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const side = (teamObj) => (teamObj?.pitchers || []).map(pid => {
+      const p = teamObj.players?.[`ID${pid}`];
+      const stat = p?.stats?.pitching;
+      if (!p || !stat || stat.inningsPitched == null) return null;
+      return { pid, name: p.person?.fullName, stat };
+    }).filter(Boolean);
+    return { away: side(j.teams?.away), home: side(j.teams?.home) };
+  } catch { return null; }
+}
+
 async function loadH2H(aId, bId) {
   const r = await fetch(`${API}/schedule?sportId=1&season=${SEASON}&gameType=R&teamId=${aId}&hydrate=linescore`);
   if (!r.ok) throw new Error(`schedule ${r.status}`);
@@ -1799,7 +1837,7 @@ async function loadBatterVs(batterId, pitcherId) {
 
 /* one team's column: lineup of 9 hitters, then its starting pitcher block below */
 const HV_COLS = "14px minmax(40px,1fr) 34px 34px 30px 48px";   // # name AB H HR AVG
-function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId }) {
+function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherInfo, onStat, oppPitcherName, oppPitcherId, showBoxPitching, boxPitchers }) {
   const canVs = !!oppPitcherId && !!oppPitcherName;
   const [view, setView] = useState(() => canVs ? "vssp" : "last5");   // "last5" | "vssp"
   const [vsData, setVsData] = useState({});       // batterId -> stat | null
@@ -1921,12 +1959,31 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
             No probable starter posted for {oppName} yet.</div>)}
       </div>
 
-      {/* starting pitcher — visually separated from the hitters */}
+      {/* starting pitcher (upcoming games) or the full game's pitching line
+          (live/finished games) — visually separated from the hitters */}
       <div style={{ margin:"6px 10px 12px", padding:"10px 12px", borderRadius:3,
         background:"#fff", border:`1px solid ${C.rule}` }}>
-        <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
-          color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
-        <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
+        {showBoxPitching ? (
+          <>
+            <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
+              color:C.ruleDark, marginBottom:6 }}>Pitching</div>
+            {!boxPitchers ? (
+              <div style={{ fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>
+            ) : boxPitchers.length===0 ? (
+              <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No pitching stats yet.</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {boxPitchers.map(p => <PitcherStatLine key={p.pid} p={p} />)}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
+              color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
+            <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
+          </>
+        )}
       </div>
     </div>
   );
@@ -1971,6 +2028,10 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [h2hOpen, setH2hOpen] = useState(false);
   const [pick,   setPick]   = useState(null);   // {name, stat, ts} -> prop analyzer
   const [ls,     setLs]     = useState(g.isFinal ? undefined : null);  // line score (final games only)
+  // live/finished games show the game's actual pitching box score instead
+  // of the probable-starter preview
+  const showBoxPitching = g.isFinal || g.isLive;
+  const [boxPitching, setBoxPitching] = useState(showBoxPitching ? undefined : null);
   const [tagEditing, setTagEditing] = useState(false);
   const [copied, setCopied] = useState(null);   // ok|dl|err feedback for Export
   const tagVal = tagText(tags?.[g.gamePk]);
@@ -2027,6 +2088,8 @@ function GameModal({ m, tags, setTag, onClose }) {
     (async () => {
       // box score by inning (finished games only) — shown above H2H
       if (g.isFinal) loadLineScore(g.gamePk).then(r=>{ if(alive) setLs(r); });
+      // full game pitching line (live/finished games only)
+      if (g.isFinal || g.isLive) loadBoxscorePitchers(g.gamePk).then(r=>{ if(alive) setBoxPitching(r); });
       // H2H summary (top-of-modal overview)
       try { const s = await loadH2H(g.awayId, g.homeId); if(alive) setH2H(s); }
       catch { if(alive) setH2H(null); }
@@ -2268,11 +2331,13 @@ function GameModal({ m, tags, setTag, onClose }) {
           <TeamPanel teamName={g.awayName} oppName={g.homeName}
             lineup={awayLU} pitcherName={g.awayPname} pitcherId={g.awayPid} pitcherInfo={awayP}
             oppPitcherName={g.homePname} oppPitcherId={g.homePid}
+            showBoxPitching={showBoxPitching} boxPitchers={boxPitching?.away}
             onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           <div style={{ borderLeft:`1px solid ${C.rule}` }} className="ts-h2h-divider">
             <TeamPanel teamName={g.homeName} oppName={g.awayName}
               lineup={homeLU} pitcherName={g.homePname} pitcherId={g.homePid} pitcherInfo={homeP}
               oppPitcherName={g.awayPname} oppPitcherId={g.awayPid}
+              showBoxPitching={showBoxPitching} boxPitchers={boxPitching?.home}
               onStat={(name,stat)=>setPick({ name, stat, ts:Date.now() })} />
           </div>
         </div>
