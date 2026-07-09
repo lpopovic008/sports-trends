@@ -1027,11 +1027,9 @@ function Pill({ children, color, title, textColor="#fff" }) {
 const BOX_W = 16, BOX_H = 14, BOX_GAP = 2, MID_GAP = 8;
 const PB_BOX_W = 24, PB_BOX_H = 24, PB_GAP = 3;
 const HEADER_H = 11;                       // PITCHER/BATTER label row
-const TEAM_ROW_H = 18;                      // a team's Game (name/score/hits) row
-const TRENDS_ROW_H = BOX_H;                // a team's situational-trends row, right under its main row
-const ROW_GAP = 1;
+const MAIN_H = PB_BOX_H + 2;                // a team's row — tall enough for the pitcher/batter boxes
 const BASES_W = 44;                        // reserved for the live bases display — never shifts
-const CARD_H = 100;
+const CARD_H = 86;
 
 /* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
@@ -1185,16 +1183,66 @@ const pbHeaderCol = (label) => (
     fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
 );
 
-/* one team's row of 4 situational-trend boxes, sitting directly under that
-   team's Game/Pitcher-Batter row. */
-function TrendBoxRow({ tid, t }) {
+/* column 1 — Game: the two team lines, with a fixed-width slot next to the
+   score reserved for the live bases display so nothing shifts when a game
+   goes live. */
+function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP, height:"100%" }}>
-      {TREND_SLOTS.map(slot=>{
-        const present = t.keysFor(tid).has(slot.key);
-        return <TrendBox key={slot.key} present={present} color={slot.color}
-          title={present ? slot.label : undefined} />;
-      })}
+    <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
+      gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
+      <div style={{ gridColumn:1, gridRow:1 }} />
+      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+        <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
+      </div>
+      <div style={{ gridColumn:1, gridRow:3, display:"flex", alignItems:"center" }}>
+        <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
+      </div>
+      <div style={{ gridColumn:2, gridRow:"2 / span 2", display:"flex",
+        alignItems:"center", justifyContent:"center" }}>{bases}</div>
+    </div>
+  );
+}
+
+/* column 2 — Pitcher/Batter: PITCHER (rematch · rematch result · season ERA)
+   and BATTER (hot/cold bats · hit-trend momentum · last game's hits), one
+   row per team. */
+function PitcherBatterSection({ g, t }) {
+  return (
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
+      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+        {pbHeaderCol("PITCHER")}
+        <span style={{ width:MID_GAP, flexShrink:0 }} />
+        {pbHeaderCol("BATTER")}
+      </div>
+      <div style={{ display:"flex", alignItems:"center" }}>
+        <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
+      </div>
+      <div style={{ display:"flex", alignItems:"center" }}>
+        <PBBoxRow s={pitcherBatterStats(t, g.homeId)} />
+      </div>
+    </div>
+  );
+}
+
+/* column 3 — Trends: a row of 4 situational-trend boxes per team. */
+function TrendsSection({ g, t }) {
+  return (
+    <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
+      <div />
+      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+        {TREND_SLOTS.map(slot=>{
+          const present = t.keysFor(g.awayId).has(slot.key);
+          return <TrendBox key={slot.key} present={present} color={slot.color}
+            title={present ? slot.label : undefined} />;
+        })}
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+        {TREND_SLOTS.map(slot=>{
+          const present = t.keysFor(g.homeId).has(slot.key);
+          return <TrendBox key={slot.key} present={present} color={slot.color}
+            title={present ? slot.label : undefined} />;
+        })}
+      </div>
     </div>
   );
 }
@@ -1242,58 +1290,12 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
         {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
           flexShrink:0 }} />}
         {final ? "FINAL" : live ? "LIVE" : time}</div>
-      {showInd ? (
-        <div className="ts-card-grid" style={{ display:"grid",
-          gridTemplateColumns:`auto auto ${BASES_W}px`,
-          gridTemplateRows:`${HEADER_H}px ${TEAM_ROW_H}px ${TRENDS_ROW_H}px ${TEAM_ROW_H}px ${TRENDS_ROW_H}px`,
-          columnGap:10, rowGap:ROW_GAP }}>
-          <div className="gc-bases" style={{ gridColumn:3, gridRow:"2 / span 3", display:"flex",
-            alignItems:"center", justifyContent:"center" }}>{bases}</div>
-          <div className="gc-header-pb" style={{ gridColumn:2, gridRow:1,
-            display:"flex", alignItems:"center", gap:BOX_GAP }}>
-            {pbHeaderCol("PITCHER")}
-            <span style={{ width:MID_GAP, flexShrink:0 }} />
-            {pbHeaderCol("BATTER")}
-          </div>
-          <div className="gc-game-away" style={{ gridColumn:1, gridRow:2,
-            display:"flex", alignItems:"center" }}>
-            <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
-          </div>
-          {/* spans the team name row + the trends row below it, centered
-              within that combined height — its midpoint lines up with the
-              midpoint of those two rows, not just the name row alone. */}
-          <div className="gc-pb-away" style={{ gridColumn:2, gridRow:"2 / span 2",
-            display:"flex", alignItems:"center" }}>
-            <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
-          </div>
-          <div className="gc-trends-away" style={{ gridColumn:1, gridRow:3 }}>
-            <TrendBoxRow tid={g.awayId} t={t} />
-          </div>
-          <div className="gc-game-home" style={{ gridColumn:1, gridRow:4,
-            display:"flex", alignItems:"center" }}>
-            <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
-          </div>
-          <div className="gc-pb-home" style={{ gridColumn:2, gridRow:"4 / span 2",
-            display:"flex", alignItems:"center" }}>
-            <PBBoxRow s={pitcherBatterStats(t, g.homeId)} />
-          </div>
-          <div className="gc-trends-home" style={{ gridColumn:1, gridRow:5 }}>
-            <TrendBoxRow tid={g.homeId} t={t} />
-          </div>
-        </div>
-      ) : (
-        <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-          columnGap:10, gridTemplateRows:`${TEAM_ROW_H}px ${TEAM_ROW_H}px`, rowGap:ROW_GAP }}>
-          <div style={{ gridColumn:1, gridRow:1 }}>
-            <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} />
-          </div>
-          <div style={{ gridColumn:1, gridRow:2 }}>
-            <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} />
-          </div>
-          <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
-            alignItems:"center", justifyContent:"center" }}>{bases}</div>
-        </div>
-      )}
+      <div className="ts-card-grid" style={{ display:"grid",
+        gridTemplateColumns: showInd ? "auto auto auto" : "auto", columnGap:12 }}>
+        <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} />
+        {showInd && <PitcherBatterSection g={g} t={t} />}
+        {showInd && <TrendsSection g={g} t={t} />}
+      </div>
     </div>
   );
 }
@@ -2367,8 +2369,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(350px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:350px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(400px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:400px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
