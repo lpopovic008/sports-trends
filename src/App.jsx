@@ -1044,11 +1044,9 @@ function EraNum({ era, verdict }) {
   const has = era != null;
   const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
   return (
-    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0,
-      display:"flex", justifyContent:"center" }}>
-      <span style={{ fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
-        background:bg, borderRadius:3, padding:2 }}>{has ? era.toFixed(2) : "–"}</span>
-    </span>
+    <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
+      fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
+      background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
   );
 }
 
@@ -1062,11 +1060,9 @@ function HitNum({ hits, big=false }) {
   const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
   return (
     <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
-      display:"flex", justifyContent:"center" }}>
-      <span style={{ fontFamily:MONO, fontSize: big?13:10, fontWeight: big?700:400,
-        color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
-        background:bg, borderRadius:3, padding:2 }}>{has ? hits : "–"}</span>
-    </span>
+      textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
+      fontWeight: big?700:400, color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
+      background:bg, borderRadius:3 }}>{has ? hits : "–"}</span>
   );
 }
 
