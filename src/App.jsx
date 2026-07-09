@@ -2142,12 +2142,29 @@ function GameModal({ m, tags, setTag, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [games.length]);
 
-  // lock background scroll while open, so scrolling the modal never
-  // leaks through to the page behind it once you hit the top/bottom
+  // lock background scroll while open. Just setting overflow:hidden isn't
+  // enough — if the page was already scrolled down, some browsers still
+  // paint this fixed overlay against the stale scroll offset, so it opens
+  // looking cut off until you scroll the (frozen) background to "catch up".
+  // Actually pinning the body in place with a negative offset removes it
+  // from the scrolling flow entirely, so the fixed overlay always lines up
+  // with the real viewport no matter how far down the page was scrolled.
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top,
+      width: body.style.width, overflow: body.style.overflow };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
+    };
   }, []);
 
   const aAbbr = TEAM_ABBR[g.awayId]||"?", hAbbr = TEAM_ABBR[g.homeId]||"?";
