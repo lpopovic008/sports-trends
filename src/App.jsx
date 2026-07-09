@@ -12,6 +12,7 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
+  softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -1034,35 +1035,34 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-/* the pitcher's season ERA (unrounded past the hundredth — no box around
-   it). Green text if they've faced this team already this season and had a
-   clearly good outing (2+ stat margin), red if clearly bad, plain ink if
-   they haven't faced them or it was a wash. */
+/* the pitcher's season ERA (unrounded past the hundredth — no border around
+   it, just a soft highlight fill). Soft green fill if they've faced this
+   team already this season and had a clearly good outing (2+ stat margin),
+   soft red if clearly bad — the text itself always stays its resting ink
+   color, never tinted green or red. */
 function EraNum({ era, verdict }) {
   const has = era != null;
-  const color = verdict==="up" ? C.over : verdict==="down" ? C.under : has ? C.ink : C.ruleDark;
+  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
   return (
     <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
-      fontFamily:MONO, fontSize:8, fontWeight:700, color }}>{has ? era.toFixed(2) : "–"}</span>
+      fontFamily:MONO, fontSize:8, fontWeight:700, color: has?C.ink:C.ruleDark,
+      background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
   );
 }
 
-/* one of the team's last 3 games' hits, no box around it. The most recent
-   game matches the score's font/size; the two before it match the game
-   box's own hits column (small mono, muted gray) when not highlighted. All
-   three turn green at 10+ hits, red at 6 or fewer — bold whenever the
-   highlight is on so it stays high-keyed even at the smaller size; the
-   color otherwise never shifts off its resting shade. */
+/* one of the team's last 3 games' hits, no border around it, just a soft
+   highlight fill. The most recent game matches the score's font/size; the
+   two before it match the game box's own hits column (small mono, muted
+   gray). All three get a soft green fill at 10+ hits, soft red at 6 or
+   fewer — the text itself always stays its resting color, never tinted. */
 function HitNum({ hits, big=false }) {
   const has = hits != null;
-  const hot = has && hits>=10, cold = has && hits<=6;
-  const color = !has ? C.ruleDark
-    : hot ? C.over : cold ? C.under
-    : big ? C.ink : C.ruleDark;
+  const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
   return (
     <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
-      fontWeight: (big||hot||cold) ? 700 : 400, color }}>{has ? hits : "–"}</span>
+      fontWeight: big?700:400, color: has ? (big?C.ink:C.ruleDark) : C.ruleDark,
+      background:bg, borderRadius:3 }}>{has ? hits : "–"}</span>
   );
 }
 
