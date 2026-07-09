@@ -12,11 +12,15 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
-  softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
-  softEven:"rgba(154,163,173,0.28)",
+  softOver:"rgba(27,127,92,0.32)", softUnder:"rgba(215,38,61,0.30)",
+  softEven:"rgba(140,150,161,0.38)",
   /* today's-slate dark cells — light text/outline equivalents of ink/inkSoft/
      ruleDark/rule, used only when a card sits on the dark charcoal/navy pair */
   darkText:"#F2F4F7", darkTextSoft:"#AEB7C4", darkOutline:"#57616F", darkBorder:"#3A4250",
+  // same green/red/grey highlights, tuned brighter so a translucent tint
+  // still pops against a dark charcoal/navy card instead of reading muddy
+  darkSoftOver:"rgba(46,204,146,0.4)", darkSoftUnder:"rgba(255,107,117,0.38)",
+  darkSoftEven:"rgba(197,205,214,0.32)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -1047,8 +1051,9 @@ const TREND_SLOTS = [
    color, never tinted green or red. */
 function EraNum({ era, verdict, dark }) {
   const has = era != null;
-  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder
-    : verdict==="even" ? C.softEven : "transparent";
+  const bg = verdict==="up" ? (dark?C.darkSoftOver:C.softOver)
+    : verdict==="down" ? (dark?C.darkSoftUnder:C.softUnder)
+    : verdict==="even" ? (dark?C.darkSoftEven:C.softEven) : "transparent";
   const color = has ? (dark?C.darkText:C.ink) : (dark?C.darkTextSoft:C.ruleDark);
   return (
     <span title="Season ERA" style={{ width:PB_BOX_W, flexShrink:0, textAlign:"center",
@@ -1064,7 +1069,8 @@ function EraNum({ era, verdict, dark }) {
    fewer — the text itself always stays its resting color, never tinted. */
 function HitNum({ hits, big=false, dark }) {
   const has = hits != null;
-  const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
+  const bg = has && hits>=10 ? (dark?C.darkSoftOver:C.softOver)
+    : has && hits<=6 ? (dark?C.darkSoftUnder:C.softUnder) : "transparent";
   const restColor = dark ? C.darkTextSoft : C.ruleDark;
   const color = has ? (big ? (dark?C.darkText:C.ink) : restColor) : restColor;
   return (
@@ -1116,7 +1122,7 @@ function TeamLine({ abbr, score, hits, won, final, live, dark }) {
    their light equivalents, see the `dark` prop threaded through below) */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
    2=dark-charcoal (today-series even), 3=dark-navy (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#242A33", "#16213E"];
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#23262B", "#0E2A52"];
 const isDarkShade = (shade) => shade===2 || shade===3;
 
 /* the "current time" marker that rests in the gap between today's games */
@@ -1145,25 +1151,25 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird,
   // over 1st/3rd instead of relying on independently-positioned, separately
   // anti-aliased rotated elements to line up pixel-for-pixel.
   const diamond = (cx, cy, on) => {
-    const r = 3.6;
+    const r = 4.6;
     return <polygon points={`${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}`}
-      fill={on ? ink : "none"} stroke={ink} strokeWidth="1.2" />;
+      fill={on ? ink : "none"} stroke={ink} strokeWidth="1.3" />;
   };
   return (
     <div style={{ flexShrink:0, width:BASES_W, display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:1.5 }}>
-      <div style={{ fontFamily:MONO, fontSize:9.5, fontWeight:700, color:ink, whiteSpace:"nowrap" }}>
+      alignItems:"center", justifyContent:"center", gap:2.5 }}>
+      <div style={{ fontFamily:MONO, fontSize:11, fontWeight:700, color:ink, whiteSpace:"nowrap" }}>
         {arrow}{inningNum}</div>
-      <svg width="21" height="17" viewBox="0 0 21 17">
-        {diamond(10.5, 4.5, onSecond)}
-        {diamond(4.5, 11.5, onThird)}
-        {diamond(16.5, 11.5, onFirst)}
+      <svg width="27" height="22" viewBox="0 0 27 22">
+        {diamond(13.5, 5.5, onSecond)}
+        {diamond(5.5, 14.5, onThird)}
+        {diamond(21.5, 14.5, onFirst)}
       </svg>
-      <div style={{ display:"flex", gap:1.5 }}>
+      <div style={{ display:"flex", gap:2 }}>
         {[0,1,2].map(i=>(
-          <span key={i} style={{ width:4, height:4, borderRadius:"50%",
+          <span key={i} style={{ width:5, height:5, borderRadius:"50%",
             background: outs!=null && i<outs ? ink : "transparent",
-            border:`1.1px solid ${ink}` }} />
+            border:`1.2px solid ${ink}` }} />
         ))}
       </div>
     </div>
@@ -1193,18 +1199,15 @@ function PBBoxRow({ s, dark }) {
 /* column 1 — Game: the two team lines, with a fixed-width slot next to the
    score reserved for the live bases display so nothing shifts when a game
    goes live. */
-function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases, dark }) {
+function GameSection({ g, aw, hm, awWon, hmWon, final, live, dark }) {
   return (
-    <div style={{ display:"grid", gridTemplateColumns:`auto ${BASES_W}px`,
-      gridTemplateRows:`${MAIN_H}px ${MAIN_H}px`, columnGap:6 }}>
-      <div style={{ gridColumn:1, gridRow:1, display:"flex", alignItems:"center" }}>
+    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
+      <div style={{ gridRow:1, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={aw} score={g.awayScore} hits={g.awayHits} won={awWon} final={final} live={live} dark={dark} />
       </div>
-      <div style={{ gridColumn:1, gridRow:2, display:"flex", alignItems:"center" }}>
+      <div style={{ gridRow:2, display:"flex", alignItems:"center" }}>
         <TeamLine abbr={hm} score={g.homeScore} hits={g.homeHits} won={hmWon} final={final} live={live} dark={dark} />
       </div>
-      <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
-        alignItems:"center", justifyContent:"center" }}>{bases}</div>
     </div>
   );
 }
@@ -1303,11 +1306,16 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div className="ts-card-grid" style={{ display:"grid",
-        gridTemplateColumns: showInd ? "auto auto auto" : "auto",
+        gridTemplateColumns: showInd ? `auto ${BASES_W}px auto auto` : `auto ${BASES_W}px`,
         gridTemplateRows:"auto auto", columnGap:12, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
-        {showInd && <div style={{ gridColumn:2, gridRow:1 }}><PBHeaderLabels dark={dark} /></div>}
-        <div style={{ gridColumn: showInd?3:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
+        {/* the live bases display gets its own column spanning both rows —
+            from the FINAL/time row all the way down — instead of being
+            squeezed into just the two team rows below it. */}
+        <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
+          alignItems:"center", justifyContent:"center" }}>{bases}</div>
+        {showInd && <div style={{ gridColumn:3, gridRow:1 }}><PBHeaderLabels dark={dark} /></div>}
+        <div style={{ gridColumn: showInd?4:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
           display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
           color: live ? "#E5142B" : (dark?C.darkTextSoft:C.ruleDark), fontWeight: live ? 700 : 400 }}>
           {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
@@ -1315,10 +1323,10 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           {final ? "FINAL" : live ? "LIVE" : time}
         </div>
         <div style={{ gridColumn:1, gridRow:2 }}>
-          <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} bases={bases} dark={dark} />
+          <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} dark={dark} />
         </div>
-        {showInd && <div style={{ gridColumn:2, gridRow:2 }}><PitcherBatterSection g={g} t={t} dark={dark} /></div>}
-        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><TrendsSection g={g} t={t} dark={dark} /></div>}
+        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><PitcherBatterSection g={g} t={t} dark={dark} /></div>}
+        {showInd && <div style={{ gridColumn:4, gridRow:2 }}><TrendsSection g={g} t={t} dark={dark} /></div>}
       </div>
     </div>
   );
