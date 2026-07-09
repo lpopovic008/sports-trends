@@ -12,6 +12,7 @@ const C = {
   paper:"#E2E5EA", card:"#F8F9FA", ink:"#14181F", inkSoft:"#525A66",
   rule:"#CDD3DA", ruleDark:"#9AA3AD", marker:"#FFE94D", markerDeep:"#F4CE2A",
   over:"#1B7F5C", under:"#D7263D", blue:"#2B4C7E",
+  softOver:"rgba(27,127,92,0.16)", softUnder:"rgba(215,38,61,0.16)",
   /* indicator colors — a neon graffiti set, ordered so each swatch sits
      next to its nearest hue on the color wheel */
   boom:"#FF073A",          /* neon red: hot bats, 10+ hits last game */
@@ -841,7 +842,9 @@ function TravelTrends({ tags, setTag, onReady }) {
       const colors = Object.values(pitcherLineColors(mostRecent.stat, entry.season));
       const greens = colors.filter(c=>c===C.over).length;
       const reds = colors.filter(c=>c===C.under).length;
-      rematchVerdict[teamId] = greens>reds ? "up" : reds>greens ? "down" : "even";
+      // "up"/"down" need a 2+ stat margin — a single green or red stat isn't
+      // a strong enough signal to soft-highlight the ERA box over
+      rematchVerdict[teamId] = (greens-reds)>=2 ? "up" : (reds-greens)>=2 ? "down" : "even";
     };
     checkRematch(g.awayPid, g.awayId, g.homeId, g.awayPname, g.homeName);
     checkRematch(g.homePid, g.homeId, g.awayId, g.homePname, g.awayName);
@@ -859,38 +862,26 @@ function TravelTrends({ tags, setTag, onReady }) {
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
-    // last game's hits for a team, and how that compares to the game before
-    // it — feeds the number shown inside the "Slump/Boom" indicator box.
-    // Scans back over the team's actual played dates (not a fixed "yesterday")
-    // so an off-day doesn't leave the box blank.
-    const hitsInfo = (tid) => {
-      const m = hitsMap[tid];
-      if (!m) return null;
+    // did this team score 10+ runs in each of its last two games (scanning
+    // actual played dates, not a fixed "yesterday"/"2 days ago" so an
+    // off-day doesn't break the streak check)?
+    const bigDayStreak = (tid) => {
+      const m = runsMap[tid];
+      if (!m) return false;
       const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
-      if (!pastDates.length) return null;
-      const hits = m[pastDates[0]];
-      const prevHits = pastDates.length>1 ? m[pastDates[1]] : null;
-      return { hits, diff: prevHits!=null ? hits-prevHits : null };
+      if (pastDates.length < 2) return false;
+      return m[pastDates[0]]>=10 && m[pastDates[1]]>=10;
     };
-    // "hot" bats (10+ hits) or "cold" bats (6 or fewer) in the team's last game
-    const batsState = (tid) => {
-      const hi = hitsInfo(tid);
-      if (!hi || hi.hits==null) return null;
-      return hi.hits>=10 ? "hot" : hi.hits<=6 ? "cold" : null;
-    };
-    // hit-trend momentum: last game's hits vs 2 games back; if tied, the
-    // 3rd-most-recent game breaks the tie. null once history runs out.
-    const hitsMomentum = (tid) => {
+
+    // this team's last 3 games' hits, left-to-right oldest to most recent —
+    // feeds the 3 batter boxes. Scans actual played dates so an off-day
+    // doesn't leave a box blank.
+    const hitsTrio = (tid) => {
       const m = hitsMap[tid];
-      if (!m) return null;
+      if (!m) return [null, null, null];
       const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
-      if (pastDates.length < 2) return null;
-      const h1 = m[pastDates[0]], h2 = m[pastDates[1]];
-      if (h1==null || h2==null) return null;
-      if (h1 !== h2) return h1 > h2 ? "up" : "down";
-      const h3 = pastDates.length>2 ? m[pastDates[2]] : null;
-      if (h3==null || h3===h1) return "flat";
-      return h1 > h3 ? "up" : "down";
+      const at = (i) => pastDates[i]!=null ? m[pastDates[i]] : null;
+      return [at(2), at(1), at(0)];
     };
 
     // per-team keys for the 2x2 situational-trend grid
@@ -907,9 +898,8 @@ function TravelTrends({ tags, setTag, onReady }) {
       rematchTier:(tid)=>rematchTier[tid] || null,
       rematchVerdict:(tid)=>rematchVerdict[tid] || null,
       pitcherEra,
-      batsState,
-      hitsInfo,
-      hitsMomentum };
+      bigDayStreak,
+      hitsTrio };
   };
 
   return (
@@ -1045,30 +1035,53 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
-/* one pitcher/batter stat box: a plain outline that always looks the same
-   whether or not it has content. A dash ("checked, nothing to show yet")
-   reads muted; an actual value (emoji or number) reads at full ink strength. */
-function StatBox({ children, title, big=false }) {
-  const has = children!=null && children!=="";
-  const isDash = children==="–";
+/* the pitcher's season ERA, written in the same small mono font as the game
+   time in the corner. Soft-green background if they've faced this team
+   already this season and had a clearly good outing (2+ stat margin), soft
+   red if clearly bad, no tint if they haven't faced them or it was a wash. */
+function EraBox({ era, verdict }) {
+  const has = era != null;
+  const bg = verdict==="up" ? C.softOver : verdict==="down" ? C.softUnder : "transparent";
   return (
-    <span title={title} style={{ position:"relative", width:PB_BOX_W, height:PB_BOX_H, flexShrink:0,
-      borderRadius:3, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
+    <span title="Season ERA" style={{ position:"relative", width:PB_BOX_W, height:PB_BOX_H,
+      flexShrink:0, borderRadius:3, background:bg, boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
       display:"flex", alignItems:"center", justifyContent:"center" }}>
-      {has && <span style={{ position:"relative", top:1, fontFamily: big ? SANS : MONO,
-        fontSize: big ? 15 : 13, fontWeight:800, color: isDash ? C.ruleDark : C.ink,
-        lineHeight:1 }}>{children}</span>}
+      <span style={{ fontFamily:MONO, fontSize:8, fontWeight:700,
+        color: has ? C.ink : C.ruleDark }}>{has ? era.toFixed(1) : "–"}</span>
+    </span>
+  );
+}
+
+/* one of the team's last 3 games' hits. The most recent game (big) matches
+   the score's font; the two before it match the small mono time font. Soft
+   green background at 10+ hits, soft red at 6 or fewer. */
+function HitBox({ hits, big=false }) {
+  const has = hits != null;
+  const bg = has && hits>=10 ? C.softOver : has && hits<=6 ? C.softUnder : "transparent";
+  return (
+    <span title={big ? "Hits, last game" : "Hits"} style={{ position:"relative", width:PB_BOX_W,
+      height:PB_BOX_H, flexShrink:0, borderRadius:3, background:bg,
+      boxShadow:`inset 0 0 0 1.5px ${C.inkSoft}`,
+      display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <span style={{ position:"relative", top: big?1:0, fontFamily:MONO, fontSize: big?13:8,
+        fontWeight: big?800:700, color: has ? C.ink : C.ruleDark }}>{has ? hits : "–"}</span>
     </span>
   );
 }
 
 /* one situational-trend box: filled solid with its color when lit, dimmed
-   neutral outline when not. */
-function TrendBox({ present, color, title }) {
-  return <span title={title} style={{ width:BOX_W, height:BOX_H, borderRadius:2, flexShrink:0,
-    background: present ? color : "transparent",
-    boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
-    opacity: present ? 1 : 0.45 }} />;
+   neutral outline when not. `inner` draws a small marker on top (e.g. "!"
+   for a team on a 10+ run back-to-back streak). */
+function TrendBox({ present, color, title, inner }) {
+  return (
+    <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, borderRadius:2,
+      flexShrink:0, background: present ? color : "transparent",
+      boxShadow: present ? "none" : `inset 0 0 0 1.5px ${C.inkSoft}`,
+      opacity: present ? 1 : 0.45, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {present && inner && <span style={{ fontFamily:MONO, fontSize:9, fontWeight:800,
+        color:"#fff", lineHeight:1 }}>{inner}</span>}
+    </span>
+  );
 }
 
 function TeamLine({ abbr, score, hits, won, final, live }) {
@@ -1144,42 +1157,27 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird 
   );
 }
 
-/* this team's probable starter's rematch/ERA + hot-cold bats/momentum/hits,
-   shown as the 6 pitcher/batter stat boxes. */
+/* this team's probable starter's ERA/rematch-verdict + last 3 games' hits,
+   shown as the 4 pitcher/batter boxes. */
 function pitcherBatterStats(t, tid) {
-  const hasRematch = !!t.rematchTier(tid);
-  const verdict = hasRematch ? t.rematchVerdict(tid) : null;
-  const era = t.pitcherEra(tid);
-  const bats = t.batsState(tid);
-  const momentum = t.hitsMomentum(tid);
-  const hi = t.hitsInfo(tid);
-  return {
-    p1: hasRematch ? "\u{1F501}" : null,
-    p2: verdict==="up" ? "\u{1F44D}" : verdict==="down" ? "\u{1F44E}" : verdict==="even" ? "➖" : null,
-    p3: era!=null ? era.toFixed(1) : "–",
-    b1: bats==="hot" ? "\u{1F525}" : bats==="cold" ? "❄️" : null,
-    b2: momentum==="up" ? "\u{1F4C8}" : momentum==="down" ? "\u{1F4C9}" : momentum==="flat" ? "➡️" : "–",
-    b3: hi && hi.hits!=null ? String(hi.hits) : "–",
-  };
+  const [h3, h2, h1] = t.hitsTrio(tid);
+  return { era: t.pitcherEra(tid), verdict: t.rematchVerdict(tid), h3, h2, h1 };
 }
-/* PITCHER (rematch · rematch result · season ERA) and BATTER (hot/cold bats
-   · hit-trend momentum · last game's hits) — bigger boxes, vertically
-   centered against the team's name+trends rows combined. */
+/* PITCHER (season ERA) and BATTER (last 3 games' hits, oldest to most
+   recent). */
 function PBBoxRow({ s }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
-      <StatBox title="Pitcher rematch">{s.p1}</StatBox>
-      <StatBox title="Rematch result">{s.p2}</StatBox>
-      <StatBox title="Season ERA" big>{s.p3}</StatBox>
+      <EraBox era={s.era} verdict={s.verdict} />
       <span style={{ width:MID_GAP, flexShrink:0 }} />
-      <StatBox title="Hot/cold bats">{s.b1}</StatBox>
-      <StatBox title="Hit-trend momentum">{s.b2}</StatBox>
-      <StatBox title="Hits last game" big>{s.b3}</StatBox>
+      <HitBox hits={s.h3} />
+      <HitBox hits={s.h2} />
+      <HitBox hits={s.h1} big />
     </div>
   );
 }
-const pbHeaderCol = (label) => (
-  <div style={{ width:PB_BOX_W*3+PB_GAP*2, textAlign:"center", fontFamily:MONO, fontSize:8.5,
+const pbHeaderCol = (label, n=3) => (
+  <div style={{ width:PB_BOX_W*n+PB_GAP*(n-1), textAlign:"center", fontFamily:MONO, fontSize:8.5,
     fontWeight:700, letterSpacing:"0.06em", color:C.inkSoft }}>{label}</div>
 );
 
@@ -1203,16 +1201,15 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, bases }) {
   );
 }
 
-/* column 2 — Pitcher/Batter: PITCHER (rematch · rematch result · season ERA)
-   and BATTER (hot/cold bats · hit-trend momentum · last game's hits), one
-   row per team. */
+/* column 2 — Pitcher/Batter: PITCHER (season ERA) and BATTER (last 3
+   games' hits), one row per team. */
 function PitcherBatterSection({ g, t }) {
   return (
     <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
       <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-        {pbHeaderCol("PITCHER")}
+        {pbHeaderCol("PITCHER", 1)}
         <span style={{ width:MID_GAP, flexShrink:0 }} />
-        {pbHeaderCol("BATTER")}
+        {pbHeaderCol("BATTER", 3)}
       </div>
       <div style={{ display:"flex", alignItems:"center" }}>
         <PBBoxRow s={pitcherBatterStats(t, g.awayId)} />
@@ -1224,25 +1221,25 @@ function PitcherBatterSection({ g, t }) {
   );
 }
 
-/* column 3 — Trends: a row of 4 situational-trend boxes per team. */
+/* column 3 — Trends: a row of 4 situational-trend boxes per team. Big Day
+   gets a "!" marker when the team scored 10+ runs in each of its last two
+   games, on top of the box simply being lit for the one-game version. */
 function TrendsSection({ g, t }) {
+  const row = (tid) => (
+    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+      {TREND_SLOTS.map(slot=>{
+        const present = t.keysFor(tid).has(slot.key);
+        const inner = slot.key==="bigday" && t.bigDayStreak(tid) ? "!" : null;
+        return <TrendBox key={slot.key} present={present} color={slot.color} inner={inner}
+          title={present ? slot.label : undefined} />;
+      })}
+    </div>
+  );
   return (
     <div style={{ display:"grid", gridTemplateRows:`${HEADER_H}px ${MAIN_H}px ${MAIN_H}px` }}>
       <div />
-      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-        {TREND_SLOTS.map(slot=>{
-          const present = t.keysFor(g.awayId).has(slot.key);
-          return <TrendBox key={slot.key} present={present} color={slot.color}
-            title={present ? slot.label : undefined} />;
-        })}
-      </div>
-      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-        {TREND_SLOTS.map(slot=>{
-          const present = t.keysFor(g.homeId).has(slot.key);
-          return <TrendBox key={slot.key} present={present} color={slot.color}
-            title={present ? slot.label : undefined} />;
-        })}
-      </div>
+      {row(g.awayId)}
+      {row(g.homeId)}
     </div>
   );
 }
@@ -2369,8 +2366,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
 @keyframes ts-spin { to { transform: rotate(360deg); } }
-.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(400px,1fr)); overflow-x:auto; }
-.ts-cal-col { min-width:400px; }
+.ts-cal { display:grid; grid-template-columns: repeat(7, minmax(340px,1fr)); overflow-x:auto; }
+.ts-cal-col { min-width:340px; }
 .ts-lineups { display:grid; grid-template-columns:1fr 1fr; }
 .ts-app { padding:calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
