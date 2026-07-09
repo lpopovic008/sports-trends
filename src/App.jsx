@@ -1049,17 +1049,20 @@ function EraNum({ era, verdict }) {
 
 /* one of the team's last 3 games' hits, no box around it. The most recent
    game matches the score's font/size; the two before it match the game
-   box's own hits column (small mono, muted gray). The most recent game
-   still turns green at 10+ hits, red at 6 or fewer. */
+   box's own hits column (small mono, muted gray) when not highlighted. All
+   three turn green at 10+ hits, red at 6 or fewer — bold whenever the
+   highlight is on so it stays high-keyed even at the smaller size; the
+   color otherwise never shifts off its resting shade. */
 function HitNum({ hits, big=false }) {
   const has = hits != null;
-  const color = !big ? C.ruleDark
-    : !has ? C.ruleDark
-    : hits>=10 ? C.over : hits<=6 ? C.under : C.ink;
+  const hot = has && hits>=10, cold = has && hits<=6;
+  const color = !has ? C.ruleDark
+    : hot ? C.over : cold ? C.under
+    : big ? C.ink : C.ruleDark;
   return (
     <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
-      fontWeight: big?700:400, color }}>{has ? hits : "–"}</span>
+      fontWeight: (big||hot||cold) ? 700 : 400, color }}>{has ? hits : "–"}</span>
   );
 }
 
