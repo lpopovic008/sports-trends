@@ -36,8 +36,6 @@ const C = {
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-// self-hosted black-marker display font used only for the exported picture text
-const MARKER = "'Permanent Marker', system-ui, sans-serif";
 const API = "https://statsapi.mlb.com/api/v1";
 const SEASON = new Date().getFullYear();
 
@@ -186,21 +184,21 @@ const tagResultBg = (entry) => {
 };
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }); } catch { return ""; } };
 
-// Draw the play call as red marker handwriting directly on the game — no
-// background box — angled like it was scrawled on, vertically centered
-// at (cx,cy) and shrunk to fit maxW if needed.
-function drawRedTag(x, text, cx, cy, maxW, fontSize = 15) {
+// Draw the tagged play as green monospace "code" text, right-aligned at
+// (rightX, cy) — matching today's-slate's terminal look instead of the old
+// red marker handwriting. Shrinks to fit maxW if needed, no rotation.
+function drawGreenTag(x, text, rightX, cy, maxW, fontSize = 15) {
   if (!text) return;
   x.save();
-  x.font = `400 ${fontSize}px ${MARKER}`;
-  const rawW = x.measureText(text).width;
-  const scale = rawW > maxW ? maxW / rawW : 1;
-  x.translate(cx, cy);
-  x.rotate(-4 * Math.PI/180);
-  x.scale(scale, scale);
-  x.fillStyle = "#D7263D";
-  x.textAlign = "center"; x.textBaseline = "middle";
-  x.fillText(text, 0, 0);
+  let size = fontSize;
+  x.font = `700 ${size}px ${MONO}`;
+  while (x.measureText(text).width > maxW && size > 8) {
+    size -= 0.5;
+    x.font = `700 ${size}px ${MONO}`;
+  }
+  x.fillStyle = "#39D98A";
+  x.textAlign = "right"; x.textBaseline = "middle";
+  x.fillText(text, rightX, cy);
   x.restore();
 }
 
@@ -793,31 +791,34 @@ function TravelTrends({ tags, setTag, onReady }) {
       x.fillStyle = "#525A66"; x.font = "10px ui-monospace, Menlo, monospace";
       x.textAlign = "right";
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
-      // one compact row per tagged pick: TIME · AWAY@HOME · tag
+      // one compact row per tagged pick: TIME · AWAY@HOME · tag — each row
+      // styled like today's slate's dark charcoal card, with the tagged
+      // play as green monospace "code" on the right
       games.forEach((g,i)=>{
         const gx = PADX, gy = HEAD + i*(RH+GAP);
-        const bg = tagResultBg(tags[g.gamePk])
-          || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
+        const resultTint = tagResultBg(tags[g.gamePk]);
         const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
         const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
         const rr = 4;
-        x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
         x.beginPath();
         x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
-        x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath(); x.fill(); x.stroke();
+        x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath();
+        x.fillStyle = "#20232A"; x.fill();
+        if (resultTint) { x.fillStyle = resultTint; x.fill(); }
+        x.strokeStyle = "#3A4250"; x.lineWidth = 1; x.stroke();
         // left: matchup (+ scores if final)
-        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#14181F";
+        x.textAlign = "left"; x.textBaseline = "middle"; x.fillStyle = "#F2F4F7";
         x.font = "700 13px system-ui, sans-serif";
         let matchup = `${aw} @ ${hm}`;
         if (final) matchup += `  ${g.awayScore}-${g.homeScore}`;
         x.fillText(matchup, gx+10, gy+RH/2 - 6);
         // small time under matchup
-        x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+        x.fillStyle = "#AEB7C4"; x.font = "9px ui-monospace, Menlo, monospace";
         x.fillText(time, gx+10, gy+RH/2 + 9);
-        // right: red tag, vertically centered
+        // right: green code tag, vertically centered
         const tv = tagText(tags[g.gamePk]);
-        drawRedTag(x, tv, gx + CW*0.73, gy + RH/2, CW*0.56, 22);
+        drawGreenTag(x, tv, gx+CW-10, gy+RH/2, CW*0.5, 13);
       });
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
@@ -2184,45 +2185,50 @@ function GameModal({ m, tags, setTag, onClose }) {
   const [copied, setCopied] = useState(null);   // ok|dl|err feedback for Export
   const tagVal = tagText(tags?.[g.gamePk]);
 
-  // export a clean PNG of this game's calendar card (indicators-off look) + tag
+  // export a clean PNG of this game's calendar card, styled like today's
+  // slate's dark charcoal card (light text) regardless of which day it's
+  // actually from, with the tagged play as green monospace "code" on the right
   const exportCard = () => {
     try {
       const scale = 3, W = 300, H = 96;                // logical size, upscaled for crispness
       const cv = document.createElement("canvas");
       cv.width = W*scale; cv.height = H*scale;
       const x = cv.getContext("2d"); x.scale(scale, scale);
-      const bg = tagResultBg(tags?.[g.gamePk])
-        || (g.seriesShade!=null ? SERIES_SHADE[g.seriesShade] : "#FFFFFF");
+      const resultTint = tagResultBg(tags?.[g.gamePk]);
       const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
       const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
       const time = new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-      // card
-      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);          // paper margin
+      // paper margin — matches the app's own light page background
+      x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
       const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
-      x.fillStyle = bg; x.strokeStyle = "#C9CED6"; x.lineWidth = 1;
       const rr = 4;
       x.beginPath();
       x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
-      x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath(); x.fill(); x.stroke();
+      x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath();
+      // card — dark charcoal like today's slate, with an optional soft
+      // win/loss tint layered on top
+      x.fillStyle = "#20232A"; x.fill();
+      if (resultTint) { x.fillStyle = resultTint; x.fill(); }
+      x.strokeStyle = "#3A4250"; x.lineWidth = 1; x.stroke();
       // time / FINAL, top-right
-      x.fillStyle = "#8A929E"; x.font = "9px ui-monospace, Menlo, monospace";
+      x.fillStyle = "#AEB7C4"; x.font = "9px ui-monospace, Menlo, monospace";
       x.textAlign = "right"; x.fillText(final?"FINAL":time, cx+cw-8, cy+14);
       // teams + scores
-      x.textAlign = "left"; x.fillStyle = "#14181F";
+      x.textAlign = "left"; x.fillStyle = "#F2F4F7";
       x.font = "700 15px system-ui, sans-serif";
       x.fillText(aw, cx+12, cy+34);
       x.fillText(hm, cx+12, cy+56);
       if (final) {
         x.textAlign = "right"; x.font = "700 15px ui-monospace, Menlo, monospace";
-        x.fillStyle = g.awayScore>g.homeScore ? "#14181F" : "#79818D";
+        x.fillStyle = g.awayScore>g.homeScore ? "#F2F4F7" : "#AEB7C4";
         x.fillText(String(g.awayScore), cx+cw-14, cy+34);
-        x.fillStyle = g.homeScore>g.awayScore ? "#14181F" : "#79818D";
+        x.fillStyle = g.homeScore>g.awayScore ? "#F2F4F7" : "#AEB7C4";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
-      // tagged play written big, filling most of the empty space to the
-      // right of the team names/scores
+      // tagged play written as green monospace "code" on its own row along
+      // the bottom, right-aligned — clear of the score column above it
       if (tagVal) {
-        drawRedTag(x, tagVal, cx + cw*0.60, cy + ch/2, cw*0.78, 36);
+        drawGreenTag(x, tagVal, cx+cw-10, cy+ch-12, cw-20, 14);
       }
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
@@ -2535,13 +2541,6 @@ const RESPONSIVE_CSS = `
    of the viewport instead of leaving a rim of the page's default white */
 html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:none; }
 #root { min-height:100vh; }
-@font-face {
-  font-family: 'Permanent Marker';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('${import.meta.env.BASE_URL}fonts/PermanentMarker-Regular.woff2') format('woff2');
-}
 @keyframes ts-spin { to { transform: rotate(360deg); } }
 .ts-cal { display:grid; grid-template-columns: repeat(7, minmax(340px,1fr)); overflow-x:auto; }
 .ts-cal-col { min-width:340px; }
@@ -2846,8 +2845,6 @@ export default function App() {
 
   useEffect(() => {
     document.title = "MLB";
-    // warm the export font early so it's ready well before anyone hits export
-    if (document.fonts?.load) document.fonts.load("400 20px 'Permanent Marker'").catch(()=>{});
   }, []);
   return (
     <div className="ts-app" style={{ minHeight:"100vh", background:C.paper, color:C.ink, fontFamily:SANS }}>
