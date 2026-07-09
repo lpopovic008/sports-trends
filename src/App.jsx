@@ -1184,22 +1184,12 @@ function pitcherBatterStats(t, tid) {
 }
 /* last 3 games' hits (oldest to most recent), then the pitcher's season
    ERA — no boxes, no header labels, just the numbers themselves. */
-/* tapping the last game's hits number toggles whether the 2 games before
-   it show their real values or just a placeholder — collapsed by default
-   to keep the card quiet, one tap away when you want the extra context. */
 function PBBoxRow({ s, dark }) {
-  const [expanded, setExpanded] = useState(false);
-  const toggle = (e) => { e.stopPropagation(); setExpanded(v=>!v); };
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:PB_GAP }}>
-      <HitNum hits={expanded ? s.h3 : null} dark={dark} />
-      <HitNum hits={expanded ? s.h2 : null} dark={dark} />
-      <span role="button" tabIndex={0} aria-pressed={expanded} style={{ cursor:"pointer" }}
-        title={expanded ? "Hide the 2 games before this one" : "Show the 2 games before this one"}
-        onClick={toggle}
-        onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(e); } }}>
-        <HitNum hits={s.h1} big dark={dark} />
-      </span>
+      <HitNum hits={s.h3} dark={dark} />
+      <HitNum hits={s.h2} dark={dark} />
+      <HitNum hits={s.h1} big dark={dark} />
       <span style={{ width:MID_GAP, flexShrink:0 }} />
       <EraNum era={s.era} verdict={s.verdict} dark={dark} />
     </div>
