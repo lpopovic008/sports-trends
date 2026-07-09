@@ -1125,7 +1125,7 @@ function TeamLine({ abbr, score, hits, won, final, live, dark }) {
    tell apart at a glance */
 /* 0=light-gray (leftovers even), 1=white (leftovers odd),
    2=dark-charcoal (today-series even), 3=lighter-slate-grey (today-series odd) */
-const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#20232A", "#3C4148"];
+const SERIES_SHADE = ["#EDEFF2", "#FFFFFF", "#20232A", "#2F3239"];
 const isDarkShade = (shade) => shade===2 || shade===3;
 
 /* the "current time" marker that rests in the gap between today's games */
