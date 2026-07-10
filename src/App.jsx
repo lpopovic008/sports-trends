@@ -1163,6 +1163,19 @@ const TREND_SLOTS = [
     desc:"West yesterday, East today on back-to-back days" },
 ];
 
+/* a monospace font gives "." the same full character-cell width as a digit,
+   which visibly wastes room in these small fixed-width number boxes (badly
+   enough that the boldest one was overflowing its box by a couple of
+   pixels). Splits a decimal string like "9.1" or "12.34" so just the dot's
+   own cell can be narrowed — the digits stay full monospace width either
+   side of it, so nothing about the digits themselves shifts or resizes. */
+function TightDecimal({ text }) {
+  const i = text.indexOf(".");
+  if (i === -1) return text;
+  return <>{text.slice(0,i)}<span style={{ display:"inline-block", width:"0.3em",
+    textAlign:"center" }}>.</span>{text.slice(i+1)}</>;
+}
+
 /* the pitcher's season ERA (unrounded past the hundredth — no border around
    it, just a soft highlight fill). Soft green fill if they've faced this
    team already this season and had a clearly good outing (2+ stat margin),
@@ -1178,7 +1191,7 @@ function EraNum({ era, verdict, dark }) {
   return (
     <span title="Season ERA" style={{ width:ERA_BOX_W, flexShrink:0, textAlign:"center",
       fontFamily:MONO, fontSize:8, fontWeight:700, color, whiteSpace:"nowrap",
-      background:bg, borderRadius:3 }}>{has ? era.toFixed(2) : "–"}</span>
+      background:bg, borderRadius:3 }}>{has ? <TightDecimal text={era.toFixed(2)} /> : "–"}</span>
   );
 }
 
@@ -1197,14 +1210,14 @@ function BatScoreNum({ score, big=false, dark }) {
   const restColor = dark ? C.darkTextSoft : C.ruleDark;
   const color = has ? (big ? (dark?C.darkText:C.ink) : restColor) : restColor;
   // "10.0" (the one 4-char case, at the very top of the scale) doesn't fit
-  // this box at this font size the way every other one-decimal value does —
-  // drop the decimal just for that ceiling value rather than widen the box.
+  // this box at this font size even with the dot tightened up — drop the
+  // decimal just for that ceiling value rather than widen the box.
   const label = has ? (score.toFixed(1)==="10.0" ? "10" : score.toFixed(1)) : "–";
   return (
     <span title={big ? "Batting score, last game" : "Batting score"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
       fontWeight: big?700:400, color,
-      background:bg, borderRadius:3 }}>{label}</span>
+      background:bg, borderRadius:3 }}>{has ? <TightDecimal text={label} /> : "–"}</span>
   );
 }
 
