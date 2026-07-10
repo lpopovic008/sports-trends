@@ -450,6 +450,7 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
   const [hitsMap, setHitsMap] = useState({});  // teamId -> { date -> hits }
+  const [battingScoreMap, setBattingScoreMap] = useState({});  // teamId -> { date -> 0-10 score }
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
   const [now, setNow] = useState(()=>new Date());
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
@@ -469,7 +470,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     // cleared here) so a manual refresh doesn't unmount the scroll
     // container and reset which day is in view
     setErr("");
-    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); }
+    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBattingScoreMap({}); }
     setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
@@ -653,6 +654,10 @@ function TravelTrends({ tags, setTag, onReady }) {
       const teamName = {};
       const runsByDate = {};   // teamId -> { date -> runs scored }
       const hitsByDate = {};   // teamId -> { date -> hits }
+      const gamePkByDate = {}; // teamId -> { date -> { gamePk, side } } — which
+                               // specific game fed that date, and which side
+                               // this team batted from (used below to look up
+                               // the opposing pitchers' box-score lines)
       finals.forEach(g=>{
         const gd = g.officialDate || g.gameDate.slice(0,10);
         ["home","away"].forEach(side=>{
@@ -673,6 +678,7 @@ function TravelTrends({ tags, setTag, onReady }) {
             // later game (the actual "most recent" one) is processed last and
             // simply overwrites — not maxed against — the earlier game's hits
             hm[gd] = hits;
+            (gamePkByDate[t.team.id] = gamePkByDate[t.team.id]||{})[gd] = { gamePk:g.gamePk, side };
           }
         });
       });
@@ -761,10 +767,78 @@ function TravelTrends({ tags, setTag, onReady }) {
           facedMap[pid] = { list, season: pitcherSeasonAverages(splits) };
         } catch { /* leave unset */ }
       });
+      /* ── quality-adjusted batting score: for every team shown, how well did
+         they hit in each of their last 3 games relative to the quality of
+         every pitcher they actually faced that game (not just the starter)?
+         0-10, 5.0 = exactly as many hits as that pitching staff's ERA would
+         predict. Only fetches box scores for the specific past games that
+         feed a "last 3" trio somewhere in the visible window, deduped by
+         gamePk so a shared game (e.g. yesterday's, feeding two different
+         cells) is only fetched once. ── */
+      const neededGamePks = new Set();
+      DATES.forEach(date=>{
+        (dayGames[date]||[]).forEach(g=>{
+          [g.awayId, g.homeId].forEach(tid=>{
+            const m = gamePkByDate[tid];
+            if (!m) return;
+            Object.keys(m).filter(d=>d<date).sort().reverse().slice(0,3)
+              .forEach(d=>neededGamePks.add(m[d].gamePk));
+          });
+        });
+      });
+      const boxCache = {};   // gamePk -> { away:[{pid,name,stat}], home:[...] }
+      await mapPool([...neededGamePks], 4, async (gamePk) => {
+        const bx = await loadBoxscorePitchers(gamePk);
+        if (bx) boxCache[gamePk] = bx;
+      });
+      // every pitcher who appeared in any of those box scores (either side —
+      // a single historical game can feed both participating teams' own
+      // trios if both are shown somewhere in the window) needs a season ERA
+      // to judge the quality of the batting performance against them.
+      const pitcherEraCache = {};
+      const boxPids = new Set();
+      Object.values(boxCache).forEach(bx=>{
+        (bx.away||[]).forEach(p=>boxPids.add(p.pid));
+        (bx.home||[]).forEach(p=>boxPids.add(p.pid));
+      });
+      await mapPool([...boxPids], 4, async (pid) => {
+        try {
+          const r = await fetch(`${API}/people/${pid}/stats?stats=season&group=pitching&season=${SEASON}`);
+          if (!r.ok) return;
+          const j = await r.json();
+          const era = Number(j.stats?.[0]?.splits?.[0]?.stat?.era);
+          if (!isNaN(era)) pitcherEraCache[pid] = era;
+        } catch { /* fall back to league-average below */ }
+      });
+      // hits per 9 innings a league-average (≈4.00 ERA) pitching staff
+      // allows — the intercept/slope here are calibrated so this formula
+      // recovers ≈8.7 H/9 at a 4.00 ERA and scales down to ≈7.2 H/9 for a
+      // 2.50-ERA ace, ≈10.2 H/9 for a 5.50-ERA arm.
+      const expectedH9 = (era) => (era!=null ? era : 4.00) + 4.7;
+      const battingScoreByDate = {};   // teamId -> { date -> score(0-10) }
+      Object.entries(gamePkByDate).forEach(([tid, dates])=>{
+        Object.entries(dates).forEach(([gd, { gamePk, side }])=>{
+          const bx = boxCache[gamePk];
+          const pitchers = bx?.[side==="home"?"away":"home"];
+          if (!pitchers || !pitchers.length) return;
+          let actual = 0, expected = 0;
+          pitchers.forEach(p=>{
+            const trueIP = ipToOuts(p.stat?.inningsPitched)/3;
+            if (!trueIP) return;
+            actual += Number(p.stat?.hits)||0;
+            expected += expectedH9(pitcherEraCache[p.pid]) / 9 * trueIP;
+          });
+          if (expected<=0) return;
+          const score = Math.max(0, Math.min(10, 5 + 4.5*Math.log(actual/expected)));
+          (battingScoreByDate[tid] = battingScoreByDate[tid]||{})[gd] = score;
+        });
+      });
+
       // all trend markers appear together (rematch · 10-run · late · echo · travel)
       setFaced(facedMap);
       setRunsMap(runsByDate);
       setHitsMap(hitsByDate);
+      setBattingScoreMap(battingScoreByDate);
       setComebacks(cbList);
       setEchoes(echoList);
       indicatorsLoadedForRef.current = start;
@@ -925,14 +999,16 @@ function TravelTrends({ tags, setTag, onReady }) {
       return m[pastDates[0]]>=10 && m[pastDates[1]]>=10;
     };
 
-    // this team's last 3 games' hits, left-to-right oldest to most recent —
-    // feeds the 3 batter boxes. Scans actual played dates so an off-day
-    // doesn't leave a box blank.
+    // this team's last 3 games' quality-adjusted batting score (0-10),
+    // left-to-right oldest to most recent — feeds the 3 batter boxes. Still
+    // scans hitsMap's played dates (an off-day shouldn't leave a box blank);
+    // the actual value shown comes from battingScoreMap.
     const hitsTrio = (tid) => {
       const m = hitsMap[tid];
       if (!m) return [null, null, null];
+      const scores = battingScoreMap[tid] || {};
       const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
-      const at = (i) => pastDates[i]!=null ? m[pastDates[i]] : null;
+      const at = (i) => pastDates[i]!=null ? (scores[pastDates[i]] ?? null) : null;
       return [at(2), at(1), at(0)];
     };
 
@@ -1106,22 +1182,29 @@ function EraNum({ era, verdict, dark }) {
   );
 }
 
-/* one of the team's last 3 games' hits, no border around it, just a soft
-   highlight fill. The most recent game matches the score's font/size; the
-   two before it match the game box's own hits column (small mono, muted
-   gray). All three get a soft green fill at 10+ hits, soft red at 6 or
-   fewer — the text itself always stays its resting color, never tinted. */
-function HitNum({ hits, big=false, dark }) {
-  const has = hits != null;
-  const bg = has && hits>=10 ? (dark?C.darkSoftOver:C.softOver)
-    : has && hits<=6 ? (dark?C.darkSoftUnder:C.softUnder) : "transparent";
+/* one of the team's last 3 games' quality-adjusted batting score (0-10, 5.0
+   = exactly as many hits as the pitching staff they faced that day would be
+   expected to allow), no border around it, just a soft highlight fill. The
+   most recent game matches the score's font/size; the two before it match
+   the game box's own hits column (small mono, muted gray). Soft green at
+   7.0+ ("hot" — meaningfully more hits than expected), soft red at 3.0 or
+   below ("cold" — meaningfully fewer) — the text itself always stays its
+   resting color, never tinted. */
+function BatScoreNum({ score, big=false, dark }) {
+  const has = score != null;
+  const bg = has && score>=7.0 ? (dark?C.darkSoftOver:C.softOver)
+    : has && score<=3.0 ? (dark?C.darkSoftUnder:C.softUnder) : "transparent";
   const restColor = dark ? C.darkTextSoft : C.ruleDark;
   const color = has ? (big ? (dark?C.darkText:C.ink) : restColor) : restColor;
+  // "10.0" (the one 4-char case, at the very top of the scale) doesn't fit
+  // this box at this font size the way every other one-decimal value does —
+  // drop the decimal just for that ceiling value rather than widen the box.
+  const label = has ? (score.toFixed(1)==="10.0" ? "10" : score.toFixed(1)) : "–";
   return (
-    <span title={big ? "Hits, last game" : "Hits"} style={{ width:PB_BOX_W, flexShrink:0,
+    <span title={big ? "Batting score, last game" : "Batting score"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
       fontWeight: big?700:400, color,
-      background:bg, borderRadius:3 }}>{has ? hits : "–"}</span>
+      background:bg, borderRadius:3 }}>{label}</span>
   );
 }
 
@@ -1222,20 +1305,20 @@ function LiveDiamond({ inningNum, inningState, outs, onFirst, onSecond, onThird,
   );
 }
 
-/* this team's probable starter's ERA/rematch-verdict + last 3 games' hits,
-   shown as the 4 pitcher/batter boxes. */
+/* this team's probable starter's ERA/rematch-verdict + last 3 games'
+   quality-adjusted batting score, shown as the 4 pitcher/batter boxes. */
 function pitcherBatterStats(t, tid) {
   const [h3, h2, h1] = t.hitsTrio(tid);
   return { era: t.pitcherEra(tid), verdict: t.rematchVerdict(tid), h3, h2, h1 };
 }
-/* last 3 games' hits (oldest to most recent), then the pitcher's season
-   ERA — no boxes, no header labels, just the numbers themselves. */
+/* last 3 games' batting score (oldest to most recent), then the pitcher's
+   season ERA — no boxes, no header labels, just the numbers themselves. */
 function PBBoxRow({ s, dark }) {
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:PB_GAP }}>
-      <HitNum hits={s.h3} dark={dark} />
-      <HitNum hits={s.h2} dark={dark} />
-      <HitNum hits={s.h1} big dark={dark} />
+      <BatScoreNum score={s.h3} dark={dark} />
+      <BatScoreNum score={s.h2} dark={dark} />
+      <BatScoreNum score={s.h1} big dark={dark} />
       <span style={{ width:MID_GAP, flexShrink:0 }} />
       <EraNum era={s.era} verdict={s.verdict} dark={dark} />
     </div>
@@ -1258,7 +1341,7 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, dark }) {
   );
 }
 
-/* "HITS"/"ERA" column labels — rendered up in the card's own time/FINAL row
+/* "BAT"/"ERA" column labels — rendered up in the card's own time/FINAL row
    (see CalCard) rather than a dedicated header row, so they don't add any
    extra height to the card. Uses the exact same gap as PBBoxRow so each
    label sits centered directly over its numbers, not just its own slot. */
@@ -1269,7 +1352,7 @@ function PBHeaderLabels({ dark }) {
   );
   return (
     <div style={{ display:"flex", alignItems:"center", gap:PB_GAP }}>
-      {label("HITS", PB_BOX_W*3+PB_GAP*2)}
+      {label("BAT", PB_BOX_W*3+PB_GAP*2)}
       <span style={{ width:MID_GAP, flexShrink:0 }} />
       {label("ERA", ERA_BOX_W)}
     </div>
