@@ -1166,14 +1166,19 @@ const TREND_SLOTS = [
 /* a monospace font gives "." the same full character-cell width as a digit,
    which visibly wastes room in these small fixed-width number boxes (badly
    enough that the boldest one was overflowing its box by a couple of
-   pixels). Splits a decimal string like "9.1" or "12.34" so just the dot's
-   own cell can be narrowed — the digits stay full monospace width either
-   side of it, so nothing about the digits themselves shifts or resizes. */
+   pixels). Splits a decimal string like "9.1" or "12.34" so the dot's own
+   cell can be narrowed — but the "." glyph itself isn't drawn centered
+   within its own cell (most fonts give it a lopsided side-bearing so it
+   hugs the preceding digit), so text-align:center on a narrowed box still
+   came out closer to the left digit. Draws a plain circle instead, sized
+   and placed by hand, so it's genuinely equidistant from both digits. */
 function TightDecimal({ text }) {
   const i = text.indexOf(".");
   if (i === -1) return text;
-  return <>{text.slice(0,i)}<span style={{ display:"inline-block", width:"0.3em",
-    textAlign:"center" }}>.</span>{text.slice(i+1)}</>;
+  return <>{text.slice(0,i)}<span style={{ display:"inline-flex", width:"0.32em", height:"1em",
+    verticalAlign:"text-bottom", justifyContent:"center", alignItems:"flex-end" }}>
+    <span style={{ width:"0.14em", height:"0.14em", borderRadius:"50%", background:"currentColor",
+      marginBottom:"0.02em" }} /></span>{text.slice(i+1)}</>;
 }
 
 /* the pitcher's season ERA (unrounded past the hundredth — no border around
