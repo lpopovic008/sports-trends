@@ -992,12 +992,13 @@ function TravelTrends({ tags, setTag, onReady }) {
       return era!=null ? era : null;
     };
 
-    // "the gauntlet": this team is in the middle of (or starting) a run of
-    // 2-3 straight games against a starter with a sub-3.00 ERA. Scans the
-    // team's own probable-pitcher schedule for the maximal consecutive
-    // stretch of qualifying starters that includes this game — a game with
-    // no posted starter yet, or an unknown ERA, simply breaks the run there,
-    // same "actual games, not calendar days" logic as the other streaks.
+    // "the gauntlet": this team just came through a run of 2-3 straight
+    // games against a starter with a sub-3.00 ERA — looks strictly at the
+    // games BEFORE this one (today's own opposing starter doesn't count
+    // toward it), same as the other "yesterday"-style trend markers. A game
+    // with no posted starter yet, or an unknown ERA, simply breaks the run
+    // there, same "actual games, not calendar days" logic as the other
+    // streaks.
     const gauntlet = [];
     [[g.awayId,g.awayName],[g.homeId,g.homeName]].forEach(([tid,tname])=>{
       const sched = scheduleMap[tid];
@@ -1009,11 +1010,8 @@ function TravelTrends({ tags, setTag, onReady }) {
         const era = pid ? faced[pid]?.season?.era : null;
         return era!=null && era < 3.00;
       };
-      if (!qualifies(idx)) return;
-      let lo=idx, hi=idx;
-      while (lo>0 && qualifies(lo-1)) lo--;
-      while (hi<sched.length-1 && qualifies(hi+1)) hi++;
-      const runLen = hi-lo+1;
+      let runLen = 0;
+      for (let i=idx-1; i>=0 && qualifies(i); i--) runLen++;
       if (runLen>=2) gauntlet.push({ teamId:tid, team:tname, len:runLen });
     });
 
@@ -1194,7 +1192,7 @@ const TREND_SLOTS = [
   { key:"late",   color:C.late,   label:"Late go-ahead",
     desc:"Team never led until the 8th inning or later yesterday" },
   { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
-    desc:"Facing 2-3 straight starters with a sub-3.00 ERA" },
+    desc:"Just faced 2-3 straight starters with a sub-3.00 ERA" },
   { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel", color:C.travel, label:"B2B travel",
@@ -2750,7 +2748,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
-            {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Facing 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
+            {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Just faced 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
           </div>
         )}
 
