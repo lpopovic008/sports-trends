@@ -1171,14 +1171,17 @@ const TREND_SLOTS = [
    within its own cell (most fonts give it a lopsided side-bearing so it
    hugs the preceding digit), so text-align:center on a narrowed box still
    came out closer to the left digit. Draws a plain circle instead, sized
-   and placed by hand, so it's genuinely equidistant from both digits. */
+   and placed by hand: an empty inline-block with no explicit vertical-align
+   has no baseline of its own, so its bottom margin edge sits exactly on the
+   surrounding text's baseline — `bottom:0.03em` then lifts it from there to
+   0.1em above baseline, matching where a real period's ink actually sits
+   (measured via canvas text metrics at this font/weight). */
 function TightDecimal({ text }) {
   const i = text.indexOf(".");
   if (i === -1) return text;
-  return <>{text.slice(0,i)}<span style={{ display:"inline-flex", width:"0.32em", height:"1em",
-    verticalAlign:"text-bottom", justifyContent:"center", alignItems:"flex-end" }}>
-    <span style={{ width:"0.14em", height:"0.14em", borderRadius:"50%", background:"currentColor",
-      marginBottom:"0.02em" }} /></span>{text.slice(i+1)}</>;
+  return <>{text.slice(0,i)}<span style={{ display:"inline-block", position:"relative",
+    bottom:"0.03em", width:"0.14em", height:"0.14em", margin:"0 0.09em",
+    borderRadius:"50%", background:"currentColor" }} />{text.slice(i+1)}</>;
 }
 
 /* the pitcher's season ERA (unrounded past the hundredth — no border around
