@@ -33,6 +33,7 @@ const C = {
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#A0EE26",          /* neon lime: momentum wave */
+  gauntlet:"#FF3B30",      /* neon red: a brutal stretch of ace pitching ahead */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -451,6 +452,7 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
   const [hitsMap, setHitsMap] = useState({});  // teamId -> { date -> hits }
   const [battingScoreMap, setBattingScoreMap] = useState({});  // teamId -> { date -> 0-10 score }
+  const [scheduleMap, setScheduleMap] = useState({});  // teamId -> [{date, oppPid}] sorted ascending
   const [modal, setModal] = useState(null);    // { date, g, t } of clicked game
   const [now, setNow] = useState(()=>new Date());
   useEffect(()=>{ const id=setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(id); }, []);
@@ -470,7 +472,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     // cleared here) so a manual refresh doesn't unmount the scroll
     // container and reset which day is in view
     setErr("");
-    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBattingScoreMap({}); }
+    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBattingScoreMap({}); setScheduleMap({}); }
     setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
@@ -482,6 +484,10 @@ function TravelTrends({ tags, setTag, onReady }) {
       const j = await r.json();
       const byTeamDate = {};   // teamId -> { date -> venueTz }
       const dayGames = {};     // date -> [games]
+      const scheduleByTeam = {};  // teamId -> [{date, oppPid}] — every probable
+                                  // starter each team is scheduled to face across
+                                  // the visible window, in order, for the gauntlet
+                                  // (2-3 straight sub-3.00-ERA starters) trend
       (j.dates||[]).forEach(d=>{
         dayGames[d.date] = [];
         (d.games||[]).forEach(g=>{
@@ -505,8 +511,11 @@ function TravelTrends({ tags, setTag, onReady }) {
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
+          if (hp?.id) (scheduleByTeam[away.id] = scheduleByTeam[away.id]||[]).push({ date:d.date, oppPid:hp.id });
+          if (ap?.id) (scheduleByTeam[home.id] = scheduleByTeam[home.id]||[]).push({ date:d.date, oppPid:ap.id });
         });
       });
+      Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.date.localeCompare(b.date)));
 
       const buildList = (date) => {
         const prev = addDays(date,-1);
@@ -635,6 +644,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         return { date:d, games: last===-1 ? [] : col.slice(0,last+1) };
       });
       setDays(out);
+      setScheduleMap(scheduleByTeam);
 
       // situational-trend data already loaded for today — the refresh button
       // only needed live scores/state, so stop here and leave it alone.
@@ -982,6 +992,31 @@ function TravelTrends({ tags, setTag, onReady }) {
       return era!=null ? era : null;
     };
 
+    // "the gauntlet": this team is in the middle of (or starting) a run of
+    // 2-3 straight games against a starter with a sub-3.00 ERA. Scans the
+    // team's own probable-pitcher schedule for the maximal consecutive
+    // stretch of qualifying starters that includes this game — a game with
+    // no posted starter yet, or an unknown ERA, simply breaks the run there,
+    // same "actual games, not calendar days" logic as the other streaks.
+    const gauntlet = [];
+    [[g.awayId,g.awayName],[g.homeId,g.homeName]].forEach(([tid,tname])=>{
+      const sched = scheduleMap[tid];
+      if (!sched) return;
+      const idx = sched.findIndex(s=>s.date===date);
+      if (idx===-1) return;
+      const qualifies = (i) => {
+        const pid = sched[i]?.oppPid;
+        const era = pid ? faced[pid]?.season?.era : null;
+        return era!=null && era < 3.00;
+      };
+      if (!qualifies(idx)) return;
+      let lo=idx, hi=idx;
+      while (lo>0 && qualifies(lo-1)) lo--;
+      while (hi<sched.length-1 && qualifies(hi+1)) hi++;
+      const runLen = hi-lo+1;
+      if (runLen>=2) gauntlet.push({ teamId:tid, team:tname, len:runLen });
+    });
+
     const prevD = addDays(date,-1);
     const bigday = [];
     const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
@@ -1019,9 +1054,10 @@ function TravelTrends({ tags, setTag, onReady }) {
     echo.forEach(e=>add(e.teamId, "echo"));
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
+    gauntlet.forEach(x=>add(x.teamId, "gauntlet"));
 
-    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0;
-    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, any,
+    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 || gauntlet.length>0;
+    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, gauntlet, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null,
       rematchVerdict:(tid)=>rematchVerdict[tid] || null,
@@ -1149,7 +1185,7 @@ const MAIN_H = 19;                         // a team's row height
 const BASES_W = 26;                        // reserved for the live bases display — never shifts
 const CARD_H = 58;
 
-/* fixed situational-trend slots, rendered as a 1x4 row per team (away row on
+/* fixed situational-trend slots, rendered as a 1x5 row per team (away row on
    top, home row on bottom — matching the Game/Pitcher-Batter sections). add
    new trends here and every card + the legend adjust automatically. */
 const TREND_SLOTS = [
@@ -1157,11 +1193,18 @@ const TREND_SLOTS = [
     desc:"Team scored 10+ runs yesterday" },
   { key:"late",   color:C.late,   label:"Late go-ahead",
     desc:"Team never led until the 8th inning or later yesterday" },
+  { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
+    desc:"Facing 2-3 straight starters with a sub-3.00 ERA" },
   { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel", color:C.travel, label:"B2B travel",
     desc:"West yesterday, East today on back-to-back days" },
 ];
+// total rendered width of the trend-box strip — a fixed constant (the slot
+// count never changes per-game), used to reserve matching blank space in
+// the header row so the time/FINAL label's own right edge lines up with
+// the trend boxes' right edge one row below.
+const TRENDS_W = BOX_W*TREND_SLOTS.length + BOX_GAP*(TREND_SLOTS.length-1);
 
 /* a monospace font gives "." the same full character-cell width as a digit,
    which visibly wastes room in these small fixed-width number boxes (badly
@@ -1362,10 +1405,11 @@ function GameSection({ g, aw, hm, awWon, hmWon, final, live, dark }) {
   );
 }
 
-/* "BAT"/"ERA" column labels — rendered up in the card's own time/FINAL row
-   (see CalCard) rather than a dedicated header row, so they don't add any
-   extra height to the card. Uses the exact same gap as PBBoxRow so each
-   label sits centered directly over its numbers, not just its own slot. */
+/* "BAT"/"ERA" column labels, plus a blank slot reserved the exact width of
+   the trend-box strip so the time/FINAL label (which fills that slot, see
+   StatsHeaderRow) lines up with the trend boxes one row below. Uses the
+   exact same gap as PBBoxRow so each label sits centered directly over its
+   numbers, not just its own slot. */
 function PBHeaderLabels({ dark }) {
   const label = (text, width) => (
     <div style={{ width, textAlign:"center", fontFamily:MONO, fontSize:7, fontWeight:700,
@@ -1380,39 +1424,60 @@ function PBHeaderLabels({ dark }) {
   );
 }
 
-/* column 2 — Pitcher/Batter: last 3 games' hits and the pitcher's season
-   ERA, one row per team. */
-function PitcherBatterSection({ g, t, dark }) {
+/* the merged pitcher/batter + trend-indicator column, right-aligned as one
+   unit. This column is the row's only "auto" (stretchy) track besides the
+   game column — whatever leftover width the two of them split keeps
+   growing on the *outside* of this unit (between the bases display and the
+   BAT numbers) since the whole unit is anchored to the right, so the ERA
+   box stays tight against the first trend box regardless of viewport, and
+   the trend boxes stay flush against the card's actual right wall instead
+   of trailing off with blank space after them (this matters most on
+   mobile, where the card is narrowest relative to its fixed-width content
+   and that leftover space is largest). Big Day gets a "!" marker when the
+   team scored 10+ runs in each of its last two games, on top of the box
+   simply being lit for the one-game version. */
+function StatsRow({ tid, t, dark }) {
   return (
-    <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
-      <div style={{ display:"flex", alignItems:"center" }}>
-        <PBBoxRow s={pitcherBatterStats(t, g.awayId)} dark={dark} />
-      </div>
-      <div style={{ display:"flex", alignItems:"center" }}>
-        <PBBoxRow s={pitcherBatterStats(t, g.homeId)} dark={dark} />
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end" }}>
+      <PBBoxRow s={pitcherBatterStats(t, tid)} dark={dark} />
+      <span style={{ width:7, flexShrink:0 }} />
+      <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
+        {TREND_SLOTS.map(slot=>{
+          const present = t.keysFor(tid).has(slot.key);
+          const inner = slot.key==="bigday" && t.bigDayStreak(tid) ? "!" : null;
+          return <TrendBox key={slot.key} present={present} color={slot.color} inner={inner}
+            title={present ? slot.label : undefined} dark={dark} />;
+        })}
       </div>
     </div>
   );
 }
-
-/* column 3 — Trends: a row of 4 situational-trend boxes per team. Big Day
-   gets a "!" marker when the team scored 10+ runs in each of its last two
-   games, on top of the box simply being lit for the one-game version. */
-function TrendsSection({ g, t, dark }) {
-  const row = (tid) => (
-    <div style={{ display:"flex", alignItems:"center", gap:BOX_GAP }}>
-      {TREND_SLOTS.map(slot=>{
-        const present = t.keysFor(tid).has(slot.key);
-        const inner = slot.key==="bigday" && t.bigDayStreak(tid) ? "!" : null;
-        return <TrendBox key={slot.key} present={present} color={slot.color} inner={inner}
-          title={present ? slot.label : undefined} dark={dark} />;
-      })}
-    </div>
-  );
+function StatsAndTrends({ g, t, dark }) {
   return (
     <div style={{ display:"grid", gridTemplateRows:`${MAIN_H}px ${MAIN_H}px` }}>
-      {row(g.awayId)}
-      {row(g.homeId)}
+      <StatsRow tid={g.awayId} t={t} dark={dark} />
+      <StatsRow tid={g.homeId} t={t} dark={dark} />
+    </div>
+  );
+}
+
+/* header-row mirror of StatsRow: BAT/ERA labels, then a blank slot exactly
+   TRENDS_W wide holding the time/FINAL/LIVE label right-aligned within it —
+   same structure, same 7px gap, so this row's content lines up with the
+   real numbers and trend boxes in the row below regardless of how wide
+   this (also right-aligned, also "auto") column ends up being. */
+function StatsHeaderRow({ dark, live, timeLabel }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end" }}>
+      <PBHeaderLabels dark={dark} />
+      <span style={{ width:7, flexShrink:0 }} />
+      <div style={{ width:TRENDS_W, display:"flex", alignItems:"center", justifyContent:"flex-end",
+        gap:3, fontFamily:MONO, fontSize:8, lineHeight:1.2,
+        color: live ? "#E5142B" : (dark?C.darkTextSoft:C.ruleDark), fontWeight: live ? 700 : 400 }}>
+        {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+          flexShrink:0 }} />}
+        {timeLabel}
+      </div>
     </div>
   );
 }
@@ -1456,13 +1521,17 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div className="ts-card-grid" style={{ display:"grid",
-        // the game and pitcher/batter columns are "max-content", not "auto"
-        // — an "auto" track stretches to soak up any leftover row width,
-        // which pushed the bases column off-center (see below) and left a
-        // wide gap between the ERA box and the trend-indicator boxes that
-        // should sit right next to it. Only the trend column is left "auto",
-        // so any leftover space trails after the last indicator box instead.
-        gridTemplateColumns: showInd ? `max-content ${BASES_W}px max-content auto` : `max-content ${BASES_W}px`,
+        // the game column and the merged pitcher/batter+trends column are
+        // both "auto" — CSS splits leftover row width EQUALLY between
+        // tracks sharing that sizing function, and since the game column's
+        // content is left-anchored while the merged column's content is
+        // right-anchored (see StatsRow), that equal split lands as
+        // matching growth on either side of the bases column, keeping it
+        // centered — while every gap *inside* the merged column (ERA to
+        // the trend boxes, trend boxes to the card's own right wall) stays
+        // exactly fixed regardless of viewport, because that column's own
+        // content doesn't shift internally, only its total width does.
+        gridTemplateColumns: showInd ? `auto ${BASES_W}px auto` : `max-content ${BASES_W}px`,
         gridTemplateRows:"auto auto", columnGap:7, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
         {/* the live bases display gets its own column spanning both rows —
@@ -1470,19 +1539,23 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
             squeezed into just the two team rows below it. */}
         <div style={{ gridColumn:2, gridRow:"1 / span 2", display:"flex",
           alignItems:"center", justifyContent:"center" }}>{bases}</div>
-        {showInd && <div style={{ gridColumn:3, gridRow:1 }}><PBHeaderLabels dark={dark} /></div>}
-        <div style={{ gridColumn: showInd?4:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
-          display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
-          color: live ? "#E5142B" : (dark?C.darkTextSoft:C.ruleDark), fontWeight: live ? 700 : 400 }}>
-          {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
-            flexShrink:0 }} />}
-          {final ? "FINAL" : live ? "LIVE" : time}
-        </div>
+        {showInd ? (
+          <div style={{ gridColumn:3, gridRow:1 }}>
+            <StatsHeaderRow dark={dark} live={live} timeLabel={final ? "FINAL" : live ? "LIVE" : time} />
+          </div>
+        ) : (
+          <div style={{ gridColumn:1, gridRow:1, fontFamily:MONO, fontSize:8, lineHeight:1.2,
+            display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3,
+            color: live ? "#E5142B" : (dark?C.darkTextSoft:C.ruleDark), fontWeight: live ? 700 : 400 }}>
+            {live && <span style={{ width:6, height:6, borderRadius:"50%", background:"#E5142B",
+              flexShrink:0 }} />}
+            {final ? "FINAL" : live ? "LIVE" : time}
+          </div>
+        )}
         <div style={{ gridColumn:1, gridRow:2 }}>
           <GameSection g={g} aw={aw} hm={hm} awWon={awWon} hmWon={hmWon} final={final} live={live} dark={dark} />
         </div>
-        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><PitcherBatterSection g={g} t={t} dark={dark} /></div>}
-        {showInd && <div style={{ gridColumn:4, gridRow:2 }}><TrendsSection g={g} t={t} dark={dark} /></div>}
+        {showInd && <div style={{ gridColumn:3, gridRow:2 }}><StatsAndTrends g={g} t={t} dark={dark} /></div>}
       </div>
     </div>
   );
@@ -2677,6 +2750,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Facing 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
           </div>
         )}
 
