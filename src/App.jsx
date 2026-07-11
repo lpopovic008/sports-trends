@@ -30,9 +30,9 @@ const C = {
   rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
   travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
-  late:"#FF8C1A",          /* neon orange: clutch late-night drama */
+  late:"#A0EE26",          /* neon lime: clutch late-night drama */
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
-  echo:"#A0EE26",          /* neon lime: momentum wave */
+  echo:"#FF8C1A",          /* neon orange: momentum wave */
   gauntlet:"#0FF0FC",      /* neon cyan: a brutal stretch of ace pitching, just survived */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
