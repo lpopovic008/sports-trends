@@ -1456,11 +1456,13 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
           textOverflow:"ellipsis" }}>{tag}</div>
       )}
       <div className="ts-card-grid" style={{ display:"grid",
-        // the game column is "max-content", not "auto" — an "auto" track
-        // stretches to soak up any leftover row width, which pushed the
-        // bases column off-center (flush against the pitcher/batter column
-        // instead of centered between the two hits figures either side of it)
-        gridTemplateColumns: showInd ? `max-content ${BASES_W}px auto auto` : `max-content ${BASES_W}px`,
+        // the game and pitcher/batter columns are "max-content", not "auto"
+        // — an "auto" track stretches to soak up any leftover row width,
+        // which pushed the bases column off-center (see below) and left a
+        // wide gap between the ERA box and the trend-indicator boxes that
+        // should sit right next to it. Only the trend column is left "auto",
+        // so any leftover space trails after the last indicator box instead.
+        gridTemplateColumns: showInd ? `max-content ${BASES_W}px max-content auto` : `max-content ${BASES_W}px`,
         gridTemplateRows:"auto auto", columnGap:7, rowGap:2 }}>
         <div style={{ gridColumn:1, gridRow:1 }} />
         {/* the live bases display gets its own column spanning both rows —
