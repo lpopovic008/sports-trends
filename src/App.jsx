@@ -33,7 +33,7 @@ const C = {
   late:"#FF8C1A",          /* neon orange: clutch late-night drama */
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#A0EE26",          /* neon lime: momentum wave */
-  gauntlet:"#FF3B30",      /* neon red: a brutal stretch of ace pitching ahead */
+  gauntlet:"#0FF0FC",      /* neon cyan: a brutal stretch of ace pitching, just survived */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
