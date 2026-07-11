@@ -1071,10 +1071,8 @@ function TravelTrends({ tags, setTag, onReady }) {
       {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-            gap:12, flexWrap:"wrap", marginBottom:8 }}>
-            <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s",
-              flex:"1 1 260px", minWidth:0 }}><Legend /></div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end",
+            gap:12, marginBottom:8 }}>
             <button onClick={()=>setShowIndicators(v=>!v)}
               aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
               title={showIndicators ? "Hide indicators" : "Show indicators"}
@@ -1144,6 +1142,8 @@ function TravelTrends({ tags, setTag, onReady }) {
               </div>);
             })}
           </div>
+          <div style={{ opacity: showIndicators ? 1 : 0.4, transition:"opacity 0.15s",
+            marginTop:12 }}><Legend /></div>
         </div>
       )}
 
