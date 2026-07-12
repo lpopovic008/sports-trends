@@ -778,12 +778,13 @@ function TravelTrends({ tags, setTag, onReady }) {
         } catch { /* leave unset */ }
       });
       /* ── quality-adjusted batting score: for every team shown, how well did
-         they hit in each of their last 3 games relative to the quality of
-         every pitcher they actually faced that game (not just the starter)?
-         0-10, 5.0 = exactly as many hits as that pitching staff's ERA would
-         predict. Only fetches box scores for the specific past games that
-         feed a "last 3" trio somewhere in the visible window, deduped by
-         gamePk so a shared game (e.g. yesterday's, feeding two different
+         they hit (times on base + total bases — an OPS-flavored view, not
+         just raw hits) in each of their last 3 games relative to the
+         quality of every pitcher they actually faced that game (not just
+         the starter)? 0-10, 5.0 = exactly what that pitching staff's ERA
+         would predict. Only fetches box scores for the specific past games
+         that feed a "last 3" trio somewhere in the visible window, deduped
+         by gamePk so a shared game (e.g. yesterday's, feeding two different
          cells) is only fetched once. ── */
       const neededGamePks = new Set();
       DATES.forEach(date=>{
@@ -820,11 +821,15 @@ function TravelTrends({ tags, setTag, onReady }) {
           if (!isNaN(era)) pitcherEraCache[pid] = era;
         } catch { /* fall back to league-average below */ }
       });
-      // hits per 9 innings a league-average (≈4.00 ERA) pitching staff
-      // allows — the intercept/slope here are calibrated so this formula
-      // recovers ≈8.7 H/9 at a 4.00 ERA and scales down to ≈7.2 H/9 for a
-      // 2.50-ERA ace, ≈10.2 H/9 for a 5.50-ERA arm.
-      const expectedH9 = (era) => (era!=null ? era : 4.00) + 4.7;
+      // OPS-flavored "combined production" per 9 innings a league-average
+      // (≈4.00 ERA) pitching staff allows — times-on-base (hits + walks)
+      // plus total bases (hits, plus extra credit for doubles/triples/homers)
+      // — the intercept/slope are calibrated so this recovers ≈24 at a
+      // 4.00 ERA and scales down to ≈18.5 for a 2.50-ERA ace, up to ≈29 for
+      // a 5.50-ERA arm. Uses innings (not at-bats/PA) as the common rate
+      // denominator since that's the one workload figure every pitcher
+      // stint reliably reports.
+      const expectedProd9 = (era) => 9.5 + 3.6*(era!=null ? era : 4.00);
       const battingScoreByDate = {};   // teamId -> { date -> score(0-10) }
       Object.entries(gamePkByDate).forEach(([tid, dates])=>{
         Object.entries(dates).forEach(([gd, { gamePk, side }])=>{
@@ -835,8 +840,12 @@ function TravelTrends({ tags, setTag, onReady }) {
           pitchers.forEach(p=>{
             const trueIP = ipToOuts(p.stat?.inningsPitched)/3;
             if (!trueIP) return;
-            actual += Number(p.stat?.hits)||0;
-            expected += expectedH9(pitcherEraCache[p.pid]) / 9 * trueIP;
+            const h = Number(p.stat?.hits)||0, bb = Number(p.stat?.baseOnBalls)||0;
+            const doubles = Number(p.stat?.doubles)||0, triples = Number(p.stat?.triples)||0,
+              hr = Number(p.stat?.homeRuns)||0;
+            const totalBases = h + doubles + 2*triples + 3*hr;
+            actual += (h+bb) + totalBases;
+            expected += expectedProd9(pitcherEraCache[p.pid]) / 9 * trueIP;
           });
           if (expected<=0) return;
           const score = Math.max(0, Math.min(10, 5 + 4.5*Math.log(actual/expected)));
@@ -1222,13 +1231,14 @@ function EraNum({ era, verdict, dark }) {
 }
 
 /* one of the team's last 3 games' quality-adjusted batting score (0-10, 5.0
-   = exactly as many hits as the pitching staff they faced that day would be
-   expected to allow), no border around it, just a soft highlight fill. The
-   most recent game matches the score's font/size; the two before it match
-   the game box's own hits column (small mono, muted gray). Soft green at
-   7.0+ ("hot" — meaningfully more hits than expected), soft red at 3.0 or
-   below ("cold" — meaningfully fewer) — the text itself always stays its
-   resting color, never tinted. */
+   = exactly the times-on-base + total-bases production the pitching staff
+   they faced that day would be expected to allow), no border around it,
+   just a soft highlight fill. The most recent game matches the score's
+   font/size; the two before it match the game box's own hits column (small
+   mono, muted gray). Soft green at 7.0+ ("hot" — meaningfully more
+   production than expected), soft red at 3.0 or below ("cold" —
+   meaningfully less) — the text itself always stays its resting color,
+   never tinted. */
 function BatScoreNum({ score, big=false, dark }) {
   const has = score != null;
   const bg = has && score>=7.0 ? (dark?C.darkSoftOver:C.softOver)
