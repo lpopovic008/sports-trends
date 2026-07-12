@@ -950,8 +950,9 @@ function TravelTrends({ tags, setTag, onReady }) {
       setSlateCopied("err"); setTimeout(()=>setSlateCopied(null),2000);
     }
   };
-  useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied, modalOpen: !!modal });
-  }, [load, busy, onReady, slateCopied, days, tags, modal]);
+  useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied, modalOpen: !!modal,
+    showIndicators, setShowIndicators });
+  }, [load, busy, onReady, slateCopied, days, tags, modal, showIndicators]);
 
   /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
@@ -1071,30 +1072,6 @@ function TravelTrends({ tags, setTag, onReady }) {
       {/* ── 7-day calendar; past columns aligned to today's matchups ── */}
       {days && (
         <div>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end",
-            gap:12, marginBottom:8 }}>
-            <button onClick={()=>setShowIndicators(v=>!v)}
-              aria-label={showIndicators ? "Hide indicators" : "Show indicators"}
-              title={showIndicators ? "Hide indicators" : "Show indicators"}
-              style={{ flexShrink:0, width:32, height:32, borderRadius:4,
-                border:`1px solid ${showIndicators ? C.rule : C.ink}`,
-                background: showIndicators ? "#fff" : C.ink,
-                color: showIndicators ? C.inkSoft : "#fff", cursor:"pointer",
-                display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
-              {showIndicators ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
-                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
-                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
-                  <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              )}
-            </button>
-          </div>
           <div className="ts-cal" ref={calRef} style={{ gap:5, paddingBottom:4 }}>
             {days.map(d=>{
               const isToday = d.date === start;
@@ -3138,6 +3115,30 @@ export default function App() {
                       <rect x="3" y="7" width="18" height="14" rx="2" stroke={C.ink} strokeWidth="2"/>
                       <path d="M8 7l1.5-2.5h5L16 7" stroke={C.ink} strokeWidth="2" strokeLinejoin="round"/>
                       <circle cx="12" cy="14" r="3.2" stroke={C.ink} strokeWidth="2"/>
+                    </svg>
+                  )}
+                </button>
+              )}
+              {tab==="calendar" && cal && cal.setShowIndicators && (
+                <button onClick={()=>cal.setShowIndicators(v=>!v)}
+                  aria-label={cal.showIndicators ? "Hide indicators" : "Show indicators"}
+                  title={cal.showIndicators ? "Hide indicators" : "Show indicators"}
+                  style={{ width:30, height:30, borderRadius:5,
+                    border:`1px solid ${C.ink}`,
+                    background: cal.showIndicators ? "#fff" : C.ink,
+                    color: cal.showIndicators ? C.ink : "#fff", cursor:"pointer",
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    padding:0 }}>
+                  {cal.showIndicators ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+                      <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                     </svg>
                   )}
                 </button>
