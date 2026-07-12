@@ -781,10 +781,11 @@ function TravelTrends({ tags, setTag, onReady }) {
          they hit (times on base + total bases — an OPS-flavored view, not
          just raw hits) in each of their last 3 games relative to the
          quality of every pitcher they actually faced that game (not just
-         the starter)? 0-10, 5.0 = exactly what that pitching staff's ERA
-         would predict. Only fetches box scores for the specific past games
-         that feed a "last 3" trio somewhere in the visible window, deduped
-         by gamePk so a shared game (e.g. yesterday's, feeding two different
+         the starter)? 0-10, 5.0 = exactly what that pitching staff's own
+         season rate stats (not just their ERA) would predict. Only fetches
+         box scores for the specific past games that feed a "last 3" trio
+         somewhere in the visible window, deduped by gamePk so a shared
+         game (e.g. yesterday's, feeding two different
          cells) is only fetched once. ── */
       const neededGamePks = new Set();
       DATES.forEach(date=>{
@@ -804,9 +805,13 @@ function TravelTrends({ tags, setTag, onReady }) {
       });
       // every pitcher who appeared in any of those box scores (either side —
       // a single historical game can feed both participating teams' own
-      // trios if both are shown somewhere in the window) needs a season ERA
-      // to judge the quality of the batting performance against them.
-      const pitcherEraCache = {};
+      // trios if both are shown somewhere in the window) needs their own
+      // season rate stats to judge the quality of the batting performance
+      // against them — not just their ERA, which different pitchers can
+      // reach through very different walk/home-run mixes (a control pitcher
+      // and a bat-misser can post the same ERA while allowing very
+      // different amounts of "on base for free" and "hit for power").
+      const pitcherSeasonCache = {};   // pid -> { h9, bb9, hr9, doubles9, triples9 }
       const boxPids = new Set();
       Object.values(boxCache).forEach(bx=>{
         (bx.away||[]).forEach(p=>boxPids.add(p.pid));
@@ -817,19 +822,27 @@ function TravelTrends({ tags, setTag, onReady }) {
           const r = await fetch(`${API}/people/${pid}/stats?stats=season&group=pitching&season=${SEASON}`);
           if (!r.ok) return;
           const j = await r.json();
-          const era = Number(j.stats?.[0]?.splits?.[0]?.stat?.era);
-          if (!isNaN(era)) pitcherEraCache[pid] = era;
+          const stat = j.stats?.[0]?.splits?.[0]?.stat;
+          const outs = ipToOuts(stat?.inningsPitched);
+          if (!stat || !outs) return;   // e.g. a rookie with no innings logged yet
+          pitcherSeasonCache[pid] = {
+            h9: Number(stat.hits||0)*27/outs,
+            bb9: Number(stat.baseOnBalls||0)*27/outs,
+            hr9: Number(stat.homeRuns||0)*27/outs,
+            doubles9: Number(stat.doubles||0)*27/outs,
+            triples9: Number(stat.triples||0)*27/outs,
+          };
         } catch { /* fall back to league-average below */ }
       });
-      // OPS-flavored "combined production" per 9 innings a league-average
-      // (≈4.00 ERA) pitching staff allows — times-on-base (hits + walks)
-      // plus total bases (hits, plus extra credit for doubles/triples/homers)
-      // — the intercept/slope are calibrated so this recovers ≈24 at a
-      // 4.00 ERA and scales down to ≈18.5 for a 2.50-ERA ace, up to ≈29 for
-      // a 5.50-ERA arm. Uses innings (not at-bats/PA) as the common rate
-      // denominator since that's the one workload figure every pitcher
-      // stint reliably reports.
-      const expectedProd9 = (era) => 9.5 + 3.6*(era!=null ? era : 4.00);
+      // league-average rates (roughly modern-MLB), used only when a
+      // pitcher's own season log isn't available (fetch failed, or no
+      // innings logged yet this season).
+      const LEAGUE_AVG_RATES = { h9:8.7, bb9:3.1, hr9:1.2, doubles9:1.6, triples9:0.15 };
+      // OPS-flavored "combined production" a pitcher allows per 9 innings —
+      // times-on-base (hits + walks) plus total bases (hits, plus extra
+      // credit for doubles/triples/homers) — computed directly from that
+      // specific pitcher's own season rates rather than inferred from ERA.
+      const expectedProd9 = (s) => (s.h9+s.bb9) + (s.h9 + s.doubles9 + 2*s.triples9 + 3*s.hr9);
       const battingScoreByDate = {};   // teamId -> { date -> score(0-10) }
       Object.entries(gamePkByDate).forEach(([tid, dates])=>{
         Object.entries(dates).forEach(([gd, { gamePk, side }])=>{
@@ -845,7 +858,7 @@ function TravelTrends({ tags, setTag, onReady }) {
               hr = Number(p.stat?.homeRuns)||0;
             const totalBases = h + doubles + 2*triples + 3*hr;
             actual += (h+bb) + totalBases;
-            expected += expectedProd9(pitcherEraCache[p.pid]) / 9 * trueIP;
+            expected += expectedProd9(pitcherSeasonCache[p.pid] || LEAGUE_AVG_RATES) / 9 * trueIP;
           });
           if (expected<=0) return;
           const score = Math.max(0, Math.min(10, 5 + 4.5*Math.log(actual/expected)));
