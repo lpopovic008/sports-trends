@@ -511,11 +511,13 @@ function TravelTrends({ tags, setTag, onReady }) {
             pair:[away.id,home.id].sort((x,y)=>x-y).join("-") });
           [home.id, away.id].forEach(tid=>{
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
-          if (hp?.id) (scheduleByTeam[away.id] = scheduleByTeam[away.id]||[]).push({ date:d.date, oppPid:hp.id });
-          if (ap?.id) (scheduleByTeam[home.id] = scheduleByTeam[home.id]||[]).push({ date:d.date, oppPid:ap.id });
+          // gamePk (not just date) identifies the exact game — a doubleheader
+          // puts two of these in a row for the same team on the same date
+          if (hp?.id) (scheduleByTeam[away.id] = scheduleByTeam[away.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:hp.id });
+          if (ap?.id) (scheduleByTeam[home.id] = scheduleByTeam[home.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:ap.id });
         });
       });
-      Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.date.localeCompare(b.date)));
+      Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.time.localeCompare(b.time)));
 
       const buildList = (date) => {
         const prev = addDays(date,-1);
@@ -662,14 +664,18 @@ function TravelTrends({ tags, setTag, onReady }) {
         .sort((a,b)=>a.gameDate.localeCompare(b.gameDate));
       const byTeamRes = {};    // teamId -> [{date,res}]
       const teamName = {};
-      const runsByDate = {};   // teamId -> { date -> runs scored }
-      const hitsByDate = {};   // teamId -> { date -> hits }
-      const gamePkByDate = {}; // teamId -> { date -> { gamePk, side } } — which
-                               // specific game fed that date, and which side
-                               // this team batted from (used below to look up
-                               // the opposing pitchers' box-score lines)
+      const runsByDate = {};   // teamId -> { gameTime -> runs scored }
+      const hitsByDate = {};   // teamId -> { gameTime -> hits }
+      const gamePkByDate = {}; // teamId -> { gameTime -> { gamePk, side } } — which
+                               // specific game fed that entry, and which side this
+                               // team batted from (used below to look up the
+                               // opposing pitchers' box-score lines). Keyed by the
+                               // exact game timestamp, not just the date — a
+                               // doubleheader's two games share a date, and keying
+                               // by date alone would let the second game silently
+                               // overwrite the first instead of both counting as
+                               // separate "previous games."
       finals.forEach(g=>{
-        const gd = g.officialDate || g.gameDate.slice(0,10);
         ["home","away"].forEach(side=>{
           const t = g.teams[side];
           if (typeof t.isWinner !== "boolean") return;
@@ -679,16 +685,13 @@ function TravelTrends({ tags, setTag, onReady }) {
           const runs = Number(t.score);
           if (!isNaN(runs)) {
             const m = runsByDate[t.team.id] = runsByDate[t.team.id]||{};
-            m[gd] = Math.max(m[gd] ?? 0, runs);   // max if a doubleheader
+            m[g.gameDate] = runs;
           }
           const hits = Number(g.linescore?.teams?.[side]?.hits);
           if (!isNaN(hits)) {
             const hm = hitsByDate[t.team.id] = hitsByDate[t.team.id]||{};
-            // finals is sorted chronologically, so on a doubleheader date the
-            // later game (the actual "most recent" one) is processed last and
-            // simply overwrites — not maxed against — the earlier game's hits
-            hm[gd] = hits;
-            (gamePkByDate[t.team.id] = gamePkByDate[t.team.id]||{})[gd] = { gamePk:g.gamePk, side };
+            hm[g.gameDate] = hits;
+            (gamePkByDate[t.team.id] = gamePkByDate[t.team.id]||{})[g.gameDate] = { gamePk:g.gamePk, side };
           }
         });
       });
@@ -790,11 +793,14 @@ function TravelTrends({ tags, setTag, onReady }) {
       const neededGamePks = new Set();
       DATES.forEach(date=>{
         (dayGames[date]||[]).forEach(g=>{
+          // compares against this exact game's own start time, not just its
+          // calendar date — on a doubleheader, the earlier game is a valid
+          // "previous game" for the later one despite sharing a date
           [g.awayId, g.homeId].forEach(tid=>{
             const m = gamePkByDate[tid];
             if (!m) return;
-            Object.keys(m).filter(d=>d<date).sort().reverse().slice(0,3)
-              .forEach(d=>neededGamePks.add(m[d].gamePk));
+            Object.keys(m).filter(t=>t<g.time).sort().reverse().slice(0,3)
+              .forEach(t=>neededGamePks.add(m[t].gamePk));
           });
         });
       });
@@ -843,9 +849,9 @@ function TravelTrends({ tags, setTag, onReady }) {
       // credit for doubles/triples/homers) — computed directly from that
       // specific pitcher's own season rates rather than inferred from ERA.
       const expectedProd9 = (s) => (s.h9+s.bb9) + (s.h9 + s.doubles9 + 2*s.triples9 + 3*s.hr9);
-      const battingScoreByDate = {};   // teamId -> { date -> score(0-10) }
-      Object.entries(gamePkByDate).forEach(([tid, dates])=>{
-        Object.entries(dates).forEach(([gd, { gamePk, side }])=>{
+      const battingScoreByDate = {};   // teamId -> { gameTime -> score(0-10) }
+      Object.entries(gamePkByDate).forEach(([tid, games])=>{
+        Object.entries(games).forEach(([gt, { gamePk, side }])=>{
           const bx = boxCache[gamePk];
           const pitchers = bx?.[side==="home"?"away":"home"];
           if (!pitchers || !pitchers.length) return;
@@ -862,7 +868,7 @@ function TravelTrends({ tags, setTag, onReady }) {
           });
           if (expected<=0) return;
           const score = Math.max(0, Math.min(10, 5 + 4.5*Math.log(actual/expected)));
-          (battingScoreByDate[tid] = battingScoreByDate[tid]||{})[gd] = score;
+          (battingScoreByDate[tid] = battingScoreByDate[tid]||{})[gt] = score;
         });
       });
 
@@ -1018,7 +1024,10 @@ function TravelTrends({ tags, setTag, onReady }) {
     // "the gauntlet": this team just came through a run of 2-3 straight
     // games against a starter with a sub-3.00 ERA — looks strictly at the
     // games BEFORE this one (today's own opposing starter doesn't count
-    // toward it), same as the other "yesterday"-style trend markers. A game
+    // toward it), same as the other "yesterday"-style trend markers. Matches
+    // on this exact game's gamePk (not just its date) so a doubleheader's
+    // second game correctly finds its own first game as "the previous one,"
+    // rather than an ambiguous date match landing on either game. A game
     // with no posted starter yet, or an unknown ERA, simply breaks the run
     // there, same "actual games, not calendar days" logic as the other
     // streaks.
@@ -1026,7 +1035,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     [[g.awayId,g.awayName],[g.homeId,g.homeName]].forEach(([tid,tname])=>{
       const sched = scheduleMap[tid];
       if (!sched) return;
-      const idx = sched.findIndex(s=>s.date===date);
+      const idx = sched.findIndex(s=>s.gamePk===g.gamePk);
       if (idx===-1) return;
       const qualifies = (i) => {
         const pid = sched[i]?.oppPid;
@@ -1038,33 +1047,45 @@ function TravelTrends({ tags, setTag, onReady }) {
       if (runLen>=2) gauntlet.push({ teamId:tid, team:tname, len:runLen });
     });
 
-    const prevD = addDays(date,-1);
+    // this team's most recent completed game before this one — not
+    // necessarily "yesterday" (an off-day) and not necessarily even a
+    // different calendar day (the first game of today's doubleheader, for
+    // the second game's own card).
+    const prevGameRuns = (tid) => {
+      const m = runsMap[tid];
+      if (!m) return null;
+      const priorTimes = Object.keys(m).filter(t => t < g.time).sort().reverse();
+      return priorTimes.length ? m[priorTimes[0]] : null;
+    };
     const bigday = [];
-    const aRuns = runsMap[g.awayId]?.[prevD], hRuns = runsMap[g.homeId]?.[prevD];
+    const aRuns = prevGameRuns(g.awayId), hRuns = prevGameRuns(g.homeId);
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
     // did this team score 10+ runs in each of its last two games (scanning
-    // actual played dates, not a fixed "yesterday"/"2 days ago" so an
-    // off-day doesn't break the streak check)?
+    // actual prior games by exact start time, not a fixed calendar offset,
+    // so an off-day doesn't break the streak check and a doubleheader's
+    // two games are counted as two separate games, not one)?
     const bigDayStreak = (tid) => {
       const m = runsMap[tid];
       if (!m) return false;
-      const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
-      if (pastDates.length < 2) return false;
-      return m[pastDates[0]]>=10 && m[pastDates[1]]>=10;
+      const priorTimes = Object.keys(m).filter(t => t < g.time).sort().reverse();
+      if (priorTimes.length < 2) return false;
+      return m[priorTimes[0]]>=10 && m[priorTimes[1]]>=10;
     };
 
     // this team's last 3 games' quality-adjusted batting score (0-10),
-    // left-to-right oldest to most recent — feeds the 3 batter boxes. Still
-    // scans hitsMap's played dates (an off-day shouldn't leave a box blank);
+    // left-to-right oldest to most recent — feeds the 3 batter boxes. Scans
+    // by exact prior game start time (not date) so an off-day doesn't leave
+    // a box blank and a doubleheader's earlier game still counts as the
+    // later game's own "previous game" instead of being skipped entirely;
     // the actual value shown comes from battingScoreMap.
     const hitsTrio = (tid) => {
       const m = hitsMap[tid];
       if (!m) return [null, null, null];
       const scores = battingScoreMap[tid] || {};
-      const pastDates = Object.keys(m).filter(d => d < date).sort().reverse();
-      const at = (i) => pastDates[i]!=null ? (scores[pastDates[i]] ?? null) : null;
+      const priorTimes = Object.keys(m).filter(t => t < g.time).sort().reverse();
+      const at = (i) => priorTimes[i]!=null ? (scores[priorTimes[i]] ?? null) : null;
       return [at(2), at(1), at(0)];
     };
 
@@ -1187,7 +1208,7 @@ const CARD_H = 58;
    new trends here and every card + the legend adjust automatically. */
 const TREND_SLOTS = [
   { key:"bigday", color:C.bigday, label:"Big Day",
-    desc:"Team scored 10+ runs yesterday" },
+    desc:"Scored 10+ runs in their last game" },
   { key:"late",   color:C.late,   label:"Late go-ahead",
     desc:"Team never led until the 8th inning or later yesterday" },
   { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
@@ -2747,7 +2768,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.echo.map((e,i)=><Pill key={i} color={C.echo} title="Just snapped a 10+ game win or loss streak yesterday">streak echo → {e.predicted==="W"?"win":"loss"}</Pill>)}
             {t.cb.map((c,i)=><Pill key={i} color={C.late} title="Never led until the 8th inning or later yesterday">late go-ahead {ord(c.inning)}</Pill>)}
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
-            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs yesterday">{b.team.split(" ").slice(-1)[0]} {b.runs} runs prior day</Pill>)}
+            {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs in their last game">{b.team.split(" ").slice(-1)[0]} {b.runs} runs last game</Pill>)}
             {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Just faced 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
           </div>
         )}
