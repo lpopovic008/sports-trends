@@ -114,6 +114,34 @@ const ipToOuts = (ip) => {
   const whole = Math.floor(v), frac = Math.round((v-whole)*10);
   return whole*3 + frac;
 };
+// hits+walks (times on base) plus total bases (hits, plus extra credit for
+// doubles/triples/homers when present) allowed or produced in one game/
+// stint — the same OPS-flavored "combined production" figure used by both
+// the batting score (a team's own output) and the pitcher score (what a
+// pitcher allowed), just read from whichever side's stat line.
+function combinedProduction(stat) {
+  const h = Number(stat?.hits)||0, bb = Number(stat?.baseOnBalls)||0;
+  const doubles = Number(stat?.doubles)||0, triples = Number(stat?.triples)||0, hr = Number(stat?.homeRuns)||0;
+  const totalBases = h + doubles + 2*triples + 3*hr;
+  return (h+bb) + totalBases;
+}
+// same "combined production" concept, but as a rate — per 9 innings for a
+// pitcher's own season line, or per team-game (treated as a stand-in for
+// "per 9 innings faced") for a team's season hitting line.
+function combinedProduction9(rates) {
+  return (rates.h9+rates.bb9) + (rates.h9 + rates.doubles9 + 2*rates.triples9 + 3*rates.hr9);
+}
+// roughly modern-MLB league-average rates, used only when a pitcher's or
+// team's own season log isn't available yet.
+const LEAGUE_AVG_RATES = { h9:8.7, bb9:3.1, hr9:1.2, doubles9:1.6, triples9:0.15 };
+// clamp(5 + 4.5*ln(ratio), 0, 10) — 5.0 is exactly par. `invert` flips which
+// direction "doing well" means: a batter wants actual production above
+// expected; a pitcher wants actual allowed below expected.
+function qualityScore(actual, expected, invert=false) {
+  if (!(expected>0)) return null;
+  const ratio = invert ? expected/actual : actual/expected;
+  return Math.max(0, Math.min(10, 5 + 4.5*Math.log(ratio)));
+}
 // season-average workload/rate context used to color an individual start:
 // average outs per start, hits/walks per 9 innings, and ERA.
 function pitcherSeasonAverages(splits) {
@@ -854,15 +882,6 @@ function TravelTrends({ tags, setTag, onReady }) {
           };
         } catch { /* fall back to league-average below */ }
       });
-      // league-average rates (roughly modern-MLB), used only when a
-      // pitcher's own season log isn't available (fetch failed, or no
-      // innings logged yet this season).
-      const LEAGUE_AVG_RATES = { h9:8.7, bb9:3.1, hr9:1.2, doubles9:1.6, triples9:0.15 };
-      // OPS-flavored "combined production" a pitcher allows per 9 innings —
-      // times-on-base (hits + walks) plus total bases (hits, plus extra
-      // credit for doubles/triples/homers) — computed directly from that
-      // specific pitcher's own season rates rather than inferred from ERA.
-      const expectedProd9 = (s) => (s.h9+s.bb9) + (s.h9 + s.doubles9 + 2*s.triples9 + 3*s.hr9);
       const battingScoreByDate = {};   // teamId -> { gameTime -> score(0-10) }
       Object.entries(gamePkByDate).forEach(([tid, games])=>{
         Object.entries(games).forEach(([gt, { gamePk, side }])=>{
@@ -873,16 +892,11 @@ function TravelTrends({ tags, setTag, onReady }) {
           pitchers.forEach(p=>{
             const trueIP = ipToOuts(p.stat?.inningsPitched)/3;
             if (!trueIP) return;
-            const h = Number(p.stat?.hits)||0, bb = Number(p.stat?.baseOnBalls)||0;
-            const doubles = Number(p.stat?.doubles)||0, triples = Number(p.stat?.triples)||0,
-              hr = Number(p.stat?.homeRuns)||0;
-            const totalBases = h + doubles + 2*triples + 3*hr;
-            actual += (h+bb) + totalBases;
-            expected += expectedProd9(pitcherSeasonCache[p.pid] || LEAGUE_AVG_RATES) / 9 * trueIP;
+            actual += combinedProduction(p.stat);
+            expected += combinedProduction9(pitcherSeasonCache[p.pid] || LEAGUE_AVG_RATES) / 9 * trueIP;
           });
-          if (expected<=0) return;
-          const score = Math.max(0, Math.min(10, 5 + 4.5*Math.log(actual/expected)));
-          (battingScoreByDate[tid] = battingScoreByDate[tid]||{})[gt] = score;
+          const score = qualityScore(actual, expected);
+          if (score!=null) (battingScoreByDate[tid] = battingScoreByDate[tid]||{})[gt] = score;
         });
       });
 
@@ -1617,9 +1631,13 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
 //
 // laid out as a fixed 5-column grid (not flowing text) so every stat sits
 // in the same horizontal position on every row — a double-digit value
-// never shifts the columns after it — and stretches to fill the row.
+// never shifts the columns after it — and stretches to fill the row. An
+// optional 6th column ("extra") holds the pitcher-vs-lineup quality score
+// for this exact start, alongside the opposing team's own batting score
+// and raw hit count from the game right before this one — see PitcherBlock.
 const PLINE_COLS = "minmax(0,1.15fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.85fr)";
-function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
+const PLINE_EXTRA_COL = "minmax(0,1.9fr)";
+function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
   const ref = useRef(null);
   const [fontSize, setFontSize] = useState(maxSize);
   useLayoutEffect(() => {
@@ -1642,7 +1660,7 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [s, season, maxSize, minSize]);
+  }, [s, season, extra, maxSize, minSize]);
   const st = s.stat;
   const { ipCol, hCol, erCol, bbCol, kCol } = pitcherLineColors(st, season);
 
@@ -1653,8 +1671,19 @@ function PLine({ s, season, maxSize = 13, minSize = 7.5 }) {
     [`${st.baseOnBalls} BB`,    bbCol],
     [`${st.strikeOuts} K`,      kCol],
   ];
+  if (extra) {
+    // "…" while that piece is still loading, "–" once loading finished but
+    // found nothing (e.g. no prior game on record) — same convention used
+    // everywhere else in the app.
+    const num = (v) => v===undefined ? "…" : v==null ? "–" : v.toFixed(1);
+    const hits = extra.priorHits===undefined ? "…" : extra.priorHits==null ? "–" : `${extra.priorHits}H`;
+    const pColor = extra.pitcherScore==null ? (C.inkSoft)
+      : extra.pitcherScore>=7 ? C.over : extra.pitcherScore<=3 ? C.under : C.ink;
+    cells.push([`${num(extra.pitcherScore)} · ${num(extra.priorScore)} · ${hits}`, pColor]);
+  }
   return (
-    <div ref={ref} style={{ display:"grid", gridTemplateColumns:PLINE_COLS,
+    <div ref={ref} style={{ display:"grid",
+      gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COL}` : PLINE_COLS,
       width:"100%", fontSize }}>
       {cells.map(([txt,c],i)=>(
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
@@ -1761,8 +1790,27 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     </div>
   );
 }
-function PitcherBlock({ name, pid, vsName, info, bare }) {
+function PitcherBlock({ name, pid, vsName, info, oppTeamId, bare }) {
   const [showLog, setShowLog] = useState(false);
+  // the opposing lineup's own season hitting rates — the baseline each row's
+  // pitcher score below is judged against — plus, per start, how that
+  // lineup was hitting (their own quality-adjusted score and raw hits) in
+  // the game right before this one, for "hot or cold bats" context.
+  const [oppRates, setOppRates] = useState(undefined);
+  const [priorCtx, setPriorCtx] = useState({});   // start date -> {score, hits}
+  useEffect(() => {
+    if (!oppTeamId || !info?.vs?.length) return;
+    let alive = true;
+    loadTeamSeasonHitting(oppTeamId).then(r => { if (alive) setOppRates(r); });
+    (async () => {
+      const results = await mapPool(info.vs, 3, async (s) => [s.date, await loadPriorGameContext(oppTeamId, s.date)]);
+      if (!alive) return;
+      const map = {};
+      results.forEach(([date, ctx]) => { map[date] = ctx || { score:null, hits:null }; });
+      setPriorCtx(map);
+    })();
+    return () => { alive = false; };
+  }, [oppTeamId, info]);
   return (
     <div style={ bare ? {} : { borderTop:`1px solid ${C.rule}`, padding:"12px 0" }}>
       <div style={{ fontFamily:SANS, fontSize:15, fontWeight:700 }}>
@@ -1793,14 +1841,19 @@ function PitcherBlock({ name, pid, vsName, info, bare }) {
               Has not faced them this season.</div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {info.vs.map((s,i)=>(
+              {info.vs.map((s,i)=>{
+                const pitcherScore = oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
+                const ctx = priorCtx[s.date];
+                return (
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
                   gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:34, flexShrink:0 }}>{calDay(s.date).md}</span>
                   <span style={{ fontFamily:MONO, flex:"1 1 auto", minWidth:0 }}>
-                    <PLine s={s} season={info.season} maxSize={13} /></span>
+                    <PLine s={s} season={info.season} maxSize={13} extra={{
+                      pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits }} /></span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -2093,6 +2146,74 @@ async function loadPitcherVs(pid, oppId, date) {
   } catch { return null; }
 }
 
+// a team's season-long hitting output, converted to a "per team-game" rate
+// — used the same way a pitcher's own season H9/BB9/HR9 rates judge a
+// batting performance, just flipped to judge a PITCHER's start against the
+// lineup he faced instead of a team's game against the pitcher it faced.
+async function loadTeamSeasonHitting(teamId) {
+  if (!teamId) return null;
+  try {
+    const r = await fetch(`${API}/teams/${teamId}/stats?stats=season&group=hitting&season=${SEASON}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const stat = j.stats?.[0]?.splits?.[0]?.stat;
+    const gp = Number(stat?.gamesPlayed)||0;
+    if (!stat || !gp) return null;
+    return {
+      h9: Number(stat.hits||0)/gp,
+      bb9: Number(stat.baseOnBalls||0)/gp,
+      hr9: Number(stat.homeRuns||0)/gp,
+      doubles9: Number(stat.doubles||0)/gp,
+      triples9: Number(stat.triples||0)/gp,
+    };
+  } catch { return null; }
+}
+// how a single start graded against the lineup a pitcher actually faced —
+// the mirror image of the batting score: 5.0 is exactly what that lineup's
+// own season rates predict a league-average pitcher allows them; higher is
+// a pitcher who allowed LESS than that (invert:true — see qualityScore).
+function pitcherScoreForStart(stat, oppRates) {
+  const trueIP = ipToOuts(stat?.inningsPitched)/3;
+  if (!trueIP) return null;
+  return qualityScore(combinedProduction(stat),
+    combinedProduction9(oppRates || LEAGUE_AVG_RATES)/9*trueIP, true);
+}
+// this team's most recent completed game before `beforeDate` — its own
+// quality-adjusted batting score (a plain league-average baseline here,
+// since digging up THAT game's own opposing pitchers' season rates would
+// mean yet another round of fetches) and raw hits, giving "how hot or cold
+// were the bats coming into this start" context next to a pitcher's game log.
+async function loadPriorGameContext(teamId, beforeDate) {
+  try {
+    const back = addDays(beforeDate, -14);
+    const sr = await fetch(`${API}/schedule?sportId=1&teamId=${teamId}&startDate=${back}` +
+      `&endDate=${addDays(beforeDate,-1)}&gameType=R&hydrate=linescore`);
+    if (!sr.ok) return null;
+    const sj = await sr.json();
+    const prev = (sj.dates||[]).flatMap(d=>d.games||[])
+      .filter(g=>g.status?.abstractGameState==="Final")
+      .sort((a,b)=>a.gameDate.localeCompare(b.gameDate));
+    const last = prev[prev.length-1];
+    if (!last) return null;
+    const side = last.teams.home.team.id===teamId ? "home" : "away";
+    const hits = Number(last.linescore?.teams?.[side]?.hits);
+    const bx = await loadBoxscorePitchers(last.gamePk);
+    const pitchers = bx?.[side==="home"?"away":"home"];
+    let score = null;
+    if (pitchers && pitchers.length) {
+      let actual = 0, expected = 0;
+      pitchers.forEach(p=>{
+        const trueIP = ipToOuts(p.stat?.inningsPitched)/3;
+        if (!trueIP) return;
+        actual += combinedProduction(p.stat);
+        expected += combinedProduction9(LEAGUE_AVG_RATES)/9*trueIP;
+      });
+      score = qualityScore(actual, expected);
+    }
+    return { hits: isNaN(hits)?null:hits, score };
+  } catch { return null; }
+}
+
 // season head-to-head summary between two teams
 // full per-inning line score for a finished game
 async function loadLineScore(gamePk) {
@@ -2318,7 +2439,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           <>
             <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
               color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
-            <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} bare />
+            <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} oppTeamId={oppTeamId} bare />
             {/* the probable "starter" is sometimes just a 1-2 inning opener —
                 let the viewer look up the actual bulk pitcher alongside them */}
             <AddPitcherBlock oppName={oppName} oppTeamId={oppTeamId} date={date} />
@@ -2373,7 +2494,7 @@ function AddPitcherBlock({ oppName, oppTeamId, date }) {
           aria-label="Remove this pitcher"
           style={{ position:"absolute", top:8, right:0, border:"none", background:"transparent",
             color:C.inkSoft, cursor:"pointer", fontFamily:MONO, fontSize:13, padding:4, lineHeight:1 }}>✕</button>
-        <PitcherBlock name={added.name} pid={added.id} vsName={oppName} info={info} bare />
+        <PitcherBlock name={added.name} pid={added.id} vsName={oppName} info={info} oppTeamId={oppTeamId} bare />
       </div>
     );
   }
