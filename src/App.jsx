@@ -646,7 +646,6 @@ function TravelTrends({ tags, setTag, onReady }) {
         return { date:d, games: last===-1 ? [] : col.slice(0,last+1) };
       });
       setDays(out);
-      setScheduleMap(scheduleByTeam);
 
       // situational-trend data already loaded for today — the refresh button
       // only needed live scores/state, so stop here and leave it alone.
@@ -695,6 +694,21 @@ function TravelTrends({ tags, setTag, onReady }) {
           }
         });
       });
+      // scheduleByTeam (built from the main window fetch, -3..+4 days) only
+      // covers the visible calendar; merge in any earlier games this fetch
+      // found (up to 35 days back) that aren't already in it, so "the game
+      // right before this one" can still be found correctly for a game
+      // sitting near the start of the visible window, whose real previous
+      // game may be further back than the window itself reaches.
+      Object.entries(gamePkByDate).forEach(([tid, games])=>{
+        const list = scheduleByTeam[tid] = scheduleByTeam[tid] || [];
+        const known = new Set(list.map(s=>s.gamePk));
+        Object.entries(games).forEach(([time, { gamePk }])=>{
+          if (!known.has(gamePk)) list.push({ date:time.slice(0,10), time, gamePk, oppPid:null });
+        });
+      });
+      Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.time.localeCompare(b.time)));
+      setScheduleMap(scheduleByTeam);
       // (state set together at the end so all markers appear at once, in order)
       const echoList = [];
       Object.entries(byTeamRes).forEach(([tid, res])=>{
@@ -1047,31 +1061,41 @@ function TravelTrends({ tags, setTag, onReady }) {
       if (runLen>=2) gauntlet.push({ teamId:tid, team:tname, len:runLen });
     });
 
-    // this team's most recent completed game before this one — not
-    // necessarily "yesterday" (an off-day) and not necessarily even a
-    // different calendar day (the first game of today's doubleheader, for
-    // the second game's own card).
+    // the specific game(s) immediately before this one in the team's real
+    // schedule (using scheduleMap's sequential order, same idea as the
+    // gauntlet lookup above) — NOT "the most recent completed game found
+    // anywhere," which would keep matching the same old result across every
+    // future game in the visible window whenever one or more games in
+    // between haven't been played yet.
+    const prevScheduledGames = (tid, count) => {
+      const sched = scheduleMap[tid];
+      if (!sched) return [];
+      const idx = sched.findIndex(s=>s.gamePk===g.gamePk);
+      if (idx===-1) return [];
+      return sched.slice(Math.max(0,idx-count), idx).reverse();
+    };
+    // this team's game immediately before this one — only counts if that
+    // specific game has actually been played (an unplayed game simply has
+    // no entry in runsMap, so this correctly comes back empty rather than
+    // reaching past it to some earlier result).
     const prevGameRuns = (tid) => {
-      const m = runsMap[tid];
-      if (!m) return null;
-      const priorTimes = Object.keys(m).filter(t => t < g.time).sort().reverse();
-      return priorTimes.length ? m[priorTimes[0]] : null;
+      const prev = prevScheduledGames(tid, 1)[0];
+      const runs = prev ? runsMap[tid]?.[prev.time] : null;
+      return runs!=null ? runs : null;
     };
     const bigday = [];
     const aRuns = prevGameRuns(g.awayId), hRuns = prevGameRuns(g.homeId);
     if (aRuns>=10) bigday.push({ teamId:g.awayId, team:g.awayName, runs:aRuns });
     if (hRuns>=10) bigday.push({ teamId:g.homeId, team:g.homeName, runs:hRuns });
 
-    // did this team score 10+ runs in each of its last two games (scanning
-    // actual prior games by exact start time, not a fixed calendar offset,
-    // so an off-day doesn't break the streak check and a doubleheader's
-    // two games are counted as two separate games, not one)?
+    // did this team score 10+ runs in each of the two games immediately
+    // before this one (same strict adjacency as above, not just "the last
+    // two completed games found anywhere")?
     const bigDayStreak = (tid) => {
-      const m = runsMap[tid];
-      if (!m) return false;
-      const priorTimes = Object.keys(m).filter(t => t < g.time).sort().reverse();
-      if (priorTimes.length < 2) return false;
-      return m[priorTimes[0]]>=10 && m[priorTimes[1]]>=10;
+      const [prev1, prev2] = prevScheduledGames(tid, 2);
+      if (!prev1 || !prev2) return false;
+      const r1 = runsMap[tid]?.[prev1.time], r2 = runsMap[tid]?.[prev2.time];
+      return r1>=10 && r2>=10;
     };
 
     // this team's last 3 games' quality-adjusted batting score (0-10),
