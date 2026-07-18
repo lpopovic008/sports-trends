@@ -1637,6 +1637,23 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
 // and raw hit count from the game right before this one — see PitcherBlock.
 const PLINE_COLS = "minmax(0,1.15fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.85fr)";
 const PLINE_EXTRA_COL = "minmax(0,1.9fr)";
+// column labels for a PLine row, meant to be rendered ONCE above a list of
+// PLine rows (values alone are ambiguous without a header in view).
+function PLineHeader({ extra }) {
+  return (
+    <div style={{ display:"grid", gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COL}` : PLINE_COLS,
+      width:"100%", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
+      textTransform:"uppercase", color:C.ruleDark }}>
+      {["IP","H","ER","BB","K"].map((l,i)=>(
+        <span key={l} style={{ borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0,
+          whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
+      ))}
+      {extra && <span style={{ borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
+        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+        title="Pitcher score · opponent's batting score and hits in their game before this start">Pit · Opp · H</span>}
+    </div>
+  );
+}
 function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
   const ref = useRef(null);
   const [fontSize, setFontSize] = useState(maxSize);
@@ -1665,11 +1682,11 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
   const { ipCol, hCol, erCol, bbCol, kCol } = pitcherLineColors(st, season);
 
   const cells = [
-    [`${st.inningsPitched} IP`, ipCol],
-    [`${st.hits} H`,            hCol],
-    [`${st.earnedRuns} ER`,     erCol],
-    [`${st.baseOnBalls} BB`,    bbCol],
-    [`${st.strikeOuts} K`,      kCol],
+    [`${st.inningsPitched}`, ipCol],
+    [`${st.hits}`,           hCol],
+    [`${st.earnedRuns}`,     erCol],
+    [`${st.baseOnBalls}`,    bbCol],
+    [`${st.strikeOuts}`,     kCol],
   ];
   if (extra) {
     // "…" while that piece is still loading, "–" once loading finished but
@@ -1792,9 +1809,12 @@ function PitcherSeasonModal({ pid, name, onClose }) {
 
         <div style={{ padding:"8px 0 14px" }}>
           <div style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
-            gap:6, padding:"4px 12px", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
-            textTransform:"uppercase", color:C.ruleDark }}>
-            <span>Date</span><span>Opp</span><span>Line</span>
+            gap:6, padding:"4px 12px", alignItems:"baseline" }}>
+            <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
+              textTransform:"uppercase", color:C.ruleDark }}>Date</span>
+            <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
+              textTransform:"uppercase", color:C.ruleDark }}>Opp</span>
+            <PLineHeader extra />
           </div>
           {log===undefined && <div style={{ padding:"10px 16px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>}
           {log && log.length===0 && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
@@ -1873,6 +1893,10 @@ function PitcherBlock({ name, pid, vsName, info, oppTeamId, bare }) {
               Has not faced them this season.</div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <div style={{ display:"flex", gap:10, alignItems:"baseline" }}>
+                <span style={{ minWidth:34, flexShrink:0 }} />
+                <span style={{ flex:"1 1 auto", minWidth:0 }}><PLineHeader extra /></span>
+              </div>
               {info.vs.map((s,i)=>{
                 const pitcherScore = oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
                 const ctx = priorCtx[s.date];
@@ -2463,6 +2487,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
               <div style={{ fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No pitching stats yet.</div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <PLineHeader />
                 {boxPitchers.map(p => <PitcherStatLine key={p.pid} p={p} />)}
               </div>
             )}
