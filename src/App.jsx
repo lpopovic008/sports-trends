@@ -1713,6 +1713,33 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     return () => { alive = false; };
   }, [pid]);
 
+  // per-opponent-team season hitting rates (the baseline each start's pitcher
+  // score below is judged against) and, per start, how that opponent was
+  // hitting in the game right before this one — same "hot or cold bats"
+  // context PitcherBlock shows for a single opponent, generalized here across
+  // every team this pitcher has faced all season.
+  const [oppRatesMap, setOppRatesMap] = useState({});
+  const [priorCtxMap, setPriorCtxMap] = useState({});
+  useEffect(() => {
+    if (!log || !log.length) return;
+    let alive = true;
+    const oppIds = Array.from(new Set(log.map(s=>s.opponent?.id).filter(id=>id!=null)));
+    mapPool(oppIds, 3, async (id) => [id, await loadTeamSeasonHitting(id)]).then(results => {
+      if (!alive) return;
+      const map = {};
+      results.forEach(([id, rates]) => { map[id] = rates; });
+      setOppRatesMap(map);
+    });
+    mapPool(log, 3, async (s) => [s.date, s.opponent?.id!=null ? await loadPriorGameContext(s.opponent.id, s.date) : null])
+      .then(results => {
+        if (!alive) return;
+        const map = {};
+        results.forEach(([date, ctx]) => { map[date] = ctx || { score:null, hits:null }; });
+        setPriorCtxMap(map);
+      });
+    return () => { alive = false; };
+  }, [log]);
+
   const tot = useMemo(() => {
     if (!log || !log.length) return null;
     const sum = (k)=>log.reduce((s,g)=>s+(Number(g.stat[k])||0),0);
@@ -1737,7 +1764,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
       background:"rgba(20,24,31,0.55)", display:"flex", alignItems:"flex-start",
       justifyContent:"center", padding:"max(12px, env(safe-area-inset-top)) 12px 12px", overflowY:"auto" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:C.paper,
-        border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:560, width:"100%",
+        border:`1px solid ${C.ink}`, borderRadius:6, maxWidth:680, width:"100%",
         margin:"12px 0 40px", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
         <div style={{ padding:"14px 18px", borderBottom:`2px solid ${C.ink}`,
           display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
@@ -1773,6 +1800,10 @@ function PitcherSeasonModal({ pid, name, onClose }) {
           {log && log.length===0 && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
           {log && log.map((s,i)=>{
             const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
+            const oppId = s.opponent?.id;
+            const oppRates = oppId!=null ? oppRatesMap[oppId] : null;
+            const pitcherScore = oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
+            const ctx = priorCtxMap[s.date];
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
               gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
@@ -1781,7 +1812,8 @@ function PitcherSeasonModal({ pid, name, onClose }) {
                 fontWeight: repeatOpp ? 800 : 400 }}>{
                 TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
                 || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
-              <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} /></span>
+              <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} extra={{
+                pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits }} /></span>
             </div>
             );
           })}
