@@ -1635,8 +1635,11 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
 // optional 6th column ("extra") holds the pitcher-vs-lineup quality score
 // for this exact start, alongside the opposing team's own batting score
 // and raw hit count from the game right before this one — see PitcherBlock.
-const PLINE_COLS = "minmax(0,1.15fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.85fr)";
-const PLINE_EXTRA_COL = "minmax(0,1.9fr)";
+// the 5 stat columns hold bare values now (labels live in PLineHeader above),
+// so they only need enough room for 1-3 digits — most of the row's width
+// goes to the wider "extra" pitcher-score column when present.
+const PLINE_COLS = "minmax(0,0.8fr) minmax(0,0.5fr) minmax(0,0.5fr) minmax(0,0.5fr) minmax(0,0.5fr)";
+const PLINE_EXTRA_COL = "minmax(0,3.2fr)";
 // column labels for a PLine row, meant to be rendered ONCE above a list of
 // PLine rows (values alone are ambiguous without a header in view).
 function PLineHeader({ extra }) {
@@ -1691,12 +1694,14 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
   if (extra) {
     // "…" while that piece is still loading, "–" once loading finished but
     // found nothing (e.g. no prior game on record) — same convention used
-    // everywhere else in the app.
-    const num = (v) => v===undefined ? "…" : v==null ? "–" : v.toFixed(1);
+    // everywhere else in the app. Whole-number scores (including the 0/10
+    // clamp bounds) drop the trailing ".0" — "10" reads cleaner than "10.0".
+    const fmtScore = (v) => { const r = Math.round(v*10)/10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
+    const num = (v) => v===undefined ? "…" : v==null ? "–" : fmtScore(v);
     const hits = extra.priorHits===undefined ? "…" : extra.priorHits==null ? "–" : `${extra.priorHits}H`;
     const pColor = extra.pitcherScore==null ? (C.inkSoft)
       : extra.pitcherScore>=7 ? C.over : extra.pitcherScore<=3 ? C.under : C.ink;
-    cells.push([`${num(extra.pitcherScore)} · ${num(extra.priorScore)} · ${hits}`, pColor]);
+    cells.push([`${num(extra.pitcherScore)}·${num(extra.priorScore)}·${hits}`, pColor]);
   }
   return (
     <div ref={ref} style={{ display:"grid",
