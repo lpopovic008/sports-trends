@@ -250,17 +250,13 @@ function roundedRectPath(x, left, top, w, h, r) {
   x.arcTo(left,top+h,left,top,r); x.arcTo(left,top,left+w,top,r); x.closePath();
 }
 
-// large, faint, centered logo watermark drawn LAST — over every other layer
-// including text — like a real photo watermark, instead of hiding behind
-// it. Skipped silently if the image hasn't finished decoding yet (only
-// possible if export is clicked within moments of the page loading).
-function drawLogoWatermark(x, cx, cy, cw, ch, alpha = 0.14) {
+// small logo icon in the gap between the team names and the play indicator
+// on an exported card row — skipped silently if the image hasn't finished
+// decoding yet (only possible if export is clicked within moments of the
+// page loading).
+function drawLogoIcon(x, centerX, centerY, size) {
   if (!hotNutLogoImg || !hotNutLogoImg.complete || !hotNutLogoImg.naturalWidth) return;
-  const size = Math.min(cw, ch) * 0.92;
-  x.save();
-  x.globalAlpha = alpha;
-  x.drawImage(hotNutLogoImg, cx + (cw-size)/2, cy + (ch-size)/2, size, size);
-  x.restore();
+  x.drawImage(hotNutLogoImg, centerX - size/2, centerY - size/2, size, size);
 }
 
 // a play's grade indicator box: empty outline until graded, then filled
@@ -1005,7 +1001,7 @@ function TravelTrends({ tags, setTag, onReady }) {
       x.fillText(prettyDay(start).toUpperCase(), PADX+CW, 22);
       // one card per tagged pick, matching the calendar card's own layout
       games.forEach((g,i)=>{
-        const gx = PADX, gy = HEAD + i*(RH+GAP);
+        const gx = PADX, gy = HEAD + i*(RH+GAP), midY = gy + RH/2;
         const resultTint = tagResultBg(tags[g.gamePk]);
         const final = g.isFinal && g.awayScore!=null && g.homeScore!=null;
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
@@ -1033,19 +1029,19 @@ function TravelTrends({ tags, setTag, onReady }) {
           x.fillStyle = g.homeScore>g.awayScore ? "#F2F4F7" : "#AEB7C4";
           x.fillText(String(g.homeScore), gx+CW-14, row2Y);
         }
+        // logo icon in the gap between the team names and the play — same
+        // spot on every card, going down the slate
+        drawLogoIcon(x, gx + CW*0.25, midY, 24);
         // the play: grade indicator box + green code text, anchored at the
         // same fixed indent on every card so the indicators line up going down
         const tv = stripPlayPrefix(tagText(tags[g.gamePk]));
         const entry = tags[g.gamePk];
         const gradeResult = entry && typeof entry === "object" ? entry.result : null;
-        const indentX = gx + CW*0.36, midY = gy + RH/2;
+        const indentX = gx + CW*0.36;
         drawPlayIndicator(x, gradeResult, indentX, midY-7, 14);
         const rightLimit = final ? gx+CW-40 : gx+CW-10;
         drawGreenTag(x, tv, indentX+20, midY, rightLimit-(indentX+20), 13);
       });
-      // one big watermark over the whole exported slate, drawn last so it
-      // sits on top of every card the same way a photo watermark would
-      drawLogoWatermark(x, 0, 0, W, H);
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
       console.error("copySlate failed:", e);
@@ -1686,6 +1682,12 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
 // get special treatment; the stats themselves are all the same width.
 const PLINE_COLS = "repeat(5, minmax(0,1fr))";
 const PLINE_EXTRA_COLS = "repeat(3, minmax(0,1fr))";
+// alternating column backgrounds (not row stripes) — each stat keeps the
+// same faint tint in every row of the log, so your eye can track a single
+// column (say, just K) straight down the list instead of losing it between
+// rows. Continues from the header so the banding reads as one continuous
+// column, not something that starts partway down.
+const PLINE_COL_BG = [C.card, "transparent", C.card, "transparent", C.card, "transparent", C.card, "transparent"];
 // column labels for a PLine row, meant to be rendered ONCE above a list of
 // PLine rows (values alone are ambiguous without a header in view).
 function PLineHeader({ extra }) {
@@ -1695,12 +1697,14 @@ function PLineHeader({ extra }) {
       textTransform:"uppercase", color:C.ruleDark }}>
       {["IP","H","ER","BB","K"].map((l,i)=>(
         <span key={l} style={{ borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0,
+          background: PLINE_COL_BG[i],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
       {extra && [["PIT","Pitcher score vs this start's lineup"],
                   ["OPP","Opponent's own batting score in their game right before this start"],
-                  ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip])=>(
+                  ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip],j)=>(
         <span key={l} title={tip} style={{ borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
+          background: PLINE_COL_BG[5+j],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
     </div>
@@ -1741,6 +1745,9 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     : { ipCol:C.ruleDark, hCol:C.ruleDark, erCol:C.ruleDark, bbCol:C.ruleDark, kCol:C.ruleDark };
   const v = (x) => x==null ? "–" : x;
 
+  // bg left undefined means "use this column's own alternating tint"
+  // (PLINE_COL_BG) — only the "similar situation" highlight below overrides
+  // it with something else.
   const cells = [
     [played ? v(st.inningsPitched) : "–", ipCol],
     [played ? v(st.hits)           : "–", hCol],
@@ -1762,8 +1769,8 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     // cells (not the pitcher score itself, not IP/H/ER/BB/K) when this
     // start's opponent context lines up with the game being previewed —
     // see PitcherSeasonModal's `similar` computation.
-    const simBg = extra.highlightSimilar ? C.softEven : "transparent";
-    cells.push([num(extra.pitcherScore), pColor, "transparent"]);
+    const simBg = extra.highlightSimilar ? C.softEven : undefined;
+    cells.push([num(extra.pitcherScore), pColor]);
     cells.push([num(extra.priorScore), C.ink, simBg]);
     cells.push([hits, C.ink, simBg]);
   }
@@ -1771,11 +1778,14 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     <div ref={ref} style={{ display:"grid",
       gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COLS}` : PLINE_COLS,
       width:"100%", fontSize }}>
-      {cells.map(([txt,c,bg],i)=>(
+      {cells.map(([txt,c,bg],i)=>{
+        const background = bg ?? PLINE_COL_BG[i];
+        return (
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
-          background: bg||"transparent", borderRadius: bg&&bg!=="transparent" ? 2 : 0,
+          background, borderRadius: bg ? 2 : 0,
           borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1923,7 +1933,7 @@ function PitcherSeasonModal({ pid, name, onClose, upcoming }) {
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
               gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline",
-              background: s.isUpcoming ? "rgba(22,162,223,0.08)" : i%2===1 ? C.card : "transparent" }}>
+              background: s.isUpcoming ? "rgba(22,162,223,0.08)" : "transparent" }}>
               <span title={s.isUpcoming ? "Upcoming — not played yet" : undefined} style={{ fontFamily:MONO, fontSize:11,
                 color: s.isUpcoming ? C.rematch : C.inkSoft,
                 fontWeight: s.isUpcoming ? 700 : 400 }}>{calDay(s.date).md}</span>
@@ -2005,8 +2015,7 @@ function PitcherBlock({ name, pid, vsName, info, oppTeamId, date, bare }) {
                 const ctx = priorCtx[s.date];
                 return (
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4,
-                  background: i%2===1 ? C.card : "transparent" }}>
+                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:34, flexShrink:0 }}>{calDay(s.date).md}</span>
                   <span style={{ fontFamily:MONO, flex:"1 1 auto", minWidth:0 }}>
                     <PLine s={s} season={info.season} maxSize={13} extra={{
@@ -2782,6 +2791,9 @@ function GameModal({ m, tags, setTag, now, onClose }) {
         x.fillStyle = g.homeScore>g.awayScore ? "#F2F4F7" : "#AEB7C4";
         x.fillText(String(g.homeScore), cx+cw-14, cy+56);
       }
+      // logo icon in the gap between the team names and the play — same
+      // spot on every card, whether or not this one has a tagged play
+      drawLogoIcon(x, cx + cw*0.27, cy + ch/2, 26);
       // the play: grade indicator box + green monospace "code" text, both
       // anchored at a fixed indent in the middle of the card
       if (tagVal) {
@@ -2792,10 +2804,6 @@ function GameModal({ m, tags, setTag, now, onClose }) {
         const rightLimit = final ? cx+cw-40 : cx+cw-10;
         drawGreenTag(x, stripPlayPrefix(tagVal), indentX+20, midY, rightLimit-(indentX+20), 14);
       }
-      // watermark drawn last, over everything, clipped to the card so it
-      // can't bleed into the paper margin around it
-      roundedRectPath(x, cx, cy, cw, ch, rr);
-      x.save(); x.clip(); drawLogoWatermark(x, cx, cy, cw, ch); x.restore();
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
       console.error("exportCard failed:", e);
