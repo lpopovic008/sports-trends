@@ -1643,31 +1643,34 @@ function CalCard({ g, t, tag, showInd=true, now, onOpen }) {
 //  BB  black within 1.0 walk of the rate their season BB/9 predicts · fewer green · more red
 //  K   black within 2 of the rate their season K/9 predicts · more green · fewer red
 //
-// laid out as a fixed 5-column grid (not flowing text) so every stat sits
-// in the same horizontal position on every row — a double-digit value
-// never shifts the columns after it — and stretches to fill the row. An
-// optional 6th column ("extra") holds the pitcher-vs-lineup quality score
-// for this exact start, alongside the opposing team's own batting score
-// and raw hit count from the game right before this one — see PitcherBlock.
-// the 5 stat columns hold bare values now (labels live in PLineHeader above),
-// so they only need enough room for 1-3 digits — most of the row's width
-// goes to the wider "extra" pitcher-score column when present.
-const PLINE_COLS = "minmax(0,0.8fr) minmax(0,0.5fr) minmax(0,0.5fr) minmax(0,0.5fr) minmax(0,0.5fr)";
-const PLINE_EXTRA_COL = "minmax(0,3.2fr)";
+// laid out as a fixed equal-width column grid (not flowing text) so every
+// stat sits in the same horizontal position on every row — a double-digit
+// value never shifts the columns after it — and stretches to fill the row.
+// 3 optional extra columns ("extra") hold the pitcher-vs-lineup quality
+// score for this exact start, the opposing team's own batting score, and
+// its raw hit count from the game right before this one — see PitcherBlock.
+// every stat column (base 5, plus the 3 extra ones when present) gets an
+// equal share of the row's width — only Date/Opp (sized by their callers)
+// get special treatment; the stats themselves are all the same width.
+const PLINE_COLS = "repeat(5, minmax(0,1fr))";
+const PLINE_EXTRA_COLS = "repeat(3, minmax(0,1fr))";
 // column labels for a PLine row, meant to be rendered ONCE above a list of
 // PLine rows (values alone are ambiguous without a header in view).
 function PLineHeader({ extra }) {
   return (
-    <div style={{ display:"grid", gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COL}` : PLINE_COLS,
+    <div style={{ display:"grid", gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COLS}` : PLINE_COLS,
       width:"100%", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
       textTransform:"uppercase", color:C.ruleDark }}>
       {["IP","H","ER","BB","K"].map((l,i)=>(
         <span key={l} style={{ borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0,
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
-      {extra && <span style={{ borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
-        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
-        title="Pitcher score · opponent's batting score and hits in their game before this start">Pit · Opp · H</span>}
+      {extra && [["PIT","Pitcher score vs this start's lineup"],
+                  ["OPP","Opponent's own batting score in their game right before this start"],
+                  ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip])=>(
+        <span key={l} title={tip} style={{ borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
+          whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
+      ))}
     </div>
   );
 }
@@ -1695,15 +1698,23 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [s, season, extra, maxSize, minSize]);
-  const st = s.stat;
-  const { ipCol, hCol, erCol, bbCol, kCol } = pitcherLineColors(st, season);
+  const st = s.stat || {};
+  // a start with no innings pitched yet (the synthetic "upcoming game" row —
+  // see PitcherSeasonModal) has nothing real to color; show flat dashes
+  // instead of running it through pitcherLineColors (which would read its
+  // all-zero/undefined fields as real, unusually good numbers).
+  const played = st.inningsPitched != null;
+  const { ipCol, hCol, erCol, bbCol, kCol } = played
+    ? pitcherLineColors(st, season)
+    : { ipCol:C.ruleDark, hCol:C.ruleDark, erCol:C.ruleDark, bbCol:C.ruleDark, kCol:C.ruleDark };
+  const v = (x) => x==null ? "–" : x;
 
   const cells = [
-    [`${st.inningsPitched}`, ipCol],
-    [`${st.hits}`,           hCol],
-    [`${st.earnedRuns}`,     erCol],
-    [`${st.baseOnBalls}`,    bbCol],
-    [`${st.strikeOuts}`,     kCol],
+    [played ? v(st.inningsPitched) : "–", ipCol],
+    [played ? v(st.hits)           : "–", hCol],
+    [played ? v(st.earnedRuns)     : "–", erCol],
+    [played ? v(st.baseOnBalls)    : "–", bbCol],
+    [played ? v(st.strikeOuts)     : "–", kCol],
   ];
   if (extra) {
     // "…" while that piece is still loading, "–" once loading finished but
@@ -1712,17 +1723,25 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     // clamp bounds) drop the trailing ".0" — "10" reads cleaner than "10.0".
     const fmtScore = (v) => { const r = Math.round(v*10)/10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
     const num = (v) => v===undefined ? "…" : v==null ? "–" : fmtScore(v);
-    const hits = extra.priorHits===undefined ? "…" : extra.priorHits==null ? "–" : `${extra.priorHits}H`;
+    const hits = extra.priorHits===undefined ? "…" : extra.priorHits==null ? "–" : String(extra.priorHits);
     const pColor = extra.pitcherScore==null ? (C.inkSoft)
       : extra.pitcherScore>=7 ? C.over : extra.pitcherScore<=3 ? C.under : C.ink;
-    cells.push([`${num(extra.pitcherScore)}·${num(extra.priorScore)}·${hits}`, pColor]);
+    // "similar situation" softly highlights just the two opponent-context
+    // cells (not the pitcher score itself, not IP/H/ER/BB/K) when this
+    // start's opponent context lines up with the game being previewed —
+    // see PitcherSeasonModal's `similar` computation.
+    const simBg = extra.highlightSimilar ? C.softEven : "transparent";
+    cells.push([num(extra.pitcherScore), pColor, "transparent"]);
+    cells.push([num(extra.priorScore), C.ink, simBg]);
+    cells.push([hits, C.ink, simBg]);
   }
   return (
     <div ref={ref} style={{ display:"grid",
-      gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COL}` : PLINE_COLS,
+      gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COLS}` : PLINE_COLS,
       width:"100%", fontSize }}>
-      {cells.map(([txt,c],i)=>(
+      {cells.map(([txt,c,bg],i)=>(
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
+          background: bg||"transparent", borderRadius: bg&&bg!=="transparent" ? 2 : 0,
           borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
       ))}
     </div>
@@ -1741,7 +1760,7 @@ async function loadPitcherSeason(pid) {
   } catch { return []; }
 }
 
-function PitcherSeasonModal({ pid, name, onClose }) {
+function PitcherSeasonModal({ pid, name, onClose, upcoming }) {
   const [log, setLog] = useState(undefined);
   useEffect(() => {
     let alive = true;
@@ -1749,24 +1768,39 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     return () => { alive = false; };
   }, [pid]);
 
+  // the game this pitcher is actually lined up for (from PitcherBlock, which
+  // only exists for a not-yet-played game) tacked onto the front of the log
+  // as a placeholder row — no line to show yet, but its "opponent's last
+  // game" context can still be pulled just like any other start. Skipped if
+  // the real gameLog already has an entry for that date (e.g. it's since
+  // been played and posted).
+  const displayLog = useMemo(() => {
+    if (!log) return log;
+    if (!upcoming?.teamId || !upcoming?.date) return log;
+    if (log.some(s => s.date === upcoming.date)) return log;
+    const placeholder = { date: upcoming.date, opponent: { id: upcoming.teamId }, stat: {}, isUpcoming: true };
+    return [placeholder, ...log].sort((a,b) => b.date.localeCompare(a.date));
+  }, [log, upcoming]);
+
   // per-opponent-team season hitting rates (the baseline each start's pitcher
   // score below is judged against) and, per start, how that opponent was
   // hitting in the game right before this one — same "hot or cold bats"
   // context PitcherBlock shows for a single opponent, generalized here across
-  // every team this pitcher has faced all season.
+  // every team this pitcher has faced all season (plus the upcoming game,
+  // if any — see displayLog above).
   const [oppRatesMap, setOppRatesMap] = useState({});
   const [priorCtxMap, setPriorCtxMap] = useState({});
   useEffect(() => {
-    if (!log || !log.length) return;
+    if (!displayLog || !displayLog.length) return;
     let alive = true;
-    const oppIds = Array.from(new Set(log.map(s=>s.opponent?.id).filter(id=>id!=null)));
+    const oppIds = Array.from(new Set(displayLog.map(s=>s.opponent?.id).filter(id=>id!=null)));
     mapPool(oppIds, 3, async (id) => [id, await loadTeamSeasonHitting(id)]).then(results => {
       if (!alive) return;
       const map = {};
       results.forEach(([id, rates]) => { map[id] = rates; });
       setOppRatesMap(map);
     });
-    mapPool(log, 3, async (s) => [s.date, s.opponent?.id!=null ? await loadPriorGameContext(s.opponent.id, s.date) : null])
+    mapPool(displayLog, 3, async (s) => [s.date, s.opponent?.id!=null ? await loadPriorGameContext(s.opponent.id, s.date) : null])
       .then(results => {
         if (!alive) return;
         const map = {};
@@ -1774,7 +1808,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
         setPriorCtxMap(map);
       });
     return () => { alive = false; };
-  }, [log]);
+  }, [displayLog]);
 
   const tot = useMemo(() => {
     if (!log || !log.length) return null;
@@ -1788,12 +1822,21 @@ function PitcherSeasonModal({ pid, name, onClose }) {
   // season averages for coloring each start's line relative to this pitcher's own pace
   const seasonAvg = useMemo(() => pitcherSeasonAverages(log), [log]);
 
-  // count starts per opponent so a repeat matchup can be bolded in the log
+  // count starts per opponent (including the upcoming one) so a repeat
+  // matchup can be flagged in the log
   const oppCounts = useMemo(() => {
     const m = {};
-    (log||[]).forEach(s=>{ const id = s.opponent?.id; if (id!=null) m[id] = (m[id]||0)+1; });
+    (displayLog||[]).forEach(s=>{ const id = s.opponent?.id; if (id!=null) m[id] = (m[id]||0)+1; });
     return m;
-  }, [log]);
+  }, [displayLog]);
+
+  // the situation this pitcher is actually walking into today: the upcoming
+  // opponent's own batting score + hits in their game right before this one.
+  // Any past start where the opponent was in a similarly hot/cold spot
+  // (±1 on both) gets its own opponent-context cells softly highlighted.
+  const refCtx = upcoming?.date ? priorCtxMap[upcoming.date] : null;
+  const isSimilar = (ctx) => !!(refCtx?.score!=null && refCtx?.hits!=null && ctx?.score!=null && ctx?.hits!=null
+    && Math.abs(ctx.score-refCtx.score)<=1 && Math.abs(ctx.hits-refCtx.hits)<=1);
 
   return (
     <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
@@ -1836,23 +1879,32 @@ function PitcherSeasonModal({ pid, name, onClose }) {
             <PLineHeader extra />
           </div>
           {log===undefined && <div style={{ padding:"10px 16px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>}
-          {log && log.length===0 && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
-          {log && log.map((s,i)=>{
+          {log && log.length===0 && !displayLog?.length && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
+          {displayLog && displayLog.map((s,i)=>{
             const repeatOpp = s.opponent?.id!=null && oppCounts[s.opponent.id] > 1;
             const oppId = s.opponent?.id;
             const oppRates = oppId!=null ? oppRatesMap[oppId] : null;
-            const pitcherScore = oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
+            const pitcherScore = s.isUpcoming ? null
+              : oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
             const ctx = priorCtxMap[s.date];
+            const highlightSimilar = !s.isUpcoming && isSimilar(ctx);
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
-              gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft }}>{calDay(s.date).md}</span>
-              <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft,
-                fontWeight: repeatOpp ? 800 : 400 }}>{
+              gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline",
+              background: s.isUpcoming ? "rgba(22,162,223,0.08)" : i%2===1 ? C.card : "transparent" }}>
+              <span title={s.isUpcoming ? "Upcoming — not played yet" : undefined} style={{ fontFamily:MONO, fontSize:11,
+                color: s.isUpcoming ? C.rematch : C.inkSoft,
+                fontWeight: s.isUpcoming ? 700 : 400 }}>{calDay(s.date).md}</span>
+              <span style={{ fontFamily:MONO, fontSize:11, display:"inline-block", width:"fit-content",
+                color: repeatOpp ? C.rematch : C.inkSoft,
+                fontWeight: repeatOpp ? 800 : 400,
+                background: repeatOpp ? "rgba(22,162,223,0.20)" : "transparent",
+                border: repeatOpp ? `1px solid ${C.rematch}` : "1px solid transparent",
+                borderRadius: repeatOpp ? 3 : 0, padding: repeatOpp ? "1px 4px" : 0 }}>{
                 TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
                 || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
               <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} extra={{
-                pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits }} /></span>
+                pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits, highlightSimilar }} /></span>
             </div>
             );
           })}
@@ -1861,7 +1913,7 @@ function PitcherSeasonModal({ pid, name, onClose }) {
     </div>
   );
 }
-function PitcherBlock({ name, pid, vsName, info, oppTeamId, bare }) {
+function PitcherBlock({ name, pid, vsName, info, oppTeamId, date, bare }) {
   const [showLog, setShowLog] = useState(false);
   // the opposing lineup's own season hitting rates — the baseline each row's
   // pitcher score below is judged against — plus, per start, how that
@@ -1921,7 +1973,8 @@ function PitcherBlock({ name, pid, vsName, info, oppTeamId, bare }) {
                 const ctx = priorCtx[s.date];
                 return (
                 <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4 }}>
+                  gap:10, alignItems:"baseline", borderBottom:`1px solid #EEF0F2`, paddingBottom:4,
+                  background: i%2===1 ? C.card : "transparent" }}>
                   <span style={{ fontFamily:MONO, fontSize:11, color:C.inkSoft, minWidth:34, flexShrink:0 }}>{calDay(s.date).md}</span>
                   <span style={{ fontFamily:MONO, flex:"1 1 auto", minWidth:0 }}>
                     <PLine s={s} season={info.season} maxSize={13} extra={{
@@ -1933,7 +1986,8 @@ function PitcherBlock({ name, pid, vsName, info, oppTeamId, bare }) {
           )}
         </div>
       )}
-      {showLog && <PitcherSeasonModal pid={pid} name={name} onClose={()=>setShowLog(false)} />}
+      {showLog && <PitcherSeasonModal pid={pid} name={name} onClose={()=>setShowLog(false)}
+        upcoming={oppTeamId && date ? { teamId:oppTeamId, date } : null} />}
     </div>
   );
 }
@@ -2515,7 +2569,7 @@ function TeamPanel({ teamName, lineup, oppName, pitcherName, pitcherId, pitcherI
           <>
             <div style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.12em", textTransform:"uppercase",
               color:C.ruleDark, marginBottom:4 }}>Starting pitcher</div>
-            <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} oppTeamId={oppTeamId} bare />
+            <PitcherBlock name={pitcherName} pid={pitcherId} vsName={oppName} info={pitcherInfo} oppTeamId={oppTeamId} date={date} bare />
             {/* the probable "starter" is sometimes just a 1-2 inning opener —
                 let the viewer look up the actual bulk pitcher alongside them */}
             <AddPitcherBlock oppName={oppName} oppTeamId={oppTeamId} date={date} />
@@ -2570,7 +2624,7 @@ function AddPitcherBlock({ oppName, oppTeamId, date }) {
           aria-label="Remove this pitcher"
           style={{ position:"absolute", top:8, right:0, border:"none", background:"transparent",
             color:C.inkSoft, cursor:"pointer", fontFamily:MONO, fontSize:13, padding:4, lineHeight:1 }}>✕</button>
-        <PitcherBlock name={added.name} pid={added.id} vsName={oppName} info={info} oppTeamId={oppTeamId} bare />
+        <PitcherBlock name={added.name} pid={added.id} vsName={oppName} info={info} oppTeamId={oppTeamId} date={date} bare />
       </div>
     );
   }
