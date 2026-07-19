@@ -3,6 +3,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
+import hotNutLogo from "./assets/hot-nut-logo.png";
 
 /* ───────────────────────────── palette ─────────────────────────────
    Box-score / stat-sheet identity. Cool newsprint paper, ink-black
@@ -3053,9 +3054,8 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
 * { -webkit-tap-highlight-color: transparent; }
 `;
 
-// empty/fillable box on a play's row, left of its name — click to pick it as
-// a standout play. Filled state is a placeholder emoji for now; swap for the
-// user's own logo graphic once supplied.
+// empty/fillable box on a play's row, left of its name — click to pick it
+// as a standout play; fills with the hot nut logo once picked.
 function PlayStarBox({ starred, onToggle, size = 22 }) {
   return (
     <button onClick={onToggle} title={starred ? "Unpick this play" : "Pick this play"}
@@ -3064,8 +3064,8 @@ function PlayStarBox({ starred, onToggle, size = 22 }) {
         border:`1px solid ${starred ? C.ink : C.rule}`,
         background: starred ? C.ink : "#fff",
         display:"flex", alignItems:"center", justifyContent:"center",
-        fontSize:size*0.62, lineHeight:1, padding:0 }}>
-      {starred ? "🌰" : ""}
+        overflow:"hidden", padding:0 }}>
+      {starred && <img src={hotNutLogo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />}
     </button>
   );
 }
@@ -3199,11 +3199,13 @@ function TagsView({ tags, setResult, setStarred }) {
             <button onClick={()=>setOnlyStarred(v=>!v)}
               aria-label={onlyStarred ? "Showing only picked plays — click to show all" : "Show only picked plays"}
               title={onlyStarred ? "Showing only picked plays" : "Show only picked plays"}
-              style={{ width:26, height:26, borderRadius:2, cursor:"pointer", flexShrink:0,
+              style={{ width:26, height:26, borderRadius:"50%", cursor:"pointer", flexShrink:0,
                 border:`1px solid ${onlyStarred?"#fff":"rgba(255,255,255,0.25)"}`,
-                background: onlyStarred?"#fff":"transparent",
+                background: onlyStarred?"#fff":"transparent", opacity: onlyStarred?1:0.55,
                 display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, lineHeight:1, padding:0 }}>🌰</button>
+                overflow:"hidden", padding: onlyStarred?2:0 }}>
+              <img src={hotNutLogo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:"50%" }} />
+            </button>
             <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
               {FILTERS.map(([id,lbl])=>(
                 <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
