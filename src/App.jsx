@@ -1696,14 +1696,14 @@ function PLineHeader({ extra }) {
       width:"100%", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
       textTransform:"uppercase", color:C.ruleDark }}>
       {["IP","H","ER","BB","K"].map((l,i)=>(
-        <span key={l} style={{ paddingLeft: 6,
+        <span key={l} style={{ paddingLeft: 6, paddingTop:4, paddingBottom:4,
           background: PLINE_COL_BG[i],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
       {extra && [["PIT","Pitcher score vs this start's lineup"],
                   ["OPP","Opponent's own batting score in their game right before this start"],
                   ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip],j)=>(
-        <span key={l} title={tip} style={{ paddingLeft:6,
+        <span key={l} title={tip} style={{ paddingLeft:6, paddingTop:4, paddingBottom:4,
           background: PLINE_COL_BG[5+j],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
@@ -1782,7 +1782,8 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
         const background = bg ?? PLINE_COL_BG[i];
         return (
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
-          background, borderRadius: bg ? 2 : 0, paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
+          background, borderRadius: bg ? 2 : 0, paddingLeft: i>0 ? 6 : 0,
+          paddingTop:5, paddingBottom:5, marginTop:-5, marginBottom:-5 }}>{txt}</span>
         );
       })}
     </div>
