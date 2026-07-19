@@ -3308,13 +3308,13 @@ function TagsView({ tags, setResult, setStarred }) {
             return (
               <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:10,
                 border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
-                background:tint, padding:"5px 10px" }}>
+                background:tint, padding:"5px 12px" }}>
+                <PlayStarBox starred={r.starred} onToggle={()=>setStarred(r.gamePk, !r.starred)} size={20} />
                 <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700,
                   color: r.result==="W"?C.over:r.result==="L"?C.under:C.blue, flexShrink:0, width:14 }}>{r.result}</span>
                 <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:700, color:C.inkSoft,
                   flexShrink:0, whiteSpace:"nowrap" }}>
                   {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}</span>
-                <PlayStarBox starred={r.starred} onToggle={()=>setStarred(r.gamePk, !r.starred)} size={20} />
                 <span style={{ fontFamily:SANS, fontSize:13, fontWeight:600, color:C.ink,
                   whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1, minWidth:0 }}
                   title={r.text}>{r.text}</span>
