@@ -356,7 +356,20 @@ function useTags() {
     });
   };
 
-  return { tags, tagStatus, setTag, setResult };
+  // setStarred(gamePk, bool): toggle a play as a standout pick
+  const setStarred = (gamePk, starred) => {
+    setTags(prev => {
+      const entry = prev[gamePk];
+      if (!entry) return prev;
+      const obj = typeof entry === "string" ? { text:entry } : { ...entry };
+      if (starred) obj.starred = true; else delete obj.starred;
+      const next = { ...prev, [gamePk]:obj };
+      persist(next);
+      return next;
+    });
+  };
+
+  return { tags, tagStatus, setTag, setResult, setStarred };
 }
 
 /* streak echo: a team that just snapped a long W or L streak. `results` is
@@ -3040,18 +3053,37 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
 * { -webkit-tap-highlight-color: transparent; }
 `;
 
+// empty/fillable box on a play's row, left of its name — click to pick it as
+// a standout play. Filled state is a placeholder emoji for now; swap for the
+// user's own logo graphic once supplied.
+function PlayStarBox({ starred, onToggle, size = 22 }) {
+  return (
+    <button onClick={onToggle} title={starred ? "Unpick this play" : "Pick this play"}
+      aria-label={starred ? "Unpick this play" : "Pick this play"}
+      style={{ width:size, height:size, borderRadius:3, cursor:"pointer", flexShrink:0,
+        border:`1px solid ${starred ? C.ink : C.rule}`,
+        background: starred ? C.ink : "#fff",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:size*0.62, lineHeight:1, padding:0 }}>
+      {starred ? "🌰" : ""}
+    </button>
+  );
+}
+
 /* ════════════════════════ TAGS VIEW ════════════════════════ */
-function TagsView({ tags, setResult }) {
+function TagsView({ tags, setResult, setStarred }) {
   const [range, setRange] = useState("all");   // all|month|lastmonth|7d|30d
+  // defaults to showing only starred plays when the tab is first opened
+  const [onlyStarred, setOnlyStarred] = useState(true);
 
   // build a list of tagged games: newest DAY first, earliest game-time first within a day
   const allRows = useMemo(() => {
     return Object.entries(tags || {})
       .map(([gamePk, entry]) => {
-        if (typeof entry === "string") return { gamePk, text:entry, date:"", time:"", away:"", home:"", result:null };
+        if (typeof entry === "string") return { gamePk, text:entry, date:"", time:"", away:"", home:"", result:null, starred:false };
         return { gamePk, text:entry.text||"", date:entry.date||"", time:entry.time||"",
           away:entry.away||"", home:entry.home||"",
-          awayId:entry.awayId, homeId:entry.homeId, result:entry.result||null };
+          awayId:entry.awayId, homeId:entry.homeId, result:entry.result||null, starred:!!entry.starred };
       })
       .filter(r => r.text)
       .sort((a,b) => {
@@ -3079,13 +3111,14 @@ function TagsView({ tags, setResult }) {
       const d=new Date(today); d.setDate(d.getDate()-29); from=iso(d); label="Last 30 days";
     }
     const filtered = allRows.filter(r => {
+      if (onlyStarred && !r.starred) return false;
       if (!r.date) return range === "all";      // undated tags only show in All time
       if (from && r.date < from) return false;
       if (to && r.date > to) return false;
       return true;
     });
     return { rows: filtered, rangeLabel: label };
-  }, [allRows, range]);
+  }, [allRows, range, onlyStarred]);
 
   const wins = rows.filter(r=>r.result==="W").length;
   const losses = rows.filter(r=>r.result==="L").length;
@@ -3162,13 +3195,23 @@ function TagsView({ tags, setResult }) {
           <span style={{ fontFamily:MONO, fontSize:11, letterSpacing:"0.18em",
             textTransform:"uppercase", color:"rgba(255,255,255,0.6)" }}>Track Record</span>
           {/* filters */}
-          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
-            {FILTERS.map(([id,lbl])=>(
-              <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
-                border:`1px solid ${range===id?"#fff":"rgba(255,255,255,0.25)"}`, borderRadius:2,
-                background:range===id?"#fff":"transparent", color:range===id?C.ink:"rgba(255,255,255,0.75)",
-                fontFamily:MONO, fontSize:10, letterSpacing:"0.04em", textTransform:"uppercase",
-                cursor:"pointer" }}>{lbl}</button>))}
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+            <button onClick={()=>setOnlyStarred(v=>!v)}
+              aria-label={onlyStarred ? "Showing only picked plays — click to show all" : "Show only picked plays"}
+              title={onlyStarred ? "Showing only picked plays" : "Show only picked plays"}
+              style={{ width:26, height:26, borderRadius:2, cursor:"pointer", flexShrink:0,
+                border:`1px solid ${onlyStarred?"#fff":"rgba(255,255,255,0.25)"}`,
+                background: onlyStarred?"#fff":"transparent",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:14, lineHeight:1, padding:0 }}>🌰</button>
+            <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+              {FILTERS.map(([id,lbl])=>(
+                <button key={id} onClick={()=>setRange(id)} style={{ padding:"4px 9px",
+                  border:`1px solid ${range===id?"#fff":"rgba(255,255,255,0.25)"}`, borderRadius:2,
+                  background:range===id?"#fff":"transparent", color:range===id?C.ink:"rgba(255,255,255,0.75)",
+                  fontFamily:MONO, fontSize:10, letterSpacing:"0.04em", textTransform:"uppercase",
+                  cursor:"pointer" }}>{lbl}</button>))}
+            </div>
           </div>
         </div>
 
@@ -3243,7 +3286,11 @@ function TagsView({ tags, setResult }) {
       <Eyebrow n="01">Plays · newest first{range!=="all" ? ` · ${rangeLabel.toLowerCase()}` : ""}</Eyebrow>
       {rows.length===0 ? (
         <div style={{ padding:"18px 4px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>
-          No plays in this range.</div>
+          {onlyStarred && allRows.some(r=>!r.starred)
+            ? <>No 🌰 plays in this range. <button onClick={()=>setOnlyStarred(false)}
+                style={{ font:"inherit", color:C.blue, textDecoration:"underline", cursor:"pointer",
+                  border:"none", background:"transparent", padding:0 }}>Show all plays</button></>
+            : "No plays in this range."}</div>
       ) : (
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:14 }}>
         {rows.map(r => {
@@ -3265,6 +3312,7 @@ function TagsView({ tags, setResult }) {
                 <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:700, color:C.inkSoft,
                   flexShrink:0, whiteSpace:"nowrap" }}>
                   {r.away && r.home ? `${TEAM_ABBR[r.awayId]||r.away}@${TEAM_ABBR[r.homeId]||r.home}` : ""}</span>
+                <PlayStarBox starred={r.starred} onToggle={()=>setStarred(r.gamePk, !r.starred)} size={20} />
                 <span style={{ fontFamily:SANS, fontSize:13, fontWeight:600, color:C.ink,
                   whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1, minWidth:0 }}
                   title={r.text}>{r.text}</span>
@@ -3284,6 +3332,7 @@ function TagsView({ tags, setResult }) {
             <div key={r.gamePk} style={{ display:"flex", alignItems:"center", gap:12,
               border:`1px solid ${C.rule}`, borderLeft:`4px solid ${edge}`, borderRadius:4,
               background:tint, padding:"10px 12px" }}>
+              <PlayStarBox starred={r.starred} onToggle={()=>setStarred(r.gamePk, !r.starred)} />
               <div style={{ minWidth:0, flex:1 }}>
                 <div style={{ fontFamily:MONO, fontSize:11, fontWeight:700, letterSpacing:"0.04em",
                   color:C.inkSoft }}>
@@ -3314,7 +3363,7 @@ function TagsView({ tags, setResult }) {
 
 export default function App() {
   const [tab, setTab] = useState("calendar");
-  const { tags, tagStatus, setTag, setResult } = useTags();
+  const { tags, tagStatus, setTag, setResult, setStarred } = useTags();
   const [cal, setCal] = useState(null);   // { load, busy } from TravelTrends
 
   useEffect(() => {
@@ -3407,9 +3456,15 @@ export default function App() {
         </header>
         <div style={{ height:6, borderBottom:`1px solid ${C.rule}`, marginBottom:18 }} />
 
-        {tab==="tags"
-          ? <TagsView tags={tags} setResult={setResult} />
-          : <TravelTrends tags={tags} setTag={setTag} onReady={setCal} />}
+        {/* both views stay mounted always — hidden with CSS rather than
+            unmounted — so switching tabs never throws away the calendar's
+            already-loaded schedule/stats and forces a refetch */}
+        <div style={{ display: tab==="tags" ? "block" : "none" }}>
+          <TagsView tags={tags} setResult={setResult} setStarred={setStarred} />
+        </div>
+        <div style={{ display: tab==="calendar" ? "block" : "none" }}>
+          <TravelTrends tags={tags} setTag={setTag} onReady={setCal} />
+        </div>
 
         <footer style={{ marginTop:40, paddingTop:14, borderTop:`1px solid ${C.rule}`,
           fontFamily:MONO, fontSize:10.5, color:C.ruleDark, lineHeight:1.7 }}>
