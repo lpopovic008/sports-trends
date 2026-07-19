@@ -1696,14 +1696,14 @@ function PLineHeader({ extra }) {
       width:"100%", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
       textTransform:"uppercase", color:C.ruleDark }}>
       {["IP","H","ER","BB","K"].map((l,i)=>(
-        <span key={l} style={{ borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0,
+        <span key={l} style={{ paddingLeft: 6,
           background: PLINE_COL_BG[i],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
       {extra && [["PIT","Pitcher score vs this start's lineup"],
                   ["OPP","Opponent's own batting score in their game right before this start"],
                   ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip],j)=>(
-        <span key={l} title={tip} style={{ borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
+        <span key={l} title={tip} style={{ paddingLeft:6,
           background: PLINE_COL_BG[5+j],
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
@@ -1782,8 +1782,7 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
         const background = bg ?? PLINE_COL_BG[i];
         return (
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
-          background, borderRadius: bg ? 2 : 0,
-          borderLeft: i>0 ? `1px solid ${C.rule}` : "none", paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
+          background, borderRadius: bg ? 2 : 0, paddingLeft: i>0 ? 6 : 0 }}>{txt}</span>
         );
       })}
     </div>
@@ -2355,7 +2354,10 @@ function pitcherScoreForStart(stat, oppRates) {
 // were the bats coming into this start" context next to a pitcher's game log.
 async function loadPriorGameContext(teamId, beforeDate) {
   try {
-    const back = addDays(beforeDate, -14);
+    // 25 days back — comfortably covers the ~4-day All-Star break and any
+    // rare rainout pileup, so a real prior game isn't missed just because
+    // the search window was too tight
+    const back = addDays(beforeDate, -25);
     const sr = await fetch(`${API}/schedule?sportId=1&teamId=${teamId}&startDate=${back}` +
       `&endDate=${addDays(beforeDate,-1)}&gameType=R&hydrate=linescore`);
     if (!sr.ok) return null;
@@ -2365,7 +2367,11 @@ async function loadPriorGameContext(teamId, beforeDate) {
       .sort((a,b)=>a.gameDate.localeCompare(b.gameDate));
     const last = prev[prev.length-1];
     if (!last) return null;
-    const side = last.teams.home.team.id===teamId ? "home" : "away";
+    // Number(...) on both sides — teamId can come in as a string when this
+    // is called with a gameLog entry's opponent.id (PitcherSeasonModal's
+    // historical rows), which would otherwise silently fail this match and
+    // read the wrong side's hits/pitchers on every single one of them
+    const side = Number(last.teams.home.team.id)===Number(teamId) ? "home" : "away";
     const hits = Number(last.linescore?.teams?.[side]?.hits);
     const bx = await loadBoxscorePitchers(last.gamePk);
     const pitchers = bx?.[side==="home"?"away":"home"];
