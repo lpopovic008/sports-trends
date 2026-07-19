@@ -232,6 +232,37 @@ function drawGreenTag(x, text, leftX, cy, maxW, fontSize = 14) {
   x.restore();
 }
 
+// preloaded once at module scope so it's already decoded by the time an
+// export runs. exportCard/copySlate stay synchronous right up to their
+// copyCanvas() call (see its own comment) — Safari/iOS only honors the
+// clipboard write as a direct user gesture if nothing async (like awaiting
+// an image load) happens in between, so the logo has to already be ready.
+const hotNutLogoImg = (() => {
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.src = hotNutLogo;
+  return img;
+})();
+
+function roundedRectPath(x, left, top, w, h, r) {
+  x.beginPath();
+  x.moveTo(left+r,top); x.arcTo(left+w,top,left+w,top+h,r); x.arcTo(left+w,top+h,left,top+h,r);
+  x.arcTo(left,top+h,left,top,r); x.arcTo(left,top,left+w,top,r); x.closePath();
+}
+
+// large, faint, centered logo watermark drawn LAST — over every other layer
+// including text — like a real photo watermark, instead of hiding behind
+// it. Skipped silently if the image hasn't finished decoding yet (only
+// possible if export is clicked within moments of the page loading).
+function drawLogoWatermark(x, cx, cy, cw, ch, alpha = 0.14) {
+  if (!hotNutLogoImg || !hotNutLogoImg.complete || !hotNutLogoImg.naturalWidth) return;
+  const size = Math.min(cw, ch) * 0.92;
+  x.save();
+  x.globalAlpha = alpha;
+  x.drawImage(hotNutLogoImg, cx + (cw-size)/2, cy + (ch-size)/2, size, size);
+  x.restore();
+}
+
 // a play's grade indicator box: empty outline until graded, then filled
 // solid with a check (win), ex (loss), or "P" (push).
 function drawPlayIndicator(x, result, bx, by, size = 14) {
@@ -980,9 +1011,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         const aw = TEAM_ABBR[g.awayId]||"?", hm = TEAM_ABBR[g.homeId]||"?";
         const time = final ? "FINAL" : new Date(g.time).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
         const rr = 4;
-        x.beginPath();
-        x.moveTo(gx+rr,gy); x.arcTo(gx+CW,gy,gx+CW,gy+RH,rr); x.arcTo(gx+CW,gy+RH,gx,gy+RH,rr);
-        x.arcTo(gx,gy+RH,gx,gy,rr); x.arcTo(gx,gy,gx+CW,gy,rr); x.closePath();
+        roundedRectPath(x, gx, gy, CW, RH, rr);
         x.fillStyle = "#20232A"; x.fill();
         if (resultTint) { x.fillStyle = resultTint; x.fill(); }
         x.strokeStyle = "#3A4250"; x.lineWidth = 1; x.stroke();
@@ -1014,6 +1043,9 @@ function TravelTrends({ tags, setTag, onReady }) {
         const rightLimit = final ? gx+CW-40 : gx+CW-10;
         drawGreenTag(x, tv, indentX+20, midY, rightLimit-(indentX+20), 13);
       });
+      // one big watermark over the whole exported slate, drawn last so it
+      // sits on top of every card the same way a photo watermark would
+      drawLogoWatermark(x, 0, 0, W, H);
       copyCanvas(cv, `mlb-picks-${start}.png`, setSlateCopied);
     } catch (e) {
       console.error("copySlate failed:", e);
@@ -2729,9 +2761,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
       x.fillStyle = "#E2E5EA"; x.fillRect(0,0,W,H);
       const pad = 10, cx = pad, cy = pad, cw = W-pad*2, ch = H-pad*2;
       const rr = 4;
-      x.beginPath();
-      x.moveTo(cx+rr,cy); x.arcTo(cx+cw,cy,cx+cw,cy+ch,rr); x.arcTo(cx+cw,cy+ch,cx,cy+ch,rr);
-      x.arcTo(cx,cy+ch,cx,cy,rr); x.arcTo(cx,cy,cx+cw,cy,rr); x.closePath();
+      roundedRectPath(x, cx, cy, cw, ch, rr);
       // card — dark charcoal like today's slate, with an optional soft
       // win/loss tint layered on top
       x.fillStyle = "#20232A"; x.fill();
@@ -2762,6 +2792,10 @@ function GameModal({ m, tags, setTag, now, onClose }) {
         const rightLimit = final ? cx+cw-40 : cx+cw-10;
         drawGreenTag(x, stripPlayPrefix(tagVal), indentX+20, midY, rightLimit-(indentX+20), 14);
       }
+      // watermark drawn last, over everything, clipped to the card so it
+      // can't bleed into the paper margin around it
+      roundedRectPath(x, cx, cy, cw, ch, rr);
+      x.save(); x.clip(); drawLogoWatermark(x, cx, cy, cw, ch); x.restore();
       copyCanvas(cv, `${aw}-${hm}-${(g.time||"").slice(0,10)}.png`, setCopied);
     } catch (e) {
       console.error("exportCard failed:", e);
