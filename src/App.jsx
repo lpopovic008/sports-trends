@@ -512,7 +512,10 @@ function SeqBlock({ arr, label, onPick }) {
 
 /* ════════════════════ MY TRENDS (yesterday → +5 days) ════════════════════ */
 function TravelTrends({ tags, setTag, onReady }) {
-  const start = todayISO();                    // anchor: today
+  // anchor: today by default, adjustable — see the CALENDAR tab button,
+  // which doubles as a date picker once it's already the active tab
+  const [anchor, setAnchor] = useState(todayISO());
+  const start = anchor;
   const minStreak = 10;                        // fixed threshold
   const [days, setDays] = useState(null);
   const [echoes, setEchoes] = useState(null);
@@ -1049,8 +1052,8 @@ function TravelTrends({ tags, setTag, onReady }) {
     }
   };
   useEffect(() => { if(onReady) onReady({ load, busy, copySlate, slateCopied, modalOpen: !!modal,
-    showIndicators, setShowIndicators });
-  }, [load, busy, onReady, slateCopied, days, tags, modal, showIndicators]);
+    showIndicators, setShowIndicators, anchor, setAnchor });
+  }, [load, busy, onReady, slateCopied, days, tags, modal, showIndicators, anchor]);
 
   /* which trends touch a game, attributed to the specific team they apply to */
   const gameTrends = (date, g) => {
@@ -3508,10 +3511,81 @@ function TagsView({ tags, setResult, setStarred }) {
   );
 }
 
+// small month-grid date picker that drops down from the CALENDAR tab button
+// once it's already the active tab — lets you re-anchor the whole calendar
+// view to any day instead of always sitting on today.
+function MiniDatePicker({ value, onSelect, onClose }) {
+  const [viewDate, setViewDate] = useState(() => new Date(value+"T00:00:00"));
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDocMouseDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDocMouseDown); document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const year = viewDate.getFullYear(), month = viewDate.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const startWeekday = firstOfMonth.getDay();          // 0=Sun
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayIso = todayISO();
+  const isoFor = (d) => `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+  const cells = [];
+  for (let i=0;i<startWeekday;i++) cells.push(null);
+  for (let d=1; d<=daysInMonth; d++) cells.push(d);
+
+  const navBtn = { width:24, height:24, border:`1px solid ${C.rule}`, borderRadius:3, background:"#fff",
+    color:C.ink, cursor:"pointer", fontFamily:MONO, fontSize:13, lineHeight:1,
+    display:"flex", alignItems:"center", justifyContent:"center", padding:0 };
+
+  return (
+    <div ref={ref} onClick={e=>e.stopPropagation()} style={{ position:"absolute", top:"calc(100% + 6px)", right:0,
+      zIndex:80, background:"#fff", border:`1px solid ${C.ink}`, borderRadius:6,
+      boxShadow:"0 12px 32px rgba(0,0,0,0.25)", padding:10, width:240, maxWidth:"calc(100vw - 24px)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+        <button onClick={()=>setViewDate(new Date(year, month-1, 1))} style={navBtn} aria-label="Previous month">‹</button>
+        <div style={{ fontFamily:MONO, fontSize:12, fontWeight:700, letterSpacing:"0.02em" }}>
+          {firstOfMonth.toLocaleDateString(undefined,{month:"long", year:"numeric"})}
+        </div>
+        <button onClick={()=>setViewDate(new Date(year, month+1, 1))} style={navBtn} aria-label="Next month">›</button>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2, marginBottom:4 }}>
+        {["S","M","T","W","T","F","S"].map((d,i)=>(
+          <div key={i} style={{ textAlign:"center", fontFamily:MONO, fontSize:9,
+            color:C.ruleDark, textTransform:"uppercase" }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
+        {cells.map((d,i) => {
+          if (d==null) return <div key={i} />;
+          const iso = isoFor(d);
+          const isSelected = iso===value, isToday = iso===todayIso;
+          return (
+            <button key={i} onClick={()=>onSelect(iso)} title={iso}
+              style={{ aspectRatio:"1", border: isSelected ? `1px solid ${C.ink}` : isToday ? `1px solid ${C.rematch}` : "1px solid transparent",
+                borderRadius:4, background: isSelected ? C.ink : "transparent",
+                color: isSelected ? "#fff" : isToday ? C.rematch : C.ink,
+                fontFamily:MONO, fontSize:11, fontWeight: (isToday||isSelected) ? 700 : 400,
+                cursor:"pointer" }}>{d}</button>
+          );
+        })}
+      </div>
+      <button onClick={()=>onSelect(todayIso)} style={{ marginTop:8, width:"100%", padding:"5px 0",
+        border:`1px solid ${C.rule}`, borderRadius:3, background:"#fff", color:C.ink,
+        fontFamily:MONO, fontSize:10, letterSpacing:"0.06em", textTransform:"uppercase", cursor:"pointer" }}>
+        Jump to today
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("calendar");
   const { tags, tagStatus, setTag, setResult, setStarred } = useTags();
   const [cal, setCal] = useState(null);   // { load, busy } from TravelTrends
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     document.title = "MLB";
@@ -3592,12 +3666,32 @@ export default function App() {
               )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              {[["calendar","CALENDAR"],["tags","PLAYS"]].map(([id,lbl])=>(
-                <button key={id} onClick={()=>setTab(id)} style={{ padding:"7px 15px",
-                  border:`1px solid ${tab===id?C.ink:C.rule}`, borderRadius:2,
-                  background:tab===id?C.ink:"transparent", color:tab===id?"#fff":C.inkSoft,
-                  fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
-                  cursor:"pointer" }}>{lbl}</button>))}
+              <div style={{ position:"relative" }}>
+                <button onClick={()=>{
+                    if (tab!=="calendar") { setTab("calendar"); setShowDatePicker(false); return; }
+                    setShowDatePicker(v=>!v);
+                  }}
+                  title={tab==="calendar" ? "Click again to jump to a different day" : "Calendar"}
+                  style={{ padding:"7px 15px",
+                    border:`1px solid ${tab==="calendar"?C.ink:C.rule}`, borderRadius:2,
+                    background:tab==="calendar"?C.ink:"transparent", color:tab==="calendar"?"#fff":C.inkSoft,
+                    fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
+                    cursor:"pointer" }}>
+                  {cal && cal.anchor
+                    ? new Date(cal.anchor+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"}).toUpperCase()
+                    : "CALENDAR"}
+                </button>
+                {showDatePicker && tab==="calendar" && cal && cal.setAnchor && (
+                  <MiniDatePicker value={cal.anchor}
+                    onSelect={(iso)=>{ cal.setAnchor(iso); setShowDatePicker(false); }}
+                    onClose={()=>setShowDatePicker(false)} />
+                )}
+              </div>
+              <button onClick={()=>{ setTab("tags"); setShowDatePicker(false); }} style={{ padding:"7px 15px",
+                border:`1px solid ${tab==="tags"?C.ink:C.rule}`, borderRadius:2,
+                background:tab==="tags"?C.ink:"transparent", color:tab==="tags"?"#fff":C.inkSoft,
+                fontFamily:MONO, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
+                cursor:"pointer" }}>PLAYS</button>
             </div>
           </div>
         </header>
