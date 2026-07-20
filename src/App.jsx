@@ -1688,29 +1688,33 @@ const PLINE_EXTRA_COLS = "repeat(3, minmax(0,1fr))";
 // rows. Continues from the header so the banding reads as one continuous
 // column, not something that starts partway down.
 const PLINE_COL_BG = [C.card, "transparent", C.card, "transparent", C.card, "transparent", C.card, "transparent"];
+// Date and Opp (outside PLine's own grid, in PitcherSeasonModal) share this
+// one flat tint — a distinct group from the alternating stat columns, not
+// another entry in that alternation.
+const PLINE_META_BG = "#EEF0F3";
 // column labels for a PLine row, meant to be rendered ONCE above a list of
 // PLine rows (values alone are ambiguous without a header in view).
-function PLineHeader({ extra }) {
+function PLineHeader({ extra, leftBorder }) {
   return (
     <div style={{ display:"grid", gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COLS}` : PLINE_COLS,
       width:"100%", fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
-      textTransform:"uppercase", color:C.ruleDark }}>
+      textTransform:"uppercase", color:C.ruleDark, textAlign:"center" }}>
       {["IP","H","ER","BB","K"].map((l,i)=>(
-        <span key={l} style={{ paddingLeft: 6, paddingTop:4, paddingBottom:4,
-          background: PLINE_COL_BG[i],
+        <span key={l} style={{ paddingTop:4, paddingBottom:4,
+          background: PLINE_COL_BG[i], borderLeft: (i>0 || leftBorder) ? `1px solid ${C.rule}` : "none",
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
       {extra && [["PIT","Pitcher score vs this start's lineup"],
                   ["OPP","Opponent's own batting score in their game right before this start"],
                   ["HIT","Opponent's hits in their game right before this start"]].map(([l,tip],j)=>(
-        <span key={l} title={tip} style={{ paddingLeft:6, paddingTop:4, paddingBottom:4,
-          background: PLINE_COL_BG[5+j],
+        <span key={l} title={tip} style={{ paddingTop:4, paddingBottom:4,
+          background: PLINE_COL_BG[5+j], borderLeft:`1px solid ${C.rule}`,
           whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l}</span>
       ))}
     </div>
   );
 }
-function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
+function PLine({ s, season, extra, maxSize = 13, minSize = 7.5, leftBorder }) {
   const ref = useRef(null);
   const [fontSize, setFontSize] = useState(maxSize);
   useLayoutEffect(() => {
@@ -1765,24 +1769,23 @@ function PLine({ s, season, extra, maxSize = 13, minSize = 7.5 }) {
     const hits = extra.priorHits===undefined ? "…" : extra.priorHits==null ? "–" : String(extra.priorHits);
     const pColor = extra.pitcherScore==null ? (C.inkSoft)
       : extra.pitcherScore>=7 ? C.over : extra.pitcherScore<=3 ? C.under : C.ink;
-    // "similar situation" softly highlights just the two opponent-context
-    // cells (not the pitcher score itself, not IP/H/ER/BB/K) when this
-    // start's opponent context lines up with the game being previewed —
-    // see PitcherSeasonModal's `similar` computation.
-    const simBg = extra.highlightSimilar ? C.softEven : undefined;
+    // "similar situation" softly highlights the opponent-score and
+    // opponent-hits cells independently — either can light up on its own,
+    // it doesn't take both matching the game being previewed. Never touches
+    // the pitcher score cell or IP/H/ER/BB/K. See PitcherSeasonModal.
     cells.push([num(extra.pitcherScore), pColor]);
-    cells.push([num(extra.priorScore), C.ink, simBg]);
-    cells.push([hits, C.ink, simBg]);
+    cells.push([num(extra.priorScore), C.ink, extra.highlightScore ? C.softEven : undefined]);
+    cells.push([hits, C.ink, extra.highlightHits ? C.softEven : undefined]);
   }
   return (
     <div ref={ref} style={{ display:"grid",
       gridTemplateColumns: extra ? `${PLINE_COLS} ${PLINE_EXTRA_COLS}` : PLINE_COLS,
-      width:"100%", fontSize }}>
+      width:"100%", fontSize, textAlign:"center" }}>
       {cells.map(([txt,c,bg],i)=>{
         const background = bg ?? PLINE_COL_BG[i];
         return (
         <span key={i} style={{ display:"block", color:c, whiteSpace:"nowrap", overflow:"hidden",
-          background, borderRadius: bg ? 2 : 0, paddingLeft: i>0 ? 6 : 0,
+          background, borderLeft: (i>0 || leftBorder) ? `1px solid ${C.rule}` : "none",
           paddingTop:5, paddingBottom:5, marginTop:-5, marginBottom:-5 }}>{txt}</span>
         );
       })}
@@ -1874,11 +1877,13 @@ function PitcherSeasonModal({ pid, name, onClose, upcoming }) {
 
   // the situation this pitcher is actually walking into today: the upcoming
   // opponent's own batting score + hits in their game right before this one.
-  // Any past start where the opponent was in a similarly hot/cold spot
-  // (±1 on both) gets its own opponent-context cells softly highlighted.
+  // Any past start whose own opponent-score lands within ±1 of that gets its
+  // score cell highlighted; independently, any start whose own opponent-hits
+  // lands within ±1 gets its hits cell highlighted — one can light up
+  // without the other, they're graded separately, not as a pair.
   const refCtx = upcoming?.date ? priorCtxMap[upcoming.date] : null;
-  const isSimilar = (ctx) => !!(refCtx?.score!=null && refCtx?.hits!=null && ctx?.score!=null && ctx?.hits!=null
-    && Math.abs(ctx.score-refCtx.score)<=1 && Math.abs(ctx.hits-refCtx.hits)<=1);
+  const scoreSimilar = (ctx) => refCtx?.score!=null && ctx?.score!=null && Math.abs(ctx.score-refCtx.score)<=1;
+  const hitsSimilar = (ctx) => refCtx?.hits!=null && ctx?.hits!=null && Math.abs(ctx.hits-refCtx.hits)<=1;
 
   return (
     <div onClick={e=>{ e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, zIndex:60,
@@ -1913,12 +1918,14 @@ function PitcherSeasonModal({ pid, name, onClose, upcoming }) {
 
         <div style={{ padding:"8px 0 14px" }}>
           <div style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
-            gap:6, padding:"4px 12px", alignItems:"baseline" }}>
+            padding:"4px 12px", alignItems:"baseline" }}>
             <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
-              textTransform:"uppercase", color:C.ruleDark }}>Date</span>
+              textTransform:"uppercase", color:C.ruleDark, background:PLINE_META_BG,
+              paddingTop:4, paddingBottom:4 }}>Date</span>
             <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:"0.06em",
-              textTransform:"uppercase", color:C.ruleDark }}>Opp</span>
-            <PLineHeader extra />
+              textTransform:"uppercase", color:C.ruleDark, background:PLINE_META_BG,
+              borderLeft:`1px solid ${C.rule}`, paddingLeft:6, paddingTop:4, paddingBottom:4 }}>Opp</span>
+            <PLineHeader extra leftBorder />
           </div>
           {log===undefined && <div style={{ padding:"10px 16px", fontFamily:MONO, fontSize:12, color:C.inkSoft }}>Loading…</div>}
           {log && log.length===0 && !displayLog?.length && <div style={{ padding:"10px 16px", fontFamily:SANS, fontSize:13, color:C.inkSoft }}>No {SEASON} starts found.</div>}
@@ -1929,24 +1936,29 @@ function PitcherSeasonModal({ pid, name, onClose, upcoming }) {
             const pitcherScore = s.isUpcoming ? null
               : oppRates===undefined ? undefined : pitcherScoreForStart(s.stat, oppRates);
             const ctx = priorCtxMap[s.date];
-            const highlightSimilar = !s.isUpcoming && isSimilar(ctx);
+            const highlightScore = !s.isUpcoming && scoreSimilar(ctx);
+            const highlightHits = !s.isUpcoming && hitsSimilar(ctx);
+            const metaBg = s.isUpcoming ? "rgba(22,162,223,0.14)" : PLINE_META_BG;
             return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"38px 32px minmax(0,1fr)",
-              gap:6, padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline",
-              background: s.isUpcoming ? "rgba(22,162,223,0.08)" : "transparent" }}>
+              padding:"5px 12px", borderTop:`1px solid #EEF0F2`, alignItems:"baseline" }}>
               <span title={s.isUpcoming ? "Upcoming — not played yet" : undefined} style={{ fontFamily:MONO, fontSize:11,
-                color: s.isUpcoming ? C.rematch : C.inkSoft,
-                fontWeight: s.isUpcoming ? 700 : 400 }}>{calDay(s.date).md}</span>
-              <span style={{ fontFamily:MONO, fontSize:11, display:"inline-block", width:"fit-content",
-                color: repeatOpp ? C.rematch : C.inkSoft,
-                fontWeight: repeatOpp ? 800 : 400,
-                background: repeatOpp ? "rgba(22,162,223,0.20)" : "transparent",
-                border: repeatOpp ? `1px solid ${C.rematch}` : "1px solid transparent",
-                borderRadius: repeatOpp ? 3 : 0, padding: repeatOpp ? "1px 4px" : 0 }}>{
-                TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
-                || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
-              <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} extra={{
-                pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits, highlightSimilar }} /></span>
+                color: s.isUpcoming ? C.rematch : C.inkSoft, fontWeight: s.isUpcoming ? 700 : 400,
+                background: metaBg, paddingTop:5, paddingBottom:5, marginTop:-5, marginBottom:-5 }}>{calDay(s.date).md}</span>
+              <span style={{ fontFamily:MONO, fontSize:11,
+                background: metaBg, borderLeft:`1px solid ${C.rule}`, paddingLeft:6,
+                paddingTop:5, paddingBottom:5, marginTop:-5, marginBottom:-5 }}>
+                <span style={{ display:"inline-block", width:"fit-content",
+                  color: repeatOpp ? C.rematch : C.inkSoft,
+                  fontWeight: repeatOpp ? 800 : 400,
+                  background: repeatOpp ? "rgba(22,162,223,0.20)" : "transparent",
+                  border: repeatOpp ? `1px solid ${C.rematch}` : "1px solid transparent",
+                  borderRadius: repeatOpp ? 3 : 0, padding: repeatOpp ? "1px 4px" : 0 }}>{
+                  TEAM_ABBR[s.opponent?.id] || s.opponent?.abbreviation
+                  || s.opponent?.name?.split(" ").slice(-1)[0] || "—"}</span>
+              </span>
+              <span style={{ fontFamily:MONO, minWidth:0 }}><PLine s={s} season={seasonAvg} maxSize={12.5} leftBorder extra={{
+                pitcherScore, priorScore: ctx?.score, priorHits: ctx?.hits, highlightScore, highlightHits }} /></span>
             </div>
             );
           })}
@@ -2338,6 +2350,32 @@ async function loadTeamSeasonHitting(teamId) {
     };
   } catch { return null; }
 }
+// a pitcher's own season per-9 rates — same fetch the calendar's batting
+// score already does per box score to judge a hitting performance against
+// that specific pitcher's real quality, not just a flat league-average
+// stand-in. Cached at module scope (a pitcher's season line doesn't change
+// mid-session) since loadPriorGameContext calls this once per pitcher who
+// appeared in every prior game across a whole season log.
+const pitcherSeasonRateCache = {};   // pid -> { h9, bb9, hr9, doubles9, triples9 } | null
+async function loadPitcherSeasonRates(pid) {
+  if (!pid) return null;
+  if (pid in pitcherSeasonRateCache) return pitcherSeasonRateCache[pid];
+  try {
+    const r = await fetch(`${API}/people/${pid}/stats?stats=season&group=pitching&season=${SEASON}`);
+    if (!r.ok) return (pitcherSeasonRateCache[pid] = null);
+    const j = await r.json();
+    const stat = j.stats?.[0]?.splits?.[0]?.stat;
+    const outs = ipToOuts(stat?.inningsPitched);
+    if (!stat || !outs) return (pitcherSeasonRateCache[pid] = null);   // e.g. a rookie with no innings logged yet
+    return (pitcherSeasonRateCache[pid] = {
+      h9: Number(stat.hits||0)*27/outs,
+      bb9: Number(stat.baseOnBalls||0)*27/outs,
+      hr9: Number(stat.homeRuns||0)*27/outs,
+      doubles9: Number(stat.doubles||0)*27/outs,
+      triples9: Number(stat.triples||0)*27/outs,
+    });
+  } catch { return null; }
+}
 // how a single start graded against the lineup a pitcher actually faced —
 // the mirror image of the batting score: 5.0 is exactly what that lineup's
 // own season rates predict a league-average pitcher allows them; higher is
@@ -2378,12 +2416,16 @@ async function loadPriorGameContext(teamId, beforeDate) {
     const pitchers = bx?.[side==="home"?"away":"home"];
     let score = null;
     if (pitchers && pitchers.length) {
+      // each pitcher's own season rates, same baseline the calendar's own
+      // batting score judges against — not just a flat league-average
+      // stand-in, so this number means the same thing in both places
+      const rates = await Promise.all(pitchers.map(p=>loadPitcherSeasonRates(p.pid)));
       let actual = 0, expected = 0;
-      pitchers.forEach(p=>{
+      pitchers.forEach((p,i)=>{
         const trueIP = ipToOuts(p.stat?.inningsPitched)/3;
         if (!trueIP) return;
         actual += combinedProduction(p.stat);
-        expected += combinedProduction9(LEAGUE_AVG_RATES)/9*trueIP;
+        expected += combinedProduction9(rates[i] || LEAGUE_AVG_RATES)/9*trueIP;
       });
       score = qualityScore(actual, expected);
     }
