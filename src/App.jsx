@@ -30,12 +30,12 @@ const C = {
   slump:"#0FF0FC",         /* neon cyan: cold bats, 6 or fewer hits last game */
   rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
-  travel:"#8B5CF6",        /* neon violet: jet-lagged west→east */
+  travel:"#39FF14",        /* neon green: jet-lagged west→east */
   late:"#A0EE26",          /* neon lime: clutch late-night drama */
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#FF8C1A",          /* neon orange: momentum wave */
   gauntlet:"#0FF0FC",      /* neon cyan: a brutal stretch of ace pitching, just survived */
-  revenge:"#FFD60A",       /* neon yellow: pitcher facing a team he used to play for */
+  revenge:"#8B5CF6",       /* neon violet: pitcher facing a team he used to play for */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
