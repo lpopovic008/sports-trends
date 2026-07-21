@@ -521,6 +521,7 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [echoes, setEchoes] = useState(null);
   const [comebacks, setComebacks] = useState(null);
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
+  const [formerTeams, setFormerTeams] = useState({});  // pitcherId -> Set(team ids ever played for)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
   const [hitsMap, setHitsMap] = useState({});  // teamId -> { date -> hits }
   const [battingScoreMap, setBattingScoreMap] = useState({});  // teamId -> { date -> 0-10 score }
@@ -544,7 +545,7 @@ function TravelTrends({ tags, setTag, onReady }) {
     // cleared here) so a manual refresh doesn't unmount the scroll
     // container and reset which day is in view
     setErr("");
-    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setRunsMap({}); setHitsMap({}); setBattingScoreMap({}); setScheduleMap({}); }
+    if (needIndicators) { setEchoes(null); setComebacks(null); setFaced({}); setFormerTeams({}); setRunsMap({}); setHitsMap({}); setBattingScoreMap({}); setScheduleMap({}); }
     setBusy(true);
     try {
       /* ── window schedule (travel + next-game lookup + probable pitchers) ──
@@ -866,6 +867,21 @@ function TravelTrends({ tags, setTag, onReady }) {
           facedMap[pid] = { list, season: pitcherSeasonAverages(splits) };
         } catch { /* leave unset */ }
       });
+      /* ── former team: has each probable ever pitched for the team he's
+         facing today (any prior MLB season/stint, not just this one) —
+         a "revenge game," distinct from the in-season rematch above. ── */
+      const formerTeamMap = {};
+      await mapPool([...pitcherIds], 4, async (pid)=>{
+        try {
+          const pr = await fetch(`${API}/people/${pid}/stats?stats=yearByYear&group=pitching&sportId=1`);
+          if (!pr.ok) return;
+          const pj = await pr.json();
+          const splits = pj.stats?.[0]?.splits || [];
+          const teams = new Set();
+          splits.forEach(s=>{ if (s.team?.id) teams.add(Number(s.team.id)); });
+          formerTeamMap[pid] = teams;
+        } catch { /* leave unset */ }
+      });
       /* ── quality-adjusted batting score: for every team shown, how well did
          they hit (times on base + total bases — an OPS-flavored view, not
          just raw hits) in each of their last 3 games relative to the
@@ -946,6 +962,7 @@ function TravelTrends({ tags, setTag, onReady }) {
 
       // all trend markers appear together (rematch · 10-run · late · echo · travel)
       setFaced(facedMap);
+      setFormerTeams(formerTeamMap);
       setRunsMap(runsByDate);
       setHitsMap(hitsByDate);
       setBattingScoreMap(battingScoreByDate);
@@ -1087,6 +1104,19 @@ function TravelTrends({ tags, setTag, onReady }) {
     checkRematch(g.awayPid, g.awayId, g.homeId, g.awayPname, g.homeName);
     checkRematch(g.homePid, g.homeId, g.awayId, g.homePname, g.awayName);
 
+    // "revenge game": this team's probable starter previously pitched FOR
+    // the team he's facing today, at some point in his career (not just an
+    // in-season repeat matchup, which is the rematch trend above)
+    const formerTeam = [];
+    const checkFormerTeam = (pid, teamId, oppId, pitcher, oppName) => {
+      if (!pid) return;
+      const teams = formerTeams[pid];
+      if (!teams || !teams.has(Number(oppId))) return;
+      formerTeam.push({ pitcher, pid, opp:oppName, oppId, teamId });
+    };
+    checkFormerTeam(g.awayPid, g.awayId, g.homeId, g.awayPname, g.homeName);
+    checkFormerTeam(g.homePid, g.homeId, g.awayId, g.homePname, g.awayName);
+
     // this team's probable starter's season ERA — independent of any rematch
     const pitcherEra = (tid) => {
       const pid = tid===g.awayId ? g.awayPid : tid===g.homeId ? g.homePid : null;
@@ -1180,9 +1210,10 @@ function TravelTrends({ tags, setTag, onReady }) {
     cb.forEach(c=>add(c.teamId, "late"));
     bigday.forEach(b=>add(b.teamId, "bigday"));
     gauntlet.forEach(x=>add(x.teamId, "gauntlet"));
+    formerTeam.forEach(x=>add(x.teamId, "formerTeam"));
 
-    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 || gauntlet.length>0;
-    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, gauntlet, any,
+    const any = !!g.flagged || echo.length>0 || cb.length>0 || rematch.length>0 || bigday.length>0 || gauntlet.length>0 || formerTeam.length>0;
+    return { travel:!!g.flagged, travelers:g.travelers||[], echo, cb, rematch, bigday, gauntlet, formerTeam, any,
       keysFor:(tid)=>sideKeys[tid] || new Set(),
       rematchTier:(tid)=>rematchTier[tid] || null,
       rematchVerdict:(tid)=>rematchVerdict[tid] || null,
@@ -1296,6 +1327,8 @@ const TREND_SLOTS = [
     desc:"Team never led until the 8th inning or later yesterday" },
   { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
     desc:"Just faced 2-3 straight starters with a sub-3.00 ERA" },
+  { key:"formerTeam", color:C.boom, label:"Revenge game",
+    desc:"Probable pitcher used to play for the team he's facing today" },
   { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel", color:C.travel, label:"B2B travel",
@@ -3139,6 +3172,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs in their last game">{b.team.split(" ").slice(-1)[0]} {b.runs} runs last game</Pill>)}
             {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Just faced 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
+            {t.formerTeam.map((x,i)=><Pill key={i} color={C.boom} title="Used to play for the team he's facing today">revenge game vs {x.opp.split(" ").slice(-1)[0]}</Pill>)}
           </div>
         )}
 
@@ -3185,7 +3219,7 @@ html, body { margin:0; padding:0; background:${C.paper}; overscroll-behavior-y:n
   calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left)); }
 .ts-cell { box-sizing:border-box; }
 @media (max-width:760px){
-  .ts-cal { grid-auto-flow:column; grid-auto-columns:84%; grid-template-columns:none;
+  .ts-cal { grid-auto-flow:column; grid-auto-columns:89%; grid-template-columns:none;
             overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:0; }
   .ts-cal-col { min-width:0; scroll-snap-align:start; }
   .ts-lineups { grid-template-columns:1fr; }
