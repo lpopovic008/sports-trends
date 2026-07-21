@@ -30,8 +30,8 @@ const C = {
   slump:"#0FF0FC",         /* neon cyan: cold bats, 6 or fewer hits last game */
   rematch:"#16A2DF",       /* neon blue: chess-move pitcher */
   rematchLight:"#A9E1F7",  /* light neon blue: faced but short outing */
-  travel:"#39FF14",        /* neon green: jet-lagged west→east */
-  late:"#A0EE26",          /* neon lime: clutch late-night drama */
+  travel:"#FF073A",        /* neon red: jet-lagged west→east */
+  late:"#39FF14",          /* neon green: clutch late-night drama */
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#FF8C1A",          /* neon orange: momentum wave */
   gauntlet:"#0FF0FC",      /* neon cyan: a brutal stretch of ace pitching, just survived */
