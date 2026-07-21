@@ -522,7 +522,7 @@ function TravelTrends({ tags, setTag, onReady }) {
   const [echoes, setEchoes] = useState(null);
   const [comebacks, setComebacks] = useState(null);
   const [faced, setFaced] = useState({});      // pitcherId -> Set(opponent team ids)
-  const [formerTeams, setFormerTeams] = useState({});  // pitcherId -> Set(team ids ever played for)
+  const [formerTeams, setFormerTeams] = useState({});  // pitcherId -> Set(team ids played for across 2+ seasons)
   const [runsMap, setRunsMap] = useState({});  // teamId -> { date -> runs scored }
   const [hitsMap, setHitsMap] = useState({});  // teamId -> { date -> hits }
   const [battingScoreMap, setBattingScoreMap] = useState({});  // teamId -> { date -> 0-10 score }
@@ -878,9 +878,10 @@ function TravelTrends({ tags, setTag, onReady }) {
           facedMap[pid] = { list, season: pitcherSeasonAverages(splits) };
         } catch { /* leave unset */ }
       });
-      /* ── former team: has each probable ever pitched for the team he's
-         facing today (any prior MLB season/stint, not just this one) —
-         a "revenge game," distinct from the in-season rematch above. ── */
+      /* ── former team: has each probable spent 2+ separate seasons pitching
+         for the team he's facing today (a real tenure, not just a rental
+         half-season or a mid-year rental the other way) — a "revenge game,"
+         distinct from the in-season rematch above. ── */
       const formerTeamMap = {};
       await mapPool([...pitcherIds], 4, async (pid)=>{
         try {
@@ -888,8 +889,15 @@ function TravelTrends({ tags, setTag, onReady }) {
           if (!pr.ok) return;
           const pj = await pr.json();
           const splits = pj.stats?.[0]?.splits || [];
-          const teams = new Set();
-          splits.forEach(s=>{ if (s.team?.id) teams.add(Number(s.team.id)); });
+          const seasonsByTeam = {};   // team id -> Set(season)
+          splits.forEach(s=>{
+            if (!s.team?.id) return;
+            const tid = Number(s.team.id);
+            (seasonsByTeam[tid] = seasonsByTeam[tid] || new Set()).add(s.season);
+          });
+          const teams = new Set(Object.entries(seasonsByTeam)
+            .filter(([,seasons])=>seasons.size>=2)
+            .map(([tid])=>Number(tid)));
           formerTeamMap[pid] = teams;
         } catch { /* leave unset */ }
       });
@@ -1339,7 +1347,7 @@ const TREND_SLOTS = [
   { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
     desc:"Just faced 2-3 straight starters with a sub-3.00 ERA" },
   { key:"formerTeam", color:C.revenge, label:"Revenge game",
-    desc:"Probable pitcher used to play for the team he's facing today" },
+    desc:"Probable pitcher spent 2+ seasons on the team he's facing today" },
   { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
   { key:"travel", color:C.travel, label:"B2B travel",
@@ -3185,7 +3193,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs in their last game">{b.team.split(" ").slice(-1)[0]} {b.runs} runs last game</Pill>)}
             {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Just faced 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
-            {t.formerTeam.map((x,i)=><Pill key={i} color={C.revenge} title="Used to play for the team he's facing today">revenge game vs {x.opp.split(" ").slice(-1)[0]}</Pill>)}
+            {t.formerTeam.map((x,i)=><Pill key={i} color={C.revenge} title="Spent 2+ seasons on the team he's facing today">revenge game vs {x.opp.split(" ").slice(-1)[0]}</Pill>)}
           </div>
         )}
 
