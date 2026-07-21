@@ -783,7 +783,15 @@ function TravelTrends({ tags, setTag, onReady }) {
       });
       Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.time.localeCompare(b.time)));
       setScheduleMap(scheduleByTeam);
-      // (state set together at the end so all markers appear at once, in order)
+      // set each indicator's data as soon as it's actually ready, instead of
+      // batching everything until the very end — the big-day box (needs only
+      // runsByDate, already in hand) lights up well before rematch/gauntlet
+      // /revenge (need a further pitcher fetch) or the BAT trio (needs a
+      // further box-score fetch on top of that), so the calendar fills in
+      // progressively rather than popping in all at once when everything
+      // finishes.
+      setRunsMap(runsByDate);
+      setHitsMap(hitsByDate);
       const echoList = [];
       Object.entries(byTeamRes).forEach(([tid, res])=>{
         const sig = detectStreakBreak(res, Number(minStreak)||10);
@@ -806,6 +814,7 @@ function TravelTrends({ tags, setTag, onReady }) {
           venueTz:found.venueTz });
       });
       echoList.sort((a,b)=>a.date.localeCompare(b.date));
+      setEchoes(echoList);
 
       /* ── late go-ahead win: scan yesterday's (and today's, once final)
          finals via linescore, so a comeback that completes today shows up
@@ -841,6 +850,7 @@ function TravelTrends({ tags, setTag, onReady }) {
         } catch { return null; }
       });
       const cbList = cbResults.filter(Boolean).sort((a,b)=>b.inning-a.inning);
+      setComebacks(cbList);
 
       /* ── pitcher rematch: has each probable already faced today's opponent? ── */
       const pitcherIds = new Set();
@@ -883,6 +893,11 @@ function TravelTrends({ tags, setTag, onReady }) {
           formerTeamMap[pid] = teams;
         } catch { /* leave unset */ }
       });
+      // rematch/gauntlet/revenge-game boxes and the season-ERA number all
+      // read from `faced` — light them up now, before the slower box-score
+      // fetch below (the BAT trio's data source) even starts
+      setFaced(facedMap);
+      setFormerTeams(formerTeamMap);
       /* ── quality-adjusted batting score: for every team shown, how well did
          they hit (times on base + total bases — an OPS-flavored view, not
          just raw hits) in each of their last 3 games relative to the
@@ -961,14 +976,9 @@ function TravelTrends({ tags, setTag, onReady }) {
         });
       });
 
-      // all trend markers appear together (rematch · 10-run · late · echo · travel)
-      setFaced(facedMap);
-      setFormerTeams(formerTeamMap);
-      setRunsMap(runsByDate);
-      setHitsMap(hitsByDate);
+      // the BAT trio is the last piece to resolve (its own box-score fetch
+      // pipeline runs after everything above) — see it appear last
       setBattingScoreMap(battingScoreByDate);
-      setComebacks(cbList);
-      setEchoes(echoList);
       indicatorsLoadedForRef.current = start;
     } catch (e) {
       setErr(isNet(e.message) ? "Couldn't reach the MLB schedule service." : e.message);
@@ -1377,7 +1387,7 @@ function EraNum({ era, verdict, dark }) {
   return (
     <span title="Season ERA" style={{ width:ERA_BOX_W, flexShrink:0, textAlign:"center",
       fontFamily:MONO, fontSize:8, fontWeight:700, color, whiteSpace:"nowrap",
-      background:bg, borderRadius:3 }}>{has ? <TightDecimal text={era.toFixed(2)} /> : "–"}</span>
+      background:bg, borderRadius:3, transition:"background 0.4s ease, color 0.4s ease" }}>{has ? <TightDecimal text={era.toFixed(2)} /> : "–"}</span>
   );
 }
 
@@ -1404,7 +1414,7 @@ function BatScoreNum({ score, big=false, dark }) {
     <span title={big ? "Batting score, last game" : "Batting score"} style={{ width:PB_BOX_W, flexShrink:0,
       textAlign:"center", fontFamily:MONO, fontSize: big?13:10,
       fontWeight: big?700:400, color,
-      background:bg, borderRadius:3 }}>{has ? <TightDecimal text={label} /> : "–"}</span>
+      background:bg, borderRadius:3, transition:"background 0.4s ease, color 0.4s ease" }}>{has ? <TightDecimal text={label} /> : "–"}</span>
   );
 }
 
@@ -1416,7 +1426,9 @@ function TrendBox({ present, color, title, inner, dark }) {
     <span title={title} style={{ position:"relative", width:BOX_W, height:BOX_H, borderRadius:2,
       flexShrink:0, background: present ? color : "transparent",
       boxShadow: present ? "none" : `inset 0 0 0 1.5px ${dark?C.darkOutline:C.inkSoft}`,
-      opacity: present ? 1 : 0.45, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      opacity: present ? 1 : 0.45,
+      transition:"background 0.4s ease, box-shadow 0.4s ease, opacity 0.4s ease",
+      display:"flex", alignItems:"center", justifyContent:"center" }}>
       {present && inner && <span style={{ fontFamily:MONO, fontSize:9, fontWeight:800,
         color:"#fff", lineHeight:1 }}>{inner}</span>}
     </span>
