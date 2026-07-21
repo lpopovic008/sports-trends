@@ -35,6 +35,7 @@ const C = {
   bigday:"#F4289B",        /* neon pink: 10-run scoreboard explosion */
   echo:"#FF8C1A",          /* neon orange: momentum wave */
   gauntlet:"#0FF0FC",      /* neon cyan: a brutal stretch of ace pitching, just survived */
+  revenge:"#FFD60A",       /* neon yellow: pitcher facing a team he used to play for */
 };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -1327,7 +1328,7 @@ const TREND_SLOTS = [
     desc:"Team never led until the 8th inning or later yesterday" },
   { key:"gauntlet", color:C.gauntlet, label:"The Gauntlet",
     desc:"Just faced 2-3 straight starters with a sub-3.00 ERA" },
-  { key:"formerTeam", color:C.boom, label:"Revenge game",
+  { key:"formerTeam", color:C.revenge, label:"Revenge game",
     desc:"Probable pitcher used to play for the team he's facing today" },
   { key:"echo",   color:C.echo,   label:"Streak echo",
     desc:"Team just snapped a 10+ game win or loss streak yesterday" },
@@ -3172,7 +3173,7 @@ function GameModal({ m, tags, setTag, now, onClose }) {
             {t.rematch.map((r,i)=><Pill key={i} color={C.rematch} title="Has faced this pitcher this year already">pitcher rematch</Pill>)}
             {t.bigday.map((b,i)=><Pill key={i} color={C.bigday} title="Scored 10+ runs in their last game">{b.team.split(" ").slice(-1)[0]} {b.runs} runs last game</Pill>)}
             {t.gauntlet.map((x,i)=><Pill key={i} color={C.gauntlet} title="Just faced 2-3 straight starters with a sub-3.00 ERA">the gauntlet ({x.len})</Pill>)}
-            {t.formerTeam.map((x,i)=><Pill key={i} color={C.boom} title="Used to play for the team he's facing today">revenge game vs {x.opp.split(" ").slice(-1)[0]}</Pill>)}
+            {t.formerTeam.map((x,i)=><Pill key={i} color={C.revenge} title="Used to play for the team he's facing today">revenge game vs {x.opp.split(" ").slice(-1)[0]}</Pill>)}
           </div>
         )}
 
