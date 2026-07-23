@@ -587,8 +587,8 @@ function TravelTrends({ tags, setTag, onReady }) {
             (byTeamDate[tid] = byTeamDate[tid]||{})[d.date] = venueTz; });
           // gamePk (not just date) identifies the exact game — a doubleheader
           // puts two of these in a row for the same team on the same date
-          if (hp?.id) (scheduleByTeam[away.id] = scheduleByTeam[away.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:hp.id });
-          if (ap?.id) (scheduleByTeam[home.id] = scheduleByTeam[home.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:ap.id });
+          if (hp?.id) (scheduleByTeam[away.id] = scheduleByTeam[away.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:hp.id, isFinal });
+          if (ap?.id) (scheduleByTeam[home.id] = scheduleByTeam[home.id]||[]).push({ date:d.date, time:g.gameDate, gamePk:g.gamePk, oppPid:ap.id, isFinal });
         });
       });
       Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.time.localeCompare(b.time)));
@@ -778,7 +778,8 @@ function TravelTrends({ tags, setTag, onReady }) {
         const list = scheduleByTeam[tid] = scheduleByTeam[tid] || [];
         const known = new Set(list.map(s=>s.gamePk));
         Object.entries(games).forEach(([time, { gamePk }])=>{
-          if (!known.has(gamePk)) list.push({ date:time.slice(0,10), time, gamePk, oppPid:null });
+          // every entry here comes from the completed-games (`finals`) list
+          if (!known.has(gamePk)) list.push({ date:time.slice(0,10), time, gamePk, oppPid:null, isFinal:true });
         });
       });
       Object.values(scheduleByTeam).forEach(list=>list.sort((a,b)=>a.time.localeCompare(b.time)));
@@ -915,7 +916,29 @@ function TravelTrends({ tags, setTag, onReady }) {
          box scores for the specific past games that feed a "last 3" trio
          somewhere in the visible window, deduped by gamePk so a shared
          game (e.g. yesterday's, feeding two different
-         cells) is only fetched once. ── */
+         cells) is only fetched once.
+
+         A team's still-to-be-played games further out than its very next
+         one don't get this — those extra box-score/season-rate fetches
+         would just be spent previewing a trio that's largely the same data
+         (or, for games far enough out, mostly unplayed games anyway) rather
+         than telling the user anything they can't already see on the
+         team's next game. Already-played (or in-progress) games are
+         unaffected — only future scheduling gets trimmed. Goes by each
+         game's own tracked status, not a wall-clock comparison — a
+         doubleheader's early leg can already be Final before its late
+         leg's own scheduled time arrives, and the late leg is still that
+         team's own "next game up" despite that. ── */
+      const nextUpGamePk = {};   // teamId -> gamePk of its earliest not-yet-final game in this window
+      Object.values(dayGames).flat().forEach(g=>{
+        if (g.isFinal || g.isLive) return;
+        [g.awayId, g.homeId].forEach(tid=>{
+          if (nextUpGamePk[tid]==null || g.time < nextUpGamePk[tid].time)
+            nextUpGamePk[tid] = { gamePk:g.gamePk, time:g.time };
+        });
+      });
+      const needsBatTrio = (tid, g) =>
+        g.isFinal || g.isLive || nextUpGamePk[tid]?.gamePk === g.gamePk;
       const neededGamePks = new Set();
       DATES.forEach(date=>{
         (dayGames[date]||[]).forEach(g=>{
@@ -923,6 +946,7 @@ function TravelTrends({ tags, setTag, onReady }) {
           // calendar date — on a doubleheader, the earlier game is a valid
           // "previous game" for the later one despite sharing a date
           [g.awayId, g.homeId].forEach(tid=>{
+            if (!needsBatTrio(tid, g)) return;
             const m = gamePkByDate[tid];
             if (!m) return;
             Object.keys(m).filter(t=>t<g.time).sort().reverse().slice(0,3)
@@ -1212,7 +1236,21 @@ function TravelTrends({ tags, setTag, onReady }) {
     // a box blank and a doubleheader's earlier game still counts as the
     // later game's own "previous game" instead of being skipped entirely;
     // the actual value shown comes from battingScoreMap.
+    //
+    // only this team's NEXT still-to-be-played game shows the trio at all —
+    // any other, further-out future game just shows the "–" placeholder
+    // (same look as still-loading) instead of repeating the same numbers on
+    // every card in a homestand. Already-played/in-progress games are
+    // unaffected. Goes by each game's own tracked status (isFinal/isLive),
+    // not a wall-clock comparison — a doubleheader's early leg can already
+    // be Final well before its late leg's own scheduled time arrives, and
+    // the late leg is still that team's own "next game up" despite that.
     const hitsTrio = (tid) => {
+      if (!g.isFinal && !g.isLive) {
+        const sched = scheduleMap[tid];
+        const nextUp = sched && sched.find(s => !s.isFinal);
+        if (nextUp && nextUp.gamePk !== g.gamePk) return [null, null, null];
+      }
       const m = hitsMap[tid];
       if (!m) return [null, null, null];
       const scores = battingScoreMap[tid] || {};
